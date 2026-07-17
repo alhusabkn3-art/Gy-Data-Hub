@@ -72,6 +72,14 @@ export default defineConfig({
     fs: {
       strict: true,
     },
+    proxy: {
+      // Forward all /api requests to the Express API server in dev.
+      // In production the reverse proxy handles this routing.
+      '/api': {
+        target: `http://localhost:${process.env['API_SERVER_PORT'] ?? 8080}`,
+        changeOrigin: true,
+      },
+    },
   },
   preview: {
     port,

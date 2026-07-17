@@ -6,11 +6,12 @@ import { Button } from '@/components/ui/button';
 import { useAppContext } from '../context/AppContext';
 import SuccessModal from '@/components/SuccessModal';
 import { toast } from 'sonner';
+import { buyAirtime } from '@/lib/api';
 
 const networks = [
-  { id: 'mtn', name: 'MTN', color: 'bg-[#FFCC00]', text: 'text-black' },
-  { id: 'airtel', name: 'Airtel', color: 'bg-[#FF0000]', text: 'text-white' },
-  { id: 'glo', name: 'Glo', color: 'bg-[#009900]', text: 'text-white' },
+  { id: 'mtn',     name: 'MTN',     color: 'bg-[#FFCC00]', text: 'text-black' },
+  { id: 'airtel',  name: 'Airtel',  color: 'bg-[#FF0000]', text: 'text-white' },
+  { id: 'glo',     name: 'Glo',     color: 'bg-[#009900]', text: 'text-white' },
   { id: '9mobile', name: '9mobile', color: 'bg-[#006600]', text: 'text-white' },
 ];
 
@@ -26,34 +27,59 @@ export default function BuyAirtimeScreen() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [successDetails, setSuccessDetails] = useState<Array<{ label: string; value: string }>>([]);
 
   const selectedNetwork = networks.find(n => n.id === network);
   const canProceed = network && phone.length >= 10 && Number(amount) > 0;
+  const numAmount = Number(amount);
 
-  const handlePurchase = () => {
+  const handlePurchase = async () => {
     if (!canProceed || !selectedNetwork) return;
-    if (balance < Number(amount)) {
+    if (balance < numAmount) {
       toast.error('Insufficient wallet balance. Please fund your wallet.');
       return;
     }
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      const result = await buyAirtime({
+        network: selectedNetwork.id,
+        phone,
+        amount: numAmount,
+      });
+
+      if (!result.success) {
+        toast.error(`Transaction ${result.status ?? 'failed'}. Please try again.`);
+        return;
+      }
+
       addTransaction({
         type: 'airtime',
         service: 'Airtime',
         provider: selectedNetwork.name,
-        amount: Number(amount),
+        amount: numAmount,
         status: 'success',
         description: `${selectedNetwork.name} Airtime`,
         paymentMethod: 'Wallet',
       });
-      setShowSuccess(true);
-    }, 1500);
-  };
 
-  const handleDone = () => {
-    setLocation('/');
+      setSuccessDetails([
+        { label: 'Network',   value: selectedNetwork.name },
+        { label: 'Number',    value: phone },
+        { label: 'Amount',    value: `₦${numAmount.toLocaleString()}` },
+        { label: 'Reference', value: result.requestId },
+        { label: 'Status',    value: result.status ?? 'successful' },
+      ]);
+      setShowSuccess(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Purchase failed';
+      toast.error(
+        msg.toLowerCase().includes('credentials') || msg.includes('503')
+          ? 'Service temporarily unavailable. Please try again later.'
+          : msg,
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -74,7 +100,7 @@ export default function BuyAirtimeScreen() {
       </div>
 
       <div className="space-y-6 flex-1 pb-48">
-        {/* Network Selection */}
+        {/* Network */}
         <div>
           <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wider">Select Network</h2>
           <div className="grid grid-cols-4 gap-3">
@@ -95,7 +121,7 @@ export default function BuyAirtimeScreen() {
           </div>
         </div>
 
-        {/* Phone Number */}
+        {/* Phone */}
         <div>
           <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wider">Phone Number</h2>
           <div className="relative">
@@ -103,11 +129,11 @@ export default function BuyAirtimeScreen() {
               type="tel"
               placeholder="e.g. 0803 123 4567"
               value={phone}
-              onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+              onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
               className="w-full bg-card border-2 border-border focus:border-primary rounded-xl h-14 px-4 pr-24 text-lg font-medium outline-none transition-colors"
             />
             <button
-              className="absolute right-3 top-1/2 -translate-y-1/2 px-3 py-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors text-xs font-semibold"
+              className="absolute right-3 top-1/2 -translate-y-1/2 px-3 py-1.5 text-primary hover:bg-primary/10 rounded-lg text-xs font-semibold"
               onClick={() => toast.info('Contact picker not available in browser')}
             >
               Contacts
@@ -122,7 +148,7 @@ export default function BuyAirtimeScreen() {
             type="number"
             placeholder="Enter amount e.g. 500"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={e => setAmount(e.target.value)}
             className="w-full bg-card border-2 border-border focus:border-primary rounded-xl h-14 px-4 text-xl font-bold outline-none transition-colors mb-3"
           />
           <div className="grid grid-cols-3 gap-2">
@@ -143,7 +169,7 @@ export default function BuyAirtimeScreen() {
         </div>
       </div>
 
-      {/* Summary & Purchase — above BottomNav */}
+      {/* Confirm panel — above BottomNav */}
       {canProceed && (
         <motion.div
           initial={{ y: 50, opacity: 0 }}
@@ -161,7 +187,7 @@ export default function BuyAirtimeScreen() {
             </div>
             <div className="flex justify-between pt-2 border-t border-border mt-1">
               <span className="text-muted-foreground">Total</span>
-              <span className="font-bold text-primary text-base">₦{Number(amount).toLocaleString()}</span>
+              <span className="font-bold text-primary text-base">₦{numAmount.toLocaleString()}</span>
             </div>
           </div>
           <Button
@@ -169,7 +195,7 @@ export default function BuyAirtimeScreen() {
             onClick={handlePurchase}
             disabled={isLoading}
           >
-            {isLoading ? 'Processing...' : `Pay ₦${Number(amount).toLocaleString()}`}
+            {isLoading ? 'Processing…' : `Pay ₦${numAmount.toLocaleString()}`}
           </Button>
         </motion.div>
       )}
@@ -178,12 +204,8 @@ export default function BuyAirtimeScreen() {
         open={showSuccess}
         onOpenChange={setShowSuccess}
         title="Airtime Sent!"
-        details={[
-          { label: 'Network', value: selectedNetwork?.name ?? '' },
-          { label: 'Number', value: phone },
-          { label: 'Amount', value: `₦${Number(amount).toLocaleString()}` },
-        ]}
-        onDone={handleDone}
+        details={successDetails}
+        onDone={() => setLocation('/')}
       />
     </motion.div>
   );

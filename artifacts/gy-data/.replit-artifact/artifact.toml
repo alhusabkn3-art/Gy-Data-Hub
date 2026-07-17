@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "GY DATA"
+version = "1.0.0"
+id = "artifacts/gy-data"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24579
+
+[services.development]
+run = "pnpm --filter @workspace/gy-data run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/gy-data", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/gy-data/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24579"
+BASE_PATH = "/"

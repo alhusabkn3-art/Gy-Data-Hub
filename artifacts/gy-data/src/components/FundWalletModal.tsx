@@ -53,7 +53,7 @@ export default function FundWalletModal({ open, onOpenChange }: { open: boolean,
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="fixed bottom-0 left-0 right-0 bg-[#0A1628] border-t border-border z-50 rounded-t-3xl overflow-hidden max-w-md mx-auto"
+            className="fixed bottom-0 left-0 right-0 bg-white border-t border-border shadow-[0_-4px_32px_rgba(14,29,70,0.10)] z-50 rounded-t-3xl overflow-hidden max-w-md mx-auto"
           >
             {showSuccess ? (
               <div className="p-8 flex flex-col items-center justify-center text-center py-12">
@@ -82,7 +82,7 @@ export default function FundWalletModal({ open, onOpenChange }: { open: boolean,
                   <h2 className="text-xl font-bold">Fund Wallet</h2>
                   <button 
                     onClick={closeAndReset}
-                    className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-muted-foreground hover:text-white"
+                    className="w-8 h-8 rounded-full bg-black/5 flex items-center justify-center text-muted-foreground hover:text-foreground"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -102,7 +102,7 @@ export default function FundWalletModal({ open, onOpenChange }: { open: boolean,
                   
                   <div className="mb-4">
                     <p className="text-xs text-muted-foreground mb-1">Account Number</p>
-                    <div className="flex items-center justify-between bg-black/20 p-3 rounded-xl border border-white/5">
+                    <div className="flex items-center justify-between bg-black/5 p-3 rounded-xl border border-border">
                       <p className="font-mono text-xl tracking-wider">{user.accountNumber}</p>
                       <button 
                         onClick={handleCopy}
@@ -131,7 +131,7 @@ export default function FundWalletModal({ open, onOpenChange }: { open: boolean,
                       <button
                         key={val}
                         onClick={() => setAmount(val.toString())}
-                        className={`py-2 rounded-lg text-sm border transition-colors ${amount === val.toString() ? 'bg-primary/20 border-primary text-primary' : 'bg-card border-border hover:bg-white/5'}`}
+                        className={`py-2 rounded-lg text-sm border transition-colors ${amount === val.toString() ? 'bg-primary/20 border-primary text-primary' : 'bg-card border-border hover:bg-black/5'}`}
                       >
                         ₦{val}
                       </button>

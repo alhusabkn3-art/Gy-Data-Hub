@@ -174,7 +174,7 @@ export default function BuyAirtimeScreen() {
         <motion.div
           initial={{ y: 50, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
-          className="fixed bottom-16 left-0 right-0 bg-[#0A1628]/95 backdrop-blur-md border-t border-border p-4 z-50 max-w-md mx-auto"
+          className="fixed bottom-16 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-border shadow-[0_-4px_24px_rgba(14,29,70,0.08)] p-4 z-50 max-w-md mx-auto"
         >
           <div className="bg-card border border-border rounded-xl p-4 mb-3 text-sm">
             <div className="flex justify-between mb-2">

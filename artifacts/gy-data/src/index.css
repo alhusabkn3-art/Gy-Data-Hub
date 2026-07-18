@@ -67,75 +67,94 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* LIGHT MODE */
+/* LIGHT MODE — Bright clean white fintech */
 :root {
-  --button-outline: rgba(0, 0, 0, 0.1);
-  --badge-outline: rgba(0, 0, 0, 0.05);
+  --button-outline: rgba(0, 0, 0, 0.12);
+  --badge-outline: rgba(0, 0, 0, 0.06);
 
   /* Automatic computation of border around primary / danger buttons */
-  --opaque-button-border-intensity: -8; /* In terms of percentages */
+  --opaque-button-border-intensity: 8; /* In terms of percentages */
 
   /* Backgrounds applied on top of other backgrounds when hovered/active */
-  --elevate-1: rgba(255, 255, 255, 0.03);
-  --elevate-2: rgba(255, 255, 255, 0.08);
+  --elevate-1: rgba(0, 0, 0, 0.03);
+  --elevate-2: rgba(0, 0, 0, 0.07);
 
-  --background: 217 41% 8%;
-  --foreground: 210 40% 98%;
-  --border: 217 30% 20%;
-  --card: 217 35% 12%;
-  --card-foreground: 210 40% 98%;
-  --card-border: 217 30% 20%;
-  --sidebar: 217 41% 8%;
-  --sidebar-foreground: 210 40% 98%;
-  --sidebar-border: 217 30% 20%;
-  --sidebar-primary: 217 91% 60%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 217 30% 18%;
-  --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-ring: 217 91% 60%;
-  --popover: 217 35% 12%;
-  --popover-foreground: 210 40% 98%;
-  --popover-border: 217 30% 20%;
-  --primary: 217 91% 60%;
+  /* ── Surfaces ── */
+  --background: 220 25% 96%;         /* #EDF0F7 cool light silver-white */
+  --foreground: 220 55% 12%;         /* #0E1D3A dark navy text */
+  --border: 220 20% 87%;             /* #D6DCEA soft blue-gray dividers */
+  --input: 0 0% 100%;                /* white inputs */
+  --ring: 220 78% 22%;
+
+  /* ── Cards — pure white with shadows ── */
+  --card: 0 0% 100%;
+  --card-foreground: 220 55% 12%;
+  --card-border: 220 20% 90%;
+
+  /* ── Popovers ── */
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 55% 12%;
+  --popover-border: 220 20% 87%;
+
+  /* ── Brand primary — dark navy blue ── */
+  --primary: 220 78% 22%;            /* #1A3D7C rich dark navy */
   --primary-foreground: 0 0% 100%;
-  --secondary: 217 30% 18%;
-  --secondary-foreground: 210 40% 90%;
-  --muted: 217 25% 16%;
-  --muted-foreground: 215 20% 55%;
-  --accent: 217 91% 60%;
+
+  /* ── Secondary / muted surfaces ── */
+  --secondary: 220 20% 92%;
+  --secondary-foreground: 220 55% 18%;
+  --muted: 220 20% 93%;
+  --muted-foreground: 220 15% 48%;
+
+  /* ── Accent (same navy as primary) ── */
+  --accent: 220 78% 22%;
   --accent-foreground: 0 0% 100%;
-  --destructive: 0 84% 60%;
+
+  /* ── Destructive ── */
+  --destructive: 0 84% 58%;
   --destructive-foreground: 0 0% 100%;
-  --input: 217 30% 18%;
-  --ring: 217 91% 60%;
-  --chart-1: 217 91% 60%;
-  --chart-2: 217 80% 50%;
-  --chart-3: 217 70% 40%;
-  --chart-4: 217 60% 30%;
-  --chart-5: 217 50% 20%;
+
+  /* ── Charts — navy gradations ── */
+  --chart-1: 220 78% 22%;
+  --chart-2: 220 65% 40%;
+  --chart-3: 220 55% 58%;
+  --chart-4: 220 45% 72%;
+  --chart-5: 220 35% 84%;
+
+  /* ── Admin sidebar — stays dark navy ── */
+  --sidebar: 220 45% 14%;
+  --sidebar-foreground: 210 40% 94%;
+  --sidebar-border: 220 35% 22%;
+  --sidebar-primary: 220 70% 58%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 220 35% 20%;
+  --sidebar-accent-foreground: 210 40% 94%;
+  --sidebar-ring: 220 70% 58%;
 
   --app-font-sans: 'Inter', system-ui, sans-serif;
   --app-font-serif: Georgia, serif;
   --app-font-mono: Menlo, monospace;
   --radius: 1rem; /* 16px */
-  --shadow-2xs: 0px 2px 0px 0px hsl(217 41% 4% / 0.1);
-  --shadow-xs: 0px 2px 0px 0px hsl(217 41% 4% / 0.15);
+
+  /* ── Shadows — soft navy-tinted for light surfaces ── */
+  --shadow-2xs: 0px 1px 2px 0px rgba(14, 29, 70, 0.06);
+  --shadow-xs:  0px 1px 4px 0px rgba(14, 29, 70, 0.08);
   --shadow-sm:
-    0px 2px 0px 0px hsl(217 41% 4% / 0.1),
-    0px 1px 2px -1px hsl(217 41% 4% / 0.1);
+    0px 2px 8px -1px rgba(14, 29, 70, 0.08),
+    0px 1px 3px  0px rgba(14, 29, 70, 0.05);
   --shadow:
-    0px 2px 0px 0px hsl(217 41% 4% / 0.1),
-    0px 1px 2px -1px hsl(217 41% 4% / 0.1);
+    0px 2px 10px -2px rgba(14, 29, 70, 0.10),
+    0px 1px 4px  -1px rgba(14, 29, 70, 0.06);
   --shadow-md:
-    0px 2px 0px 0px hsl(217 41% 4% / 0.1),
-    0px 2px 4px -1px hsl(217 41% 4% / 0.1);
+    0px 4px 16px -3px rgba(14, 29, 70, 0.12),
+    0px 2px 6px  -2px rgba(14, 29, 70, 0.06);
   --shadow-lg:
-    0px 2px 0px 0px hsl(217 41% 4% / 0.1),
-    0px 4px 6px -1px hsl(217 41% 4% / 0.1);
+    0px 8px 24px -4px rgba(14, 29, 70, 0.12),
+    0px 4px 8px  -2px rgba(14, 29, 70, 0.06);
   --shadow-xl:
-    0px 2px 0px 0px hsl(217 41% 4% / 0.1),
-    0px 8px 10px -1px hsl(217 41% 4% / 0.1);
-  --shadow-2xl: 0px 2px 0px 0px hsl(217 41% 4% / 0.2);
+    0px 16px 40px -6px rgba(14, 29, 70, 0.14),
+    0px 8px  16px -4px rgba(14, 29, 70, 0.08);
+  --shadow-2xl: 0px 24px 60px -8px rgba(14, 29, 70, 0.18);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 

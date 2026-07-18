@@ -41,7 +41,7 @@ export default function SettingsScreen() {
                   key={theme}
                   onClick={() => updateSettings({ theme })}
                   className={`flex-1 py-2 text-xs font-semibold rounded-lg capitalize transition-colors ${
-                    settings.theme === theme ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:bg-white/5'
+                    settings.theme === theme ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:bg-black/5'
                   }`}
                 >
                   {theme}

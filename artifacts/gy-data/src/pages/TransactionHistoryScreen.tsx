@@ -57,7 +57,7 @@ export default function TransactionHistoryScreen() {
             key={f}
             onClick={() => setFilter(f)}
             className={`px-5 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-              filter === f ? 'bg-primary text-white' : 'bg-card border border-border text-muted-foreground hover:bg-white/5'
+              filter === f ? 'bg-primary text-white' : 'bg-card border border-border text-muted-foreground hover:bg-black/5'
             }`}
           >
             {f.charAt(0).toUpperCase() + f.slice(1)}
@@ -71,7 +71,7 @@ export default function TransactionHistoryScreen() {
             <button 
               key={txn.id} 
               onClick={() => setSelectedTxn(txn)}
-              className="w-full flex items-center justify-between p-4 rounded-xl bg-card border border-border hover:bg-white/5 transition-colors text-left"
+              className="w-full flex items-center justify-between p-4 rounded-xl bg-card border border-border hover:bg-black/5 transition-colors text-left"
             >
               <div className="flex items-center gap-3">
                 <div className={`w-12 h-12 rounded-full flex items-center justify-center ${getTxnColor(txn.type)}`}>
@@ -119,7 +119,7 @@ export default function TransactionHistoryScreen() {
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-[#0A1628] border-t border-border z-50 rounded-t-3xl overflow-hidden max-w-md mx-auto"
+              className="fixed bottom-0 left-0 right-0 bg-white border-t border-border shadow-[0_-4px_32px_rgba(14,29,70,0.10)] z-50 rounded-t-3xl overflow-hidden max-w-md mx-auto"
             >
               <div className="p-6">
                 <div className="flex justify-between items-start mb-6">
@@ -129,7 +129,7 @@ export default function TransactionHistoryScreen() {
                   </div>
                   <button 
                     onClick={() => setSelectedTxn(null)}
-                    className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-muted-foreground hover:text-white"
+                    className="w-8 h-8 rounded-full bg-black/5 flex items-center justify-center text-muted-foreground hover:text-foreground"
                   >
                     <X className="w-5 h-5" />
                   </button>

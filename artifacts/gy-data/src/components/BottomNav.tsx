@@ -26,7 +26,7 @@ export default function BottomNav() {
 
   return (
     <>
-      <div className="fixed bottom-0 left-0 right-0 bg-[#0A1628] border-t border-[#1B3A6B]/50 pb-safe z-40 px-2 py-1">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-border shadow-[0_-2px_16px_rgba(14,29,70,0.08)] pb-safe z-40 px-2 py-1">
         <div className="flex justify-around items-center h-16 max-w-md mx-auto relative">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;

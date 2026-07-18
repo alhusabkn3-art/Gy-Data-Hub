@@ -86,7 +86,7 @@ export default function ProfileScreen() {
               />
               <div
                 onClick={copyReferral}
-                className="flex items-center justify-between p-4 hover:bg-white/5 transition-colors cursor-pointer"
+                className="flex items-center justify-between p-4 hover:bg-black/5 transition-colors cursor-pointer"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
@@ -183,7 +183,7 @@ export default function ProfileScreen() {
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowLogoutDialog(false)}
-                  className="flex-1 h-12 rounded-xl border-2 border-border font-semibold text-sm hover:bg-white/5 transition-colors"
+                  className="flex-1 h-12 rounded-xl border-2 border-border font-semibold text-sm hover:bg-muted transition-colors"
                 >
                   Cancel
                 </button>
@@ -275,11 +275,11 @@ function PinChangeModal({ type, onClose }: { type: 'login' | 'purchase'; onClose
         animate={{ y: 0 }}
         exit={{ y: '100%' }}
         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-        className="fixed bottom-0 left-0 right-0 bg-[#0A1628] border-t border-border z-50 rounded-t-3xl max-w-md mx-auto p-6 pb-8"
+        className="fixed bottom-0 left-0 right-0 bg-white border-t border-border shadow-[0_-4px_32px_rgba(14,29,70,0.10)] z-50 rounded-t-3xl max-w-md mx-auto p-6 pb-8"
       >
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-lg font-bold">Change {label} PIN</h2>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-black/5 flex items-center justify-center">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -295,13 +295,13 @@ function PinChangeModal({ type, onClose }: { type: 'login' | 'purchase'; onClose
                   ? 'border-primary bg-primary/10 shadow-[0_0_12px_rgba(37,99,235,0.3)]'
                   : i < activePin.length
                     ? 'border-primary bg-primary'
-                    : 'border-white/10 bg-black/20'
+                    : 'border-border bg-muted'
               }`}
             >
               {i < activePin.length && (
                 showPin
-                  ? <span className="text-white text-sm font-bold">{activePin[i]}</span>
-                  : <div className="w-2.5 h-2.5 bg-white rounded-full" />
+                  ? <span className="text-primary-foreground text-sm font-bold">{activePin[i]}</span>
+                  : <div className="w-2.5 h-2.5 bg-primary-foreground rounded-full" />
               )}
             </div>
           ))}
@@ -314,7 +314,7 @@ function PinChangeModal({ type, onClose }: { type: 'login' | 'purchase'; onClose
               onClick={() => key && handleKeyPress(key)}
               disabled={!key}
               className={`h-12 rounded-xl flex items-center justify-center text-lg font-medium transition-all active:scale-95 ${
-                key ? 'bg-white/5 hover:bg-white/10 text-white' : 'opacity-0 cursor-default'
+                key ? 'bg-muted hover:bg-black/10 text-foreground' : 'opacity-0 cursor-default'
               }`}
             >
               {key === 'backspace' ? (
@@ -359,7 +359,7 @@ function MenuRow({
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center justify-between p-4 hover:bg-white/5 active:bg-white/10 transition-colors text-left"
+      className="w-full flex items-center justify-between p-4 hover:bg-black/5 active:bg-black/8 transition-colors text-left"
     >
       <div className="flex items-center gap-3">
         <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">

@@ -39,7 +39,7 @@ export default function SuccessModal({ open, onOpenChange, title, details, onDon
             
             <h2 className="text-2xl font-bold mb-6">{title}</h2>
             
-            <div className="w-full bg-black/20 rounded-2xl p-4 mb-8 space-y-3">
+            <div className="w-full bg-muted rounded-2xl p-4 mb-8 space-y-3">
               {details.map((detail, idx) => (
                 <div key={idx} className="flex justify-between items-center text-sm">
                   <span className="text-muted-foreground">{detail.label}</span>

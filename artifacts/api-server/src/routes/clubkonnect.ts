@@ -22,7 +22,7 @@ router.use(requireCredentials);
 router.get('/balance', async (_req: Request, res: Response): Promise<void> => {
   try {
     const data = await ck.getBalance();
-    res.json({ success: true, balance: data.APIBalance });
+    res.json({ success: true, balance: data.balance ?? data.APIBalance });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     logger.error({ err }, 'Clubkonnect balance check failed');

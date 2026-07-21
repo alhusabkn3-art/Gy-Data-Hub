@@ -9,8 +9,9 @@ import AdminWallet from './pages/AdminWallet';
 import AdminServices from './pages/AdminServices';
 import AdminNotifications from './pages/AdminNotifications';
 import AdminSettings from './pages/AdminSettings';
+import AdminManagement from './pages/AdminManagement';
 
-type AdminPage = 'dashboard' | 'users' | 'transactions' | 'wallet' | 'services' | 'notifications' | 'settings';
+type AdminPage = 'dashboard' | 'users' | 'transactions' | 'wallet' | 'services' | 'notifications' | 'settings' | 'adminManagement';
 
 const pages: Record<AdminPage, React.ReactNode> = {
   dashboard: <AdminDashboard />,
@@ -20,6 +21,7 @@ const pages: Record<AdminPage, React.ReactNode> = {
   services: <AdminServices />,
   notifications: <AdminNotifications />,
   settings: <AdminSettings />,
+  adminManagement: <AdminManagement />,
 };
 
 function AdminDashboardApp() {

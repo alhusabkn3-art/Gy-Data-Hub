@@ -3,17 +3,19 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Users, ArrowLeftRight, Wallet,
   Grid3X3, Bell, Settings, LogOut, Menu, X, Shield, ChevronRight,
+  UserCog,
 } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 
 const navItems = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'users', label: 'Users', icon: Users },
-  { id: 'transactions', label: 'Transactions', icon: ArrowLeftRight },
-  { id: 'wallet', label: 'Wallet', icon: Wallet },
-  { id: 'services', label: 'Services', icon: Grid3X3 },
-  { id: 'notifications', label: 'Announcements', icon: Bell },
-  { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'dashboard',       label: 'Dashboard',       icon: LayoutDashboard },
+  { id: 'users',           label: 'Users',            icon: Users },
+  { id: 'transactions',    label: 'Transactions',     icon: ArrowLeftRight },
+  { id: 'wallet',          label: 'Wallet',           icon: Wallet },
+  { id: 'services',        label: 'Services',         icon: Grid3X3 },
+  { id: 'notifications',   label: 'Announcements',    icon: Bell },
+  { id: 'adminManagement', label: 'Admin Management', icon: UserCog },
+  { id: 'settings',        label: 'Settings',         icon: Settings },
 ];
 
 interface AdminLayoutProps {

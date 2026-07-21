@@ -44,6 +44,89 @@ export const adminCredentials = {
   pin: '125125',
 };
 
+// ── Admin Account Management ────────────────────────────────────────────────
+
+export type AdminRole = 'super_admin' | 'admin' | 'support';
+
+export interface AdminAccount {
+  id: string;
+  name: string;
+  email: string;
+  role: AdminRole;
+  status: 'active' | 'disabled';
+  createdAt: string;
+  lastLogin: string;
+  /** PIN stored in memory only — never rendered in plain text in the UI */
+  pin: string;
+  /** When true this account cannot be deleted, disabled, or demoted */
+  isSuperAdmin: boolean;
+}
+
+export const ROLE_LABELS: Record<AdminRole, string> = {
+  super_admin: 'Super Admin',
+  admin: 'Admin',
+  support: 'Support',
+};
+
+export const ROLE_COLORS: Record<AdminRole, { bg: string; text: string; border: string }> = {
+  super_admin: { bg: 'rgba(234,179,8,0.12)', text: '#CA8A04', border: 'rgba(234,179,8,0.3)' },
+  admin:       { bg: 'rgba(59,130,246,0.12)', text: '#3B82F6', border: 'rgba(59,130,246,0.3)' },
+  support:     { bg: 'rgba(16,185,129,0.12)', text: '#10B981', border: 'rgba(16,185,129,0.3)' },
+};
+
+export const ROLE_PERMISSIONS: Record<AdminRole, string[]> = {
+  super_admin: ['Dashboard', 'Users', 'Transactions', 'Wallet', 'Services', 'Announcements', 'Settings', 'Admin Management'],
+  admin:       ['Dashboard', 'Users', 'Transactions', 'Wallet', 'Services', 'Announcements'],
+  support:     ['Dashboard', 'Users (View only)', 'Transactions (View only)'],
+};
+
+export const adminAccounts: AdminAccount[] = [
+  {
+    id: 'ADM-001',
+    name: 'Super Admin',
+    email: 'admin@gyd.com',
+    role: 'super_admin',
+    status: 'active',
+    createdAt: 'Jan 1, 2024',
+    lastLogin: 'Today',
+    pin: '125125',
+    isSuperAdmin: true,
+  },
+  {
+    id: 'ADM-002',
+    name: 'Dayo Adeleke',
+    email: 'dayo@gyd.com',
+    role: 'admin',
+    status: 'active',
+    createdAt: 'Feb 14, 2024',
+    lastLogin: 'Jul 20, 2026',
+    pin: '246810',
+    isSuperAdmin: false,
+  },
+  {
+    id: 'ADM-003',
+    name: 'Kemi Okonjo',
+    email: 'kemi@gyd.com',
+    role: 'support',
+    status: 'active',
+    createdAt: 'Mar 5, 2024',
+    lastLogin: 'Jul 19, 2026',
+    pin: '135791',
+    isSuperAdmin: false,
+  },
+  {
+    id: 'ADM-004',
+    name: 'Tolu Fashola',
+    email: 'tolu@gyd.com',
+    role: 'admin',
+    status: 'disabled',
+    createdAt: 'Apr 12, 2024',
+    lastLogin: 'Jun 30, 2026',
+    pin: '112233',
+    isSuperAdmin: false,
+  },
+];
+
 export const adminMockUsers: AdminUser[] = [
   { id: 'USR-001', name: 'Emeka Johnson', email: 'emeka.johnson@gmail.com', phone: '+234 803 456 7890', balance: 45250, status: 'active', kycStatus: 'verified', joinedDate: 'Jan 12, 2024', transactionCount: 47, totalSpent: 58300, referralCode: 'GY-EMEKA123', bankName: 'GTBank', accountNumber: '1234567890' },
   { id: 'USR-002', name: 'Aisha Bello', email: 'aisha.bello@yahoo.com', phone: '+234 806 234 5678', balance: 12800, status: 'active', kycStatus: 'verified', joinedDate: 'Feb 3, 2024', transactionCount: 29, totalSpent: 24500, referralCode: 'GY-AISHA456', bankName: 'Access Bank', accountNumber: '2345678901' },

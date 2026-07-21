@@ -7,6 +7,7 @@ import { useAppContext } from '../context/AppContext';
 import SuccessModal from '@/components/SuccessModal';
 import { toast } from 'sonner';
 import { fetchDataPlans, buyData, type DataPlan } from '@/lib/api';
+import PhoneInputWithContacts, { isValidNigerianNumber } from '@/components/PhoneInputWithContacts';
 
 const networks = [
   { id: 'mtn',     name: 'MTN',     color: 'bg-[#FFCC00]', text: 'text-black' },
@@ -169,30 +170,19 @@ export default function BuyDataScreen() {
         {/* Step 2 — Phone */}
         {step >= 2 && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-            <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wider">2. Phone Number</h2>
-            <div className="relative">
-              <input
-                type="tel"
-                placeholder="e.g. 0803 123 4567"
-                value={phone}
-                onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
-                className="w-full bg-card border-2 border-border focus:border-primary rounded-xl h-14 px-4 pr-24 text-lg font-medium outline-none transition-colors"
-              />
-              <button
-                className="absolute right-3 top-1/2 -translate-y-1/2 px-3 py-1.5 text-primary hover:bg-primary/10 rounded-lg text-xs font-semibold"
-                onClick={() => toast.info('Contact picker coming soon')}
-              >
-                Contacts
-              </button>
-            </div>
-            {phone.length >= 10 && step === 2 && (
+            <PhoneInputWithContacts
+              value={phone}
+              onChange={setPhone}
+              label="2. Phone Number"
+            />
+            {isValidNigerianNumber(phone) && step === 2 && (
               <Button className="w-full mt-4 h-12 rounded-xl" onClick={() => setStep(3)}>Continue</Button>
             )}
           </motion.div>
         )}
 
         {/* Step 3 — Plans */}
-        {step >= 3 && phone.length >= 10 && (
+        {step >= 3 && isValidNigerianNumber(phone) && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">3. Select Plan</h2>

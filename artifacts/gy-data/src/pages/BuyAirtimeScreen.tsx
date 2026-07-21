@@ -7,6 +7,7 @@ import { useAppContext } from '../context/AppContext';
 import SuccessModal from '@/components/SuccessModal';
 import { toast } from 'sonner';
 import { buyAirtime } from '@/lib/api';
+import PhoneInputWithContacts, { isValidNigerianNumber } from '@/components/PhoneInputWithContacts';
 
 const networks = [
   { id: 'mtn',     name: 'MTN',     color: 'bg-[#FFCC00]', text: 'text-black' },
@@ -30,7 +31,7 @@ export default function BuyAirtimeScreen() {
   const [successDetails, setSuccessDetails] = useState<Array<{ label: string; value: string }>>([]);
 
   const selectedNetwork = networks.find(n => n.id === network);
-  const canProceed = network && phone.length >= 10 && Number(amount) > 0;
+  const canProceed = network && isValidNigerianNumber(phone) && Number(amount) > 0;
   const numAmount = Number(amount);
 
   const handlePurchase = async () => {
@@ -122,24 +123,11 @@ export default function BuyAirtimeScreen() {
         </div>
 
         {/* Phone */}
-        <div>
-          <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wider">Phone Number</h2>
-          <div className="relative">
-            <input
-              type="tel"
-              placeholder="e.g. 0803 123 4567"
-              value={phone}
-              onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
-              className="w-full bg-card border-2 border-border focus:border-primary rounded-xl h-14 px-4 pr-24 text-lg font-medium outline-none transition-colors"
-            />
-            <button
-              className="absolute right-3 top-1/2 -translate-y-1/2 px-3 py-1.5 text-primary hover:bg-primary/10 rounded-lg text-xs font-semibold"
-              onClick={() => toast.info('Contact picker coming soon')}
-            >
-              Contacts
-            </button>
-          </div>
-        </div>
+        <PhoneInputWithContacts
+          value={phone}
+          onChange={setPhone}
+          label="Phone Number"
+        />
 
         {/* Amount */}
         <div>

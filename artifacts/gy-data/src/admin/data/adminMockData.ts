@@ -40,7 +40,7 @@ export interface Announcement {
 }
 
 export const adminCredentials = {
-  email: 'admin@gydata.com',
+  email: 'admin@gyd.com',
   pin: '125125',
 };
 

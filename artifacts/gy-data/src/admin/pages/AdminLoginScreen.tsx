@@ -69,7 +69,7 @@ export default function AdminLoginScreen() {
               </label>
               <input
                 type="email"
-                placeholder="admin@gydata.com"
+                placeholder="admin@gyd.com"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleLogin()}
@@ -110,14 +110,6 @@ export default function AdminLoginScreen() {
             </button>
           </div>
         </motion.div>
-
-        {/* Demo hint */}
-        <button
-          onClick={() => { setEmail('admin@gydata.com'); setPin('125125'); }}
-          className="w-full mt-4 text-xs text-muted-foreground bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 hover:bg-white/10 transition-colors"
-        >
-          Demo: admin@gydata.com / 125125 — tap to autofill
-        </button>
 
         <p className="text-center text-xs text-muted-foreground mt-6">
           Customer app?{' '}

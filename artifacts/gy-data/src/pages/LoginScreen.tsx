@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 
 export default function LoginScreen() {
@@ -20,7 +20,6 @@ export default function LoginScreen() {
 
   const handleLogin = () => {
     if (pin.length !== 6) return;
-    
     const success = login(pin);
     if (!success) {
       setIsError(true);
@@ -38,88 +37,222 @@ export default function LoginScreen() {
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'backspace'];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#0A1628] to-[#0F2044] flex flex-col items-center justify-center p-6 text-foreground relative overflow-hidden">
-      {/* Decorative background blurs */}
-      <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[100px] -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
-      <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[100px] translate-x-1/2 translate-y-1/2 pointer-events-none" />
+    <div className="min-h-screen flex flex-col items-center justify-center p-5 relative overflow-hidden"
+      style={{ background: 'linear-gradient(160deg, #0B1F4E 0%, #102B6A 35%, #1A3D8F 65%, #1E4DB7 100%)' }}
+    >
+      {/* ── Background decorative layer ─────────────────────────────── */}
+      {/* Large glow orbs */}
+      <div className="absolute top-[-120px] left-[-100px] w-[380px] h-[380px] rounded-full pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.22) 0%, transparent 70%)' }} />
+      <div className="absolute bottom-[-100px] right-[-80px] w-[340px] h-[340px] rounded-full pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.18) 0%, transparent 70%)' }} />
+      <div className="absolute top-[40%] left-[60%] w-[200px] h-[200px] rounded-full pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(37,99,235,0.14) 0%, transparent 70%)' }} />
 
-      <div className="w-full max-w-sm z-10 flex flex-col items-center mb-8">
-        <div className="flex items-center gap-2 mb-2">
-          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+      {/* Subtle abstract wave arc — top right */}
+      <svg className="absolute top-0 right-0 pointer-events-none opacity-[0.07]" width="320" height="320" viewBox="0 0 320 320" fill="none">
+        <circle cx="320" cy="0" r="180" stroke="white" strokeWidth="1.5" />
+        <circle cx="320" cy="0" r="230" stroke="white" strokeWidth="1" />
+        <circle cx="320" cy="0" r="280" stroke="white" strokeWidth="0.8" />
+      </svg>
+      {/* Bottom left arc */}
+      <svg className="absolute bottom-0 left-0 pointer-events-none opacity-[0.06]" width="260" height="260" viewBox="0 0 260 260" fill="none">
+        <circle cx="0" cy="260" r="160" stroke="white" strokeWidth="1.2" />
+        <circle cx="0" cy="260" r="210" stroke="white" strokeWidth="0.8" />
+      </svg>
+
+      {/* ── Logo area ───────────────────────────────────────────────── */}
+      <div className="w-full max-w-sm z-10 flex flex-col items-center mb-7">
+        {/* Wi-Fi icon mark */}
+        <div className="mb-4 flex flex-col items-center">
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-3"
+            style={{ background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)', boxShadow: '0 8px 32px rgba(37,99,235,0.45), 0 2px 8px rgba(0,0,0,0.2)' }}
+          >
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+              <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+              <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+              <line x1="12" y1="20" x2="12.01" y2="20" strokeWidth="3"/>
+            </svg>
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-white">GY DATA</h1>
+          <h1 className="text-4xl font-black tracking-tight text-white leading-none"
+            style={{ letterSpacing: '-0.5px', textShadow: '0 2px 12px rgba(37,99,235,0.4)' }}>
+            GY DATA
+          </h1>
+          <p className="text-sm mt-1.5 font-medium tracking-[0.18em] uppercase"
+            style={{ color: 'rgba(147,197,253,0.85)' }}>
+            endless joy
+          </p>
         </div>
-        <p className="text-muted-foreground text-sm">Your Digital Life, Simplified</p>
       </div>
 
-      <motion.div 
-        animate={isError ? { x: [-10, 10, -10, 10, 0] } : {}}
-        transition={{ duration: 0.4 }}
-        className="w-full max-w-sm bg-card/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl"
+      {/* ── Login card ──────────────────────────────────────────────── */}
+      <motion.div
+        animate={isError ? { x: [-10, 10, -8, 8, -5, 5, 0] } : {}}
+        transition={{ duration: 0.45 }}
+        className="w-full max-w-sm z-10"
+        style={{
+          background: '#ffffff',
+          borderRadius: '28px',
+          boxShadow: '0 24px 60px rgba(11,31,78,0.35), 0 8px 24px rgba(11,31,78,0.2)',
+          padding: '32px 24px 28px',
+        }}
       >
-        <div className="text-center mb-8">
-          <h2 className="text-2xl font-bold text-white mb-2">Welcome Back</h2>
-          <p className="text-muted-foreground text-sm">Enter your 6-digit PIN to continue</p>
+        {/* Card header */}
+        <div className="text-center mb-7">
+          <h2 className="text-2xl font-bold mb-1" style={{ color: '#0B1F4E' }}>Welcome Back</h2>
+          <p className="text-sm" style={{ color: '#6B7FA3' }}>Enter your 6-digit PIN to continue</p>
         </div>
 
-        <div className="flex justify-center gap-2 mb-8">
-          {[...Array(6)].map((_, i) => (
-            <div 
-              key={i} 
-              className={`w-12 h-12 rounded-xl flex items-center justify-center border-2 transition-all ${
-                i === pin.length 
-                  ? 'border-primary bg-primary/10 shadow-[0_0_15px_rgba(37,99,235,0.3)]' 
-                  : i < pin.length 
-                    ? 'border-primary bg-primary' 
-                    : isError 
-                      ? 'border-destructive bg-destructive/10'
-                      : 'border-white/10 bg-black/20'
-              }`}
-            >
-              {i < pin.length && (
-                <div className="w-3 h-3 bg-white rounded-full" />
-              )}
-            </div>
-          ))}
+        {/* ── PIN indicators ──────────────────────────────────────── */}
+        <div className="flex justify-center gap-2.5 mb-7">
+          {[...Array(6)].map((_, i) => {
+            const isFilled = i < pin.length;
+            const isActive = i === pin.length;
+            const isErrorDot = isError;
+
+            return (
+              <motion.div
+                key={i}
+                animate={isFilled ? { scale: [1, 1.15, 1] } : { scale: 1 }}
+                transition={{ duration: 0.18 }}
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 14,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: isFilled
+                    ? '2px solid #1D4ED8'
+                    : isActive
+                      ? '2px solid #2563EB'
+                      : isErrorDot
+                        ? '2px solid #EF4444'
+                        : '2px solid #BFCFEE',
+                  background: isFilled
+                    ? 'linear-gradient(135deg, #1A3D8F 0%, #2563EB 100%)'
+                    : isActive
+                      ? '#EFF6FF'
+                      : isErrorDot
+                        ? '#FEF2F2'
+                        : '#F8FAFF',
+                  boxShadow: isActive
+                    ? '0 0 0 4px rgba(37,99,235,0.12)'
+                    : isFilled
+                      ? '0 4px 12px rgba(37,99,235,0.3)'
+                      : 'none',
+                  transition: 'all 0.18s ease',
+                }}
+              >
+                <AnimatePresence>
+                  {isFilled && (
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      exit={{ scale: 0 }}
+                      transition={{ duration: 0.15 }}
+                      style={{ width: 10, height: 10, borderRadius: '50%', background: '#ffffff' }}
+                    />
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            );
+          })}
         </div>
 
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        {/* ── Numeric keypad ──────────────────────────────────────── */}
+        <div className="grid grid-cols-3 gap-3 mb-5">
           {keys.map((key, i) => (
-            <button
+            <motion.button
               key={i}
+              whileTap={key ? { scale: 0.93 } : {}}
               onClick={() => key && handleKeyPress(key)}
               disabled={!key}
-              className={`h-14 rounded-2xl flex items-center justify-center text-xl font-medium transition-all ${
-                key ? 'bg-white/5 hover:bg-white/10 active:scale-95 text-white' : 'opacity-0 cursor-default'
-              }`}
+              style={key ? {
+                height: 56,
+                borderRadius: 16,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: key === 'backspace' ? undefined : 22,
+                fontWeight: 600,
+                color: '#0B1F4E',
+                background: '#F0F5FF',
+                border: '1.5px solid #DDEAFF',
+                boxShadow: '0 2px 8px rgba(11,31,78,0.08)',
+                cursor: 'pointer',
+                transition: 'background 0.12s ease',
+              } : {
+                opacity: 0,
+                cursor: 'default',
+                height: 56,
+              }}
+              onMouseEnter={e => { if (key) (e.currentTarget as HTMLButtonElement).style.background = '#E0ECFF'; }}
+              onMouseLeave={e => { if (key) (e.currentTarget as HTMLButtonElement).style.background = '#F0F5FF'; }}
             >
               {key === 'backspace' ? (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
-              ) : (
-                key
-              )}
-            </button>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0B1F4E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/>
+                  <line x1="18" y1="9" x2="12" y2="15"/>
+                  <line x1="12" y1="9" x2="18" y2="15"/>
+                </svg>
+              ) : key}
+            </motion.button>
           ))}
         </div>
 
-        <button 
+        {/* ── Login button ─────────────────────────────────────────── */}
+        <motion.button
+          whileTap={{ scale: 0.97 }}
           onClick={handleLogin}
-          className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-12 rounded-xl font-bold active:scale-[0.98] transition-transform"
+          className="w-full font-bold text-white text-base"
+          style={{
+            height: 52,
+            borderRadius: 999,
+            background: 'linear-gradient(90deg, #0B1F4E 0%, #1D4ED8 60%, #2563EB 100%)',
+            boxShadow: '0 6px 24px rgba(37,99,235,0.38)',
+            border: 'none',
+            cursor: 'pointer',
+            letterSpacing: '0.02em',
+          }}
         >
           Login
-        </button>
+        </motion.button>
 
-        <div className="flex justify-between mt-6 text-sm">
-          <button className="text-muted-foreground hover:text-white transition-colors">Forgot PIN?</button>
-          <button className="text-primary hover:text-primary/80 transition-colors">Create Account</button>
+        {/* ── Bottom actions ───────────────────────────────────────── */}
+        <div className="flex justify-between mt-5 text-sm">
+          <button
+            className="font-medium transition-colors"
+            style={{ color: '#6B7FA3' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#0B1F4E'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#6B7FA3'; }}
+          >
+            Forgot PIN?
+          </button>
+          <button
+            className="font-semibold transition-colors"
+            style={{ color: '#2563EB' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#1D4ED8'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#2563EB'; }}
+          >
+            Create Account
+          </button>
         </div>
       </motion.div>
 
-      <div className="mt-8">
-        <button 
+      {/* ── Demo autofill ────────────────────────────────────────────── */}
+      <div className="mt-7 z-10">
+        <button
           onClick={() => setPin('123456')}
-          className="text-xs text-muted-foreground bg-white/5 px-4 py-2 rounded-full border border-white/10 hover:bg-white/10 transition-colors"
+          className="text-xs px-5 py-2 rounded-full transition-colors"
+          style={{
+            color: 'rgba(147,197,253,0.75)',
+            background: 'rgba(255,255,255,0.07)',
+            border: '1px solid rgba(255,255,255,0.12)',
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.12)'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.07)'; }}
         >
           Demo PIN: 123456 — tap to autofill
         </button>

@@ -1,0 +1,107 @@
+Redesign the GY DATA Login Page to look premium, modern, unique, and visually consistent with the existing GY DATA dashboard.
+
+IMPORTANT:
+Do NOT change any existing functionality, authentication logic, PIN validation, routing, account creation, forgot PIN flow, or dashboard functionality.
+
+ONLY redesign the Login Page UI and styling.
+
+BRAND IDENTITY:
+Use the official GY DATA brand identity:
+- Brand name: GY DATA
+- Tagline: endless joy
+- Primary colors: deep navy blue, royal blue, bright blue, and pure white
+- Do NOT use green as a brand color
+- Do NOT use gray/ash as a major background or card color
+
+LOGIN PAGE DESIGN:
+
+1. BACKGROUND
+Create a premium full-screen login background using a deep navy blue to royal blue gradient.
+Use subtle blue glow effects and very soft abstract circular/wave shapes in the background.
+The design should feel like a premium fintech/mobile banking app.
+Avoid a generic plain dark screen.
+
+2. LOGO AREA
+At the top center, display the GY DATA logo:
+- Blue Wi-Fi-inspired icon
+- Bold "GY DATA" wordmark
+- Tagline directly underneath: "endless joy"
+- Make the logo clean, centered, premium, and well-spaced.
+- The logo should visually match the existing white dashboard and blue wallet card.
+
+3. LOGIN CARD
+Create a modern premium login panel:
+- White background
+- Large rounded corners
+- Soft elegant shadow
+- Clean spacing
+- No gray/ash translucent overlay
+- The card should feel premium and connected to the GY DATA dashboard design.
+
+4. LOGIN CONTENT
+Display:
+"Welcome Back"
+
+Subtitle:
+"Enter your 6-digit PIN to continue"
+
+Keep the existing 6-digit PIN functionality exactly as it currently works.
+
+5. PIN INPUT
+Redesign the six PIN indicators:
+- Empty: clean white/light blue circles with subtle border
+- Active: strong GY DATA blue border with a subtle glow
+- Filled: premium navy/blue filled indicator
+- Smooth animation when entering each digit
+
+6. NUMERIC KEYPAD
+Keep the existing keypad functionality and layout, but redesign the UI:
+- Modern rounded rectangular buttons
+- White or very light blue surfaces
+- Deep navy text
+- Subtle shadows
+- Smooth press animation
+- Premium spacing
+- Make it feel like a modern banking/fintech PIN keypad.
+
+7. LOGIN BUTTON
+Create a premium full-width Login button:
+- Deep navy/royal blue gradient
+- White bold text
+- Rounded pill-style corners
+- Smooth press animation
+- Strong visual hierarchy
+
+8. BOTTOM ACTIONS
+Keep the existing:
+"Forgot PIN?"
+"Create Account"
+
+Make them clean, balanced, and visually consistent with the new design.
+Do not change their functionality.
+
+9. RESPONSIVE DESIGN
+The login page must:
+- Look excellent on small Android phones
+- Fit properly without unnecessary scrolling
+- Be fully responsive
+- Respect mobile safe areas
+- Keep the keypad and Login button visible and comfortable to use
+
+10. FINAL DESIGN DIRECTION
+The final result should feel like:
+A premium Nigerian/international fintech app login screen.
+
+It should be:
+- Modern
+- Clean
+- Premium
+- Unique
+- Trustworthy
+- Mobile-first
+
+Use the existing GY DATA dashboard as the main visual reference:
+white surfaces, deep navy text, royal blue wallet gradient, rounded cards, clean spacing, and premium fintech styling.
+
+Do not modify any other page or functionality.
+Only redesign the Login Page UI.

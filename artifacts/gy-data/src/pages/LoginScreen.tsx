@@ -241,22 +241,6 @@ export default function LoginScreen() {
         </div>
       </motion.div>
 
-      {/* ── Demo autofill ────────────────────────────────────────────── */}
-      <div className="mt-7 z-10">
-        <button
-          onClick={() => setPin('123456')}
-          className="text-xs px-5 py-2 rounded-full transition-colors"
-          style={{
-            color: 'rgba(147,197,253,0.75)',
-            background: 'rgba(255,255,255,0.07)',
-            border: '1px solid rgba(255,255,255,0.12)',
-          }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.12)'; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.07)'; }}
-        >
-          Demo PIN: 123456 — tap to autofill
-        </button>
-      </div>
     </div>
   );
 }

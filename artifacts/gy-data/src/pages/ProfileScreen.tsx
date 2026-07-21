@@ -143,7 +143,7 @@ export default function ProfileScreen() {
                 icon={Info}
                 label="About GY DATA"
                 value="v1.0.0"
-                onClick={() => toast.info('GY DATA v1.0.0 — Your Digital Life, Simplified')}
+                onClick={() => toast.info('GY DATA v1.0.0 — endless joy')}
               />
             </div>
           </div>

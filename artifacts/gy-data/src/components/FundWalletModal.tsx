@@ -123,9 +123,8 @@ export default function FundWalletModal({ open, onOpenChange }: { open: boolean,
                   <p className="text-xs text-muted-foreground">Transfers reflect automatically within 5 minutes</p>
                 </div>
 
-                {/* Quick amount test area */}
                 <div className="border-t border-border pt-6">
-                  <p className="text-sm font-medium mb-3">Or simulate funding (Demo):</p>
+                  <p className="text-sm font-medium mb-3 text-muted-foreground">Select or enter amount to transfer:</p>
                   <div className="grid grid-cols-4 gap-2 mb-4">
                     {[500, 1000, 2000, 5000].map(val => (
                       <button

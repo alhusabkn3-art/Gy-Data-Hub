@@ -180,7 +180,7 @@ export default function BuyDataScreen() {
               />
               <button
                 className="absolute right-3 top-1/2 -translate-y-1/2 px-3 py-1.5 text-primary hover:bg-primary/10 rounded-lg text-xs font-semibold"
-                onClick={() => toast.info('Contact picker not available in browser')}
+                onClick={() => toast.info('Contact picker coming soon')}
               >
                 Contacts
               </button>

@@ -1,14 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 
 export default function LoginScreen() {
   const { login } = useAppContext();
+  const [, setLocation] = useLocation();
   const [pin, setPin] = useState('');
   const [isError, setIsError] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const handleKeyPress = (key: string) => {
+    if (isLoggingIn) return; // block input while processing
     if (key === 'backspace') {
       setPin(prev => prev.slice(0, -1));
       setIsError(false);
@@ -19,17 +23,25 @@ export default function LoginScreen() {
   };
 
   const handleLogin = () => {
-    if (pin.length !== 6) return;
+    if (isLoggingIn) return;
+    if (pin.length < 6) {
+      setIsError(true);
+      toast.error('Please enter your complete 6-digit PIN.');
+      return;
+    }
+    setIsLoggingIn(true);
     const success = login(pin);
     if (!success) {
       setIsError(true);
-      toast.error('Incorrect PIN. Try again.');
+      toast.error('Incorrect PIN. Please try again.');
       setPin('');
+      setIsLoggingIn(false);
     }
+    // On success, AppContext sets isLoggedIn → CustomerRouter unmounts LoginScreen automatically
   };
 
-  React.useEffect(() => {
-    if (pin.length === 6) {
+  useEffect(() => {
+    if (pin.length === 6 && !isLoggingIn) {
       handleLogin();
     }
   }, [pin]);
@@ -206,23 +218,28 @@ export default function LoginScreen() {
         <motion.button
           whileTap={{ scale: 0.97 }}
           onClick={handleLogin}
+          disabled={isLoggingIn}
           className="w-full font-bold text-white text-base"
           style={{
             height: 52,
             borderRadius: 999,
-            background: 'linear-gradient(90deg, #0B1F4E 0%, #1D4ED8 60%, #2563EB 100%)',
-            boxShadow: '0 6px 24px rgba(37,99,235,0.38)',
+            background: isLoggingIn
+              ? 'linear-gradient(90deg, #6B7FA3 0%, #6B7FA3 100%)'
+              : 'linear-gradient(90deg, #0B1F4E 0%, #1D4ED8 60%, #2563EB 100%)',
+            boxShadow: isLoggingIn ? 'none' : '0 6px 24px rgba(37,99,235,0.38)',
             border: 'none',
-            cursor: 'pointer',
+            cursor: isLoggingIn ? 'not-allowed' : 'pointer',
             letterSpacing: '0.02em',
+            transition: 'all 0.2s ease',
           }}
         >
-          Login
+          {isLoggingIn ? 'Signing in…' : 'Login'}
         </motion.button>
 
         {/* ── Bottom actions ───────────────────────────────────────── */}
         <div className="flex justify-between mt-5 text-sm">
           <button
+            onClick={() => setLocation('/forgot-pin')}
             className="font-medium transition-colors"
             style={{ color: '#6B7FA3' }}
             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#0B1F4E'; }}
@@ -231,6 +248,7 @@ export default function LoginScreen() {
             Forgot PIN?
           </button>
           <button
+            onClick={() => setLocation('/register')}
             className="font-semibold transition-colors"
             style={{ color: '#2563EB' }}
             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#1D4ED8'; }}

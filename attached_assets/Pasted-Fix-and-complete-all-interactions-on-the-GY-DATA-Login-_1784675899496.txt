@@ -1,0 +1,98 @@
+Fix and complete all interactions on the GY DATA Login Page.
+
+IMPORTANT:
+Do not break or change the existing login authentication logic, 6-digit PIN validation, routing, dashboard, or any existing working functionality.
+
+AUDIT THE ENTIRE LOGIN PAGE AND MAKE EVERYTHING THAT SHOULD BE INTERACTIVE ACTUALLY WORK.
+
+1. CREATE ACCOUNT
+The "Create Account" link/button is currently not clickable.
+
+Make it fully clickable:
+- Navigate to the existing account registration/signup flow if it already exists.
+- If the registration screen already exists, connect the button to that screen.
+- If it does not exist yet, create a proper registration screen that matches the existing GY DATA design and routing structure.
+- Do not leave the button as a dead/non-functional element.
+
+2. FORGOT PIN
+The "Forgot PIN?" link is currently not clickable.
+
+Make it fully clickable:
+- Navigate to the existing Forgot PIN / PIN recovery flow if it already exists.
+- If it does not exist, create a proper Forgot PIN recovery flow that matches the GY DATA design.
+- The flow should clearly guide the user through PIN recovery/reset.
+- Do not leave it as a dead/non-functional text link.
+
+3. LOGIN BUTTON
+Ensure the Login button works correctly:
+- Validate the 6-digit PIN.
+- Show a clear validation message if the PIN is incomplete or incorrect.
+- Navigate to the dashboard after successful authentication.
+- Prevent accidental duplicate submissions while processing.
+
+4. PIN KEYPAD
+Ensure every keypad button works:
+- Digits 0–9 enter the PIN.
+- Backspace removes the last digit.
+- PIN indicators update correctly.
+- The keypad is responsive and easy to use on mobile.
+
+5. FULL INTERACTION AUDIT
+Check every element on the Login Page:
+- GY DATA logo
+- Tagline: "endless joy"
+- Create Account
+- Forgot PIN?
+- Login button
+- All PIN indicators
+- All numeric keypad buttons
+- Backspace button
+- Any visible icon that appears interactive
+
+Any element that looks clickable must either:
+A. perform its intended action, or
+B. not be styled like a clickable element.
+
+6. ERROR HANDLING
+Use clear, user-friendly messages for:
+- Incomplete PIN
+- Incorrect PIN
+- Failed login
+- Registration errors
+- PIN recovery errors
+
+Do not expose sensitive technical errors to the user.
+
+7. ROUTING
+Verify that all navigation:
+- Works correctly
+- Does not create broken routes
+- Does not cause blank screens
+- Preserves the user's existing authentication state where appropriate
+- Allows the user to return to Login
+
+8. FINAL QA
+Test the complete Login Page flow:
+- Enter PIN
+- Delete PIN digits
+- Login with valid PIN
+- Login with invalid PIN
+- Tap Forgot PIN
+- Complete/enter the recovery flow
+- Return to Login
+- Tap Create Account
+- Navigate through registration
+- Return to Login
+
+Keep the existing premium GY DATA design:
+- Pure white surfaces where appropriate
+- Deep navy blue
+- Royal/bright blue accents
+- Blue gradient elements
+- Rounded premium cards
+- Tagline: "endless joy"
+
+Do not change the Monnify integration.
+Do not change the dashboard.
+Do not change the existing brand identity.
+Focus on making the entire Login Page fully functional and production-ready.

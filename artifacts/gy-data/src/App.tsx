@@ -8,6 +8,8 @@ import AdminApp from './admin/AdminApp';
 
 // Screen Imports
 import LoginScreen from './pages/LoginScreen';
+import RegisterScreen from './pages/RegisterScreen';
+import ForgotPinScreen from './pages/ForgotPinScreen';
 import HomeScreen from './pages/HomeScreen';
 import WalletScreen from './pages/WalletScreen';
 import TransactionHistoryScreen from './pages/TransactionHistoryScreen';
@@ -52,11 +54,12 @@ function CustomerRouter() {
   const { isLoggedIn } = useAppContext();
   return (
     <Switch>
-      {!isLoggedIn ? (
-        <Route path="*" component={LoginScreen} />
-      ) : (
-        <Route path="*" component={MainApp} />
-      )}
+      {/* Auth helper screens — always accessible regardless of login state */}
+      <Route path="/register" component={RegisterScreen} />
+      <Route path="/forgot-pin" component={ForgotPinScreen} />
+      <Route path="*">
+        {isLoggedIn ? <MainApp /> : <LoginScreen />}
+      </Route>
     </Switch>
   );
 }

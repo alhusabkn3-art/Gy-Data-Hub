@@ -1,8 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
+
+// ── Long-press config ─────────────────────────────────────────────────────────
+const LONG_PRESS_MS   = 2000; // ms to hold before admin nav
+const MOVE_THRESHOLD  = 12;   // px — cancel if finger drifts more than this
+const PROGRESS_FPS    = 60;   // animation frames per second
 
 export default function LoginScreen() {
   const { login } = useAppContext();
@@ -11,8 +16,74 @@ export default function LoginScreen() {
   const [isError, setIsError] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
+  // ── Long-press state ────────────────────────────────────────────────────────
+  // pressOrigin: viewport coords where the press started (for ripple placement)
+  const [pressOrigin, setPressOrigin] = useState<{ x: number; y: number } | null>(null);
+  const [pressProgress, setPressProgress] = useState(0); // 0 → 1 over LONG_PRESS_MS
+
+  const lpTimer    = useRef<ReturnType<typeof setTimeout>  | null>(null);
+  const lpProgress = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lpOrigin   = useRef<{ x: number; y: number } | null>(null);
+  const lpStart    = useRef<number>(0);
+
+  // Cancels everything and resets visual state
+  const cancelLongPress = useCallback(() => {
+    if (lpTimer.current)    { clearTimeout(lpTimer.current);    lpTimer.current    = null; }
+    if (lpProgress.current) { clearInterval(lpProgress.current); lpProgress.current = null; }
+    lpOrigin.current = null;
+    setPressOrigin(null);
+    setPressProgress(0);
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => () => cancelLongPress(), [cancelLongPress]);
+
+  // ── Long-press handlers (background only) ───────────────────────────────────
+  const handleBgPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    // Only fire when the event target IS the background div itself.
+    // Clicks on the card/logo/buttons bubble up but carry a different target.
+    // Pointer-events-none decoratives (orbs, SVGs) map their events onto this
+    // element, so their target === currentTarget — exactly what we want.
+    if (e.target !== e.currentTarget) return;
+
+    const origin = { x: e.clientX, y: e.clientY };
+    lpOrigin.current = origin;
+    lpStart.current  = Date.now();
+    setPressOrigin(origin);
+    setPressProgress(0);
+
+    // Smooth progress animation
+    lpProgress.current = setInterval(() => {
+      const elapsed = Date.now() - lpStart.current;
+      const p = Math.min(elapsed / LONG_PRESS_MS, 1);
+      setPressProgress(p);
+    }, 1000 / PROGRESS_FPS);
+
+    // Navigation trigger after full duration
+    lpTimer.current = setTimeout(() => {
+      cancelLongPress();
+      setLocation('/admin');
+    }, LONG_PRESS_MS);
+  }, [cancelLongPress, setLocation]);
+
+  const handleBgPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!lpOrigin.current) return;
+    const dx = e.clientX - lpOrigin.current.x;
+    const dy = e.clientY - lpOrigin.current.y;
+    if (Math.sqrt(dx * dx + dy * dy) > MOVE_THRESHOLD) cancelLongPress();
+  }, [cancelLongPress]);
+
+  const handleBgPointerUp     = useCallback(() => cancelLongPress(), [cancelLongPress]);
+  const handleBgPointerCancel = useCallback(() => cancelLongPress(), [cancelLongPress]);
+
+  // Block Android long-press context menu while a press is active
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    if (lpTimer.current !== null) e.preventDefault();
+  }, []);
+
+  // ── Customer PIN login ───────────────────────────────────────────────────────
   const handleKeyPress = (key: string) => {
-    if (isLoggingIn) return; // block input while processing
+    if (isLoggingIn) return;
     if (key === 'backspace') {
       setPin(prev => prev.slice(0, -1));
       setIsError(false);
@@ -49,9 +120,58 @@ export default function LoginScreen() {
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'backspace'];
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-5 relative overflow-hidden"
+    <div
+      className="min-h-screen flex flex-col items-center justify-center p-5 relative overflow-hidden"
       style={{ background: 'linear-gradient(160deg, #0B1F4E 0%, #102B6A 35%, #1A3D8F 65%, #1E4DB7 100%)' }}
+      onPointerDown={handleBgPointerDown}
+      onPointerMove={handleBgPointerMove}
+      onPointerUp={handleBgPointerUp}
+      onPointerCancel={handleBgPointerCancel}
+      onContextMenu={handleContextMenu}
     >
+      {/* ── Hidden admin long-press ripple feedback ─────────────────── */}
+      {/* Visible only during an active background press — expands + fades in   */}
+      {/* over exactly LONG_PRESS_MS. Completely invisible at pressProgress = 0 */}
+      <AnimatePresence>
+        {pressOrigin && (
+          <>
+            {/* Outer expanding ring */}
+            <div
+              className="pointer-events-none"
+              style={{
+                position: 'fixed',
+                left: pressOrigin.x,
+                top:  pressOrigin.y,
+                transform: 'translate(-50%, -50%)',
+                width:  `${80 + pressProgress * 120}px`,
+                height: `${80 + pressProgress * 120}px`,
+                borderRadius: '50%',
+                border: `1.5px solid rgba(255,255,255,${0.06 + pressProgress * 0.18})`,
+                background: `radial-gradient(circle, rgba(255,255,255,${pressProgress * 0.07}) 0%, transparent 65%)`,
+                transition: 'none',
+                zIndex: 6,
+              }}
+            />
+            {/* Inner tight ring — fills in as progress grows */}
+            <div
+              className="pointer-events-none"
+              style={{
+                position: 'fixed',
+                left: pressOrigin.x,
+                top:  pressOrigin.y,
+                transform: 'translate(-50%, -50%)',
+                width:  `${24 + pressProgress * 40}px`,
+                height: `${24 + pressProgress * 40}px`,
+                borderRadius: '50%',
+                border: `2px solid rgba(255,255,255,${pressProgress * 0.32})`,
+                transition: 'none',
+                zIndex: 6,
+              }}
+            />
+          </>
+        )}
+      </AnimatePresence>
+
       {/* ── Background decorative layer ─────────────────────────────── */}
       {/* Large glow orbs */}
       <div className="absolute top-[-120px] left-[-100px] w-[380px] h-[380px] rounded-full pointer-events-none"

@@ -5,6 +5,7 @@ import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { useAppContext } from '../context/AppContext';
 import SuccessModal from '@/components/SuccessModal';
+import type { ReceiptData } from '@/components/TransactionReceipt';
 import { toast } from 'sonner';
 import { fetchDataPlans, buyData, type DataPlan } from '@/lib/api';
 import PhoneInputWithContacts, { isValidNigerianNumber } from '@/components/PhoneInputWithContacts';
@@ -33,7 +34,7 @@ export default function BuyDataScreen() {
   // Purchase state
   const [isLoading, setIsLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [successDetails, setSuccessDetails] = useState<Array<{ label: string; value: string }>>([]);
+  const [successData, setSuccessData] = useState<ReceiptData | null>(null);
 
   const selectedNetwork = networks.find(n => n.id === network);
 
@@ -99,14 +100,19 @@ export default function BuyDataScreen() {
         paymentMethod: 'Wallet',
       });
 
-      setSuccessDetails([
-        { label: 'Network',    value: selectedNetwork.name },
-        { label: 'Plan',       value: result.planName ?? plan.DataPlanName },
-        { label: 'Number',     value: phone },
-        { label: 'Amount',     value: `₦${planPrice.toLocaleString()}` },
-        { label: 'Reference',  value: result.requestId },
-        { label: 'Status',     value: result.status ?? 'successful' },
-      ]);
+      const now = new Date();
+      setSuccessData({
+        type: 'data',
+        provider: selectedNetwork.name,
+        service: 'Data',
+        description: `${selectedNetwork.name} ${result.planName ?? plan.DataPlanName}`,
+        amount: planPrice,
+        date: now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+        time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        status: 'success',
+        txnId: result.requestId,
+        paymentMethod: 'Wallet',
+      });
       setShowSuccess(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Purchase failed';
@@ -284,13 +290,14 @@ export default function BuyDataScreen() {
         </motion.div>
       )}
 
-      <SuccessModal
-        open={showSuccess}
-        onOpenChange={setShowSuccess}
-        title="Purchase Successful!"
-        details={successDetails}
-        onDone={() => setLocation('/')}
-      />
+      {successData && (
+        <SuccessModal
+          open={showSuccess}
+          onOpenChange={setShowSuccess}
+          receipt={successData}
+          onDone={() => setLocation('/')}
+        />
+      )}
     </motion.div>
   );
 }

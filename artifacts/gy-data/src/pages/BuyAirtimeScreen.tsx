@@ -5,6 +5,7 @@ import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { useAppContext } from '../context/AppContext';
 import SuccessModal from '@/components/SuccessModal';
+import type { ReceiptData } from '@/components/TransactionReceipt';
 import { toast } from 'sonner';
 import { buyAirtime } from '@/lib/api';
 import PhoneInputWithContacts, { isValidNigerianNumber } from '@/components/PhoneInputWithContacts';
@@ -28,7 +29,7 @@ export default function BuyAirtimeScreen() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [successDetails, setSuccessDetails] = useState<Array<{ label: string; value: string }>>([]);
+  const [successData, setSuccessData] = useState<ReceiptData | null>(null);
 
   const selectedNetwork = networks.find(n => n.id === network);
   const canProceed = network && isValidNigerianNumber(phone) && Number(amount) > 0;
@@ -63,13 +64,19 @@ export default function BuyAirtimeScreen() {
         paymentMethod: 'Wallet',
       });
 
-      setSuccessDetails([
-        { label: 'Network',   value: selectedNetwork.name },
-        { label: 'Number',    value: phone },
-        { label: 'Amount',    value: `₦${numAmount.toLocaleString()}` },
-        { label: 'Reference', value: result.requestId },
-        { label: 'Status',    value: result.status ?? 'successful' },
-      ]);
+      const now = new Date();
+      setSuccessData({
+        type: 'airtime',
+        provider: selectedNetwork.name,
+        service: 'Airtime',
+        description: `${selectedNetwork.name} Airtime`,
+        amount: numAmount,
+        date: now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+        time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        status: 'success',
+        txnId: result.requestId,
+        paymentMethod: 'Wallet',
+      });
       setShowSuccess(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Purchase failed';
@@ -188,13 +195,14 @@ export default function BuyAirtimeScreen() {
         </motion.div>
       )}
 
-      <SuccessModal
-        open={showSuccess}
-        onOpenChange={setShowSuccess}
-        title="Airtime Sent!"
-        details={successDetails}
-        onDone={() => setLocation('/')}
-      />
+      {successData && (
+        <SuccessModal
+          open={showSuccess}
+          onOpenChange={setShowSuccess}
+          receipt={successData}
+          onDone={() => setLocation('/')}
+        />
+      )}
     </motion.div>
   );
 }

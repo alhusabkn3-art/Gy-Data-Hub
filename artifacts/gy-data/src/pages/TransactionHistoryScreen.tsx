@@ -1,9 +1,25 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Filter, Wifi, Phone, Zap, Tv, ArrowDownLeft, ReceiptText, Download, X } from 'lucide-react';
+import { Search, Wifi, Phone, Zap, Tv, ArrowDownLeft, ReceiptText, X } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { Transaction } from '../data/mockData';
-import { toast } from 'sonner';
+import TransactionReceipt from '../components/TransactionReceipt';
+import type { ReceiptData } from '../components/TransactionReceipt';
+
+function txnToReceipt(txn: Transaction): ReceiptData {
+  return {
+    type: txn.type,
+    provider: txn.provider,
+    service: txn.service,
+    description: txn.description,
+    amount: txn.amount,
+    date: txn.date,
+    time: txn.time,
+    status: txn.status,
+    txnId: txn.id,
+    paymentMethod: txn.paymentMethod,
+  };
+}
 
 export default function TransactionHistoryScreen() {
   const { transactions } = useAppContext();
@@ -12,22 +28,20 @@ export default function TransactionHistoryScreen() {
   const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
 
   const filteredTransactions = transactions.filter(txn => {
-    // Filter by tab
     if (filter !== 'all' && txn.status !== filter) return false;
-    
-    // Filter by search
     if (search) {
       const q = search.toLowerCase();
-      return txn.service.toLowerCase().includes(q) || 
-             txn.provider.toLowerCase().includes(q) || 
-             txn.amount.toString().includes(q);
+      return (
+        txn.service.toLowerCase().includes(q) ||
+        txn.provider.toLowerCase().includes(q) ||
+        txn.amount.toString().includes(q)
+      );
     }
-    
     return true;
   });
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -20 }}
@@ -35,29 +49,30 @@ export default function TransactionHistoryScreen() {
     >
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold">Transactions</h1>
-        <button className="p-2 bg-card rounded-full border border-border">
-          <Filter className="w-5 h-5 text-muted-foreground" />
-        </button>
       </div>
 
+      {/* Search */}
       <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-        <input 
-          type="text" 
-          placeholder="Search transactions..." 
+        <input
+          type="text"
+          placeholder="Search transactions..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={e => setSearch(e.target.value)}
           className="w-full bg-card border border-border rounded-xl h-12 pl-10 pr-4 text-sm focus:border-primary outline-none transition-colors"
         />
       </div>
 
+      {/* Filter tabs */}
       <div className="flex overflow-x-auto hide-scrollbar gap-2 mb-6 pb-1">
         {(['all', 'success', 'pending', 'failed'] as const).map(f => (
           <button
             key={f}
             onClick={() => setFilter(f)}
             className={`px-5 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-              filter === f ? 'bg-primary text-white' : 'bg-card border border-border text-muted-foreground hover:bg-black/5'
+              filter === f
+                ? 'bg-primary text-white'
+                : 'bg-card border border-border text-muted-foreground hover:bg-black/5'
             }`}
           >
             {f.charAt(0).toUpperCase() + f.slice(1)}
@@ -65,11 +80,12 @@ export default function TransactionHistoryScreen() {
         ))}
       </div>
 
+      {/* Transaction list */}
       <div className="flex-1 space-y-3 pb-8">
         {filteredTransactions.length > 0 ? (
           filteredTransactions.map(txn => (
-            <button 
-              key={txn.id} 
+            <button
+              key={txn.id}
               onClick={() => setSelectedTxn(txn)}
               className="w-full flex items-center justify-between p-4 rounded-xl bg-card border border-border hover:bg-black/5 transition-colors text-left"
             >
@@ -87,7 +103,7 @@ export default function TransactionHistoryScreen() {
                   {txn.type === 'wallet_fund' ? '+' : '-'}₦{txn.amount.toLocaleString()}
                 </p>
                 <p className={`text-[10px] uppercase font-bold tracking-wider mt-1 ${
-                  txn.status === 'success' ? 'text-green-500' : 
+                  txn.status === 'success' ? 'text-green-500' :
                   txn.status === 'pending' ? 'text-yellow-500' : 'text-red-500'
                 }`}>
                   {txn.status}
@@ -103,104 +119,82 @@ export default function TransactionHistoryScreen() {
         )}
       </div>
 
-      {/* Transaction Detail Modal */}
+      {/* ── Premium receipt bottom sheet ─────────────────────────────────── */}
       <AnimatePresence>
         {selectedTxn && (
           <>
-            <motion.div 
+            {/* Backdrop */}
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 bg-black/60 z-50 backdrop-blur-sm"
               onClick={() => setSelectedTxn(null)}
             />
+
+            {/* Sheet */}
             <motion.div
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-white border-t border-border shadow-[0_-4px_32px_rgba(14,29,70,0.10)] z-50 rounded-t-3xl overflow-hidden max-w-md mx-auto"
+              transition={{ type: 'spring', damping: 28, stiffness: 260 }}
+              className="fixed bottom-0 left-0 right-0 z-50 max-w-md mx-auto"
+              style={{ borderRadius: '28px 28px 0 0', overflow: 'hidden' }}
             >
-              <div className="p-6">
-                <div className="flex justify-between items-start mb-6">
-                  <div className="w-8 h-8 opacity-0" /> {/* Spacer */}
-                  <div className={`w-16 h-16 rounded-full flex items-center justify-center ${getTxnColor(selectedTxn.type)}`}>
-                    {getTxnIcon(selectedTxn.type, "w-8 h-8")}
-                  </div>
-                  <button 
+              {/* Sheet background */}
+              <div
+                style={{
+                  background: '#F3F6FB',
+                  padding: '12px 16px 32px',
+                }}
+              >
+                {/* Drag handle + close */}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-8 h-1 rounded-full bg-transparent" />
+                  <div className="w-10 h-1 rounded-full" style={{ background: '#CBD5E1' }} />
+                  <button
                     onClick={() => setSelectedTxn(null)}
-                    className="w-8 h-8 rounded-full bg-black/5 flex items-center justify-center text-muted-foreground hover:text-foreground"
+                    className="w-8 h-8 rounded-full flex items-center justify-center transition-colors"
+                    style={{ background: 'rgba(11,31,78,0.07)' }}
                   >
-                    <X className="w-5 h-5" />
+                    <X className="w-4 h-4" style={{ color: '#0B1F4E' }} />
                   </button>
                 </div>
 
-                <div className="text-center mb-8">
-                  <h2 className="text-2xl font-bold mb-1">
-                    {selectedTxn.type === 'wallet_fund' ? '+' : '-'}₦{selectedTxn.amount.toLocaleString()}
-                  </h2>
-                  <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
-                    selectedTxn.status === 'success' ? 'bg-green-500/20 text-green-500' : 
-                    selectedTxn.status === 'pending' ? 'bg-yellow-500/20 text-yellow-500' : 'bg-red-500/20 text-red-500'
-                  }`}>
-                    {selectedTxn.status}
-                  </div>
-                </div>
-
-                <div className="bg-card border border-border rounded-2xl p-4 space-y-4 mb-6">
-                  <DetailRow label="Transaction ID" value={selectedTxn.id} />
-                  <DetailRow label="Date & Time" value={`${selectedTxn.date}, ${selectedTxn.time}`} />
-                  <DetailRow label="Service" value={`${selectedTxn.service} (${selectedTxn.provider})`} />
-                  <DetailRow label="Description" value={selectedTxn.description} />
-                  <DetailRow label="Payment Method" value={selectedTxn.paymentMethod || 'Wallet'} />
-                </div>
-
-                <button 
-                  onClick={() => {
-                    toast.success('Receipt downloaded successfully');
-                  }}
-                  className="w-full flex items-center justify-center gap-2 bg-primary/20 text-primary h-14 rounded-xl font-bold hover:bg-primary/30 transition-colors"
-                >
-                  <Download className="w-5 h-5" />
-                  Download Receipt
-                </button>
+                {/* The premium receipt card */}
+                <TransactionReceipt
+                  receipt={txnToReceipt(selectedTxn)}
+                  onDone={() => setSelectedTxn(null)}
+                  doneLabel="Close"
+                  showActions
+                />
               </div>
             </motion.div>
           </>
         )}
       </AnimatePresence>
-
     </motion.div>
-  );
-}
-
-function DetailRow({ label, value }: { label: string, value: string }) {
-  return (
-    <div className="flex justify-between items-center text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-semibold text-right">{value}</span>
-    </div>
   );
 }
 
 function getTxnColor(type: string) {
   switch (type) {
-    case 'data': return 'bg-blue-500/20 text-blue-500';
-    case 'airtime': return 'bg-orange-500/20 text-orange-500';
+    case 'data':        return 'bg-blue-500/20 text-blue-500';
+    case 'airtime':     return 'bg-orange-500/20 text-orange-500';
     case 'electricity': return 'bg-yellow-500/20 text-yellow-500';
-    case 'cable': return 'bg-purple-500/20 text-purple-500';
+    case 'cable':       return 'bg-purple-500/20 text-purple-500';
     case 'wallet_fund': return 'bg-green-500/20 text-green-500';
-    default: return 'bg-gray-500/20 text-gray-400';
+    default:            return 'bg-gray-500/20 text-gray-400';
   }
 }
 
-function getTxnIcon(type: string, className = "w-6 h-6") {
+function getTxnIcon(type: string, className = 'w-6 h-6') {
   switch (type) {
-    case 'data': return <Wifi className={className} />;
-    case 'airtime': return <Phone className={className} />;
+    case 'data':        return <Wifi className={className} />;
+    case 'airtime':     return <Phone className={className} />;
     case 'electricity': return <Zap className={className} />;
-    case 'cable': return <Tv className={className} />;
+    case 'cable':       return <Tv className={className} />;
     case 'wallet_fund': return <ArrowDownLeft className={className} />;
-    default: return <ReceiptText className={className} />;
+    default:            return <ReceiptText className={className} />;
   }
 }

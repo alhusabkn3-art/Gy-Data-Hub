@@ -5,11 +5,14 @@
  * All requests are GET with query-string params — Clubkonnect uses no POST endpoints.
  * Credentials are read from environment variables at call time,
  * never bundled into the frontend.
+ *
+ * Confirmed response keys inside MOBILE_NETWORK (from live API inspection):
+ *   MTN → "MTN"  |  Glo → "Glo"  |  9mobile → "m_9mobile"  |  Airtel → "Airtel"
  */
 
 const BASE_URL = 'https://nellobytesystems.com';
 
-/** Clubkonnect network codes */
+/** Clubkonnect network codes sent as MobileNetwork param */
 const NETWORK_CODES: Record<string, string> = {
   mtn: '01',
   glo: '02',
@@ -17,12 +20,15 @@ const NETWORK_CODES: Record<string, string> = {
   airtel: '04',
 };
 
-/** Map from network slug → response key Clubkonnect uses in MOBILE_NETWORK */
-const NETWORK_RESPONSE_KEYS: Record<string, string[]> = {
-  mtn: ['MTN'],
-  glo: ['GLO', 'Glo'],
-  '9mobile': ['9MOBILE', 'ETISALAT', 'Etisalat', '9Mobile'],
-  airtel: ['AIRTEL', 'Airtel'],
+/**
+ * Exact key each network uses inside the MOBILE_NETWORK object in Clubkonnect's response.
+ * Confirmed by live API inspection — do NOT change without re-verifying against live data.
+ */
+const NETWORK_RESPONSE_KEY: Record<string, string> = {
+  mtn: 'MTN',
+  glo: 'Glo',
+  '9mobile': 'm_9mobile',
+  airtel: 'Airtel',
 };
 
 export function getNetworkCode(network: string): string {
@@ -54,21 +60,21 @@ function buildUrl(endpoint: string, params: Record<string, string>): string {
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface CKBalance {
-  balance: string;   // e.g. "95.71"  — real field name from Clubkonnect
+  balance: string;    // real field name — e.g. "95.71"
   date?: string;
   id?: string;
   phoneno?: string;
-  APIBalance?: string;  // kept as fallback if field name varies
+  APIBalance?: string; // kept as fallback
 }
 
 export interface CKDataPlan {
-  DataPlan: string;       // PRODUCT_CODE — the code to pass when purchasing
-  DataPlanName: string;   // PRODUCT_NAME — human label e.g. "1GB - Monthly (SME)"
-  DataPlanType: string;   // e.g. "SME" | "Direct" — extracted from name
-  Price: string;          // PRODUCT_AMOUNT — naira e.g. "307"
+  DataPlan: string;      // PRODUCT_CODE — the code to send when purchasing
+  DataPlanName: string;  // human label e.g. "1 GB - Monthly (SME)"
+  DataPlanType: string;  // e.g. "SME" | "Direct Data" | "Awoof Data"
+  Price: string;         // whole-number naira string e.g. "410"
 }
 
-/** Raw product shape returned inside MOBILE_NETWORK[key][0].PRODUCT */
+/** Raw product shape inside MOBILE_NETWORK[key][0].PRODUCT */
 interface CKRawProduct {
   PRODUCT_SNO?: string;
   PRODUCT_CODE?: string;
@@ -78,7 +84,7 @@ interface CKRawProduct {
 }
 
 export interface CKPurchaseResult {
-  status: string;   // "successful" | "pending" | "unsuccessful" | "ORDER_RECEIVED" | ...
+  status: string;   // "successful" | "pending" | "unsuccessful" | "ORDER_RECEIVED" | …
   ident?: string;
   OrderID?: string;
   Amount?: string;
@@ -103,9 +109,10 @@ export async function getBalance(): Promise<CKBalance> {
  * Fetch available data plans for a network.
  *
  * Clubkonnect response shape:
- *   { MOBILE_NETWORK: { MTN: [{ ID: "01", PRODUCT: [{ PRODUCT_CODE, PRODUCT_NAME, PRODUCT_AMOUNT, ... }] }] } }
+ *   { MOBILE_NETWORK: { <NetworkKey>: [{ ID, PRODUCT: [{ PRODUCT_CODE, PRODUCT_NAME, PRODUCT_AMOUNT }] }] } }
  *
- * We normalise to CKDataPlan[] so the frontend doesn't need to know the raw shape.
+ * Prices from Clubkonnect may have floating-point artifacts (e.g. "97.0000028610229").
+ * We round up to the nearest whole naira (Math.ceil) to get clean display values.
  */
 export async function getDataPlans(network: string): Promise<CKDataPlan[]> {
   const networkCode = getNetworkCode(network);
@@ -115,50 +122,39 @@ export async function getDataPlans(network: string): Promise<CKDataPlan[]> {
 
   const json = await res.json() as Record<string, unknown>;
 
-  // Dig into MOBILE_NETWORK, try all possible key names for the requested network
   const mobileNetwork = json['MOBILE_NETWORK'] as Record<string, unknown> | undefined;
   if (!mobileNetwork) return [];
 
-  const netKey = network.toLowerCase();
-  const candidateKeys = NETWORK_RESPONSE_KEYS[netKey] ?? [network.toUpperCase()];
+  // Use only the exact confirmed response key for this network — no fallback
+  const responseKey = NETWORK_RESPONSE_KEY[network.toLowerCase()];
+  if (!responseKey) return [];
 
-  // Log all keys Clubkonnect uses so we can identify unknown networks
-  const allResponseKeys = Object.keys(mobileNetwork);
-  if (allResponseKeys.length > 0 && !candidateKeys.some(k => allResponseKeys.includes(k))) {
-    console.log(`[data-plans] Unknown key for network "${network}". Response keys: ${allResponseKeys.join(', ')}`);
-  }
+  const networkEntry = mobileNetwork[responseKey];
+  if (!Array.isArray(networkEntry) || networkEntry.length === 0) return [];
 
-  let rawProducts: CKRawProduct[] = [];
-  for (const key of candidateKeys) {
-    const networkEntry = mobileNetwork[key];
-    if (Array.isArray(networkEntry) && networkEntry.length > 0) {
-      const entry = networkEntry[0] as { PRODUCT?: CKRawProduct[]; ID?: string };
-      if (Array.isArray(entry.PRODUCT) && entry.PRODUCT.length > 0) {
-        rawProducts = entry.PRODUCT;
-        break;
-      }
-    }
-  }
-
+  const entry = networkEntry[0] as { PRODUCT?: CKRawProduct[] };
+  const rawProducts: CKRawProduct[] = Array.isArray(entry.PRODUCT) ? entry.PRODUCT : [];
   if (rawProducts.length === 0) return [];
 
-  return rawProducts.map((p) => {
-    const name = p.PRODUCT_NAME ?? '';
-    // Extract type hint from name e.g. "(SME)" → "SME"
-    const typeMatch = name.match(/\(([^)]+)\)/);
-    const planType = typeMatch ? typeMatch[1] : 'Standard';
+  return rawProducts
+    .map((p) => {
+      const name = p.PRODUCT_NAME ?? '';
+      // Extract type label from parentheses e.g. "(SME)" → "SME", "(Direct Data)" → "Direct Data"
+      const typeMatch = name.match(/\(([^)]+)\)/);
+      const planType = typeMatch ? typeMatch[1] : 'Standard';
 
-    // Round floating-point prices from Clubkonnect to 2 decimal places
-    const rawPrice = parseFloat(p.PRODUCT_AMOUNT ?? '0');
-    const price = isNaN(rawPrice) ? '0.00' : Math.ceil(rawPrice).toString();
+      // Clubkonnect prices often carry floating-point noise. Round up to nearest naira.
+      const rawPrice = parseFloat(p.PRODUCT_AMOUNT ?? '0');
+      const price = isNaN(rawPrice) ? '0' : Math.ceil(rawPrice).toString();
 
-    return {
-      DataPlan: p.PRODUCT_CODE ?? p.PRODUCT_ID ?? '',
-      DataPlanName: name,
-      DataPlanType: planType,
-      Price: price,
-    };
-  }).filter(p => p.DataPlan !== '');
+      return {
+        DataPlan: p.PRODUCT_CODE ?? p.PRODUCT_ID ?? '',
+        DataPlanName: name,
+        DataPlanType: planType,
+        Price: price,
+      };
+    })
+    .filter((p) => p.DataPlan !== '');
 }
 
 /** Purchase airtime — GET request */

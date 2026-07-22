@@ -100,8 +100,11 @@ CREATE TABLE IF NOT EXISTS notifications (
   title      TEXT       NOT NULL,
   body       TEXT       NOT NULL DEFAULT '',
   read       BOOLEAN    NOT NULL DEFAULT FALSE,
+  ref_id     TEXT,                          -- linked entity id (e.g. transaction uuid)
   created_at TIMESTAMP  NOT NULL DEFAULT NOW()
 );
+-- Idempotent migration: adds ref_id to existing tables
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS ref_id text;
 
 -- ── session (connect-pg-simple) ───────────────────────────────────────────────
 -- createTableIfMissing is unreliable in esbuild-bundled output (fs path breaks).

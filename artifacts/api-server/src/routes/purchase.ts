@@ -26,6 +26,7 @@ import { walletsTable, transactionsTable } from '@workspace/db/schema';
 import * as ck from '../lib/clubkonnect.js';
 import { requireAuth } from './user.js';
 import { logger } from '../lib/logger.js';
+import { createNotification } from '../lib/notifications.js';
 
 // ── Idempotency helper ────────────────────────────────────────────────────────
 //
@@ -209,6 +210,13 @@ router.post('/airtime', async (req: Request, res: Response): Promise<void> => {
 
     logger.info({ userId, requestId, amount: numericAmount }, 'Airtime purchase succeeded');
 
+    await createNotification(userId, {
+      type:  'transaction',
+      title: 'Airtime Sent',
+      body:  `₦${numericAmount.toLocaleString()} of ${network.toUpperCase()} airtime was delivered to ${phone}.`,
+      refId: txnId,
+    });
+
     res.json({
       success:   true,
       requestId,
@@ -242,6 +250,13 @@ router.post('/airtime', async (req: Request, res: Response): Promise<void> => {
     });
 
     logger.warn({ userId, requestId }, 'Airtime purchase failed — wallet reversed');
+
+    await createNotification(userId, {
+      type:  'transaction',
+      title: 'Airtime Purchase Failed',
+      body:  `₦${numericAmount.toLocaleString()} of ${network.toUpperCase()} airtime could not be delivered. Your wallet has been refunded.`,
+      refId: txnId,
+    });
 
     res.status(422).json({
       success:   false,
@@ -358,6 +373,13 @@ router.post('/data', async (req: Request, res: Response): Promise<void> => {
 
     logger.info({ userId, requestId, amount: numericAmount, planCode }, 'Data purchase succeeded');
 
+    await createNotification(userId, {
+      type:  'transaction',
+      title: 'Data Purchase Successful',
+      body:  `${resolvedPlanName} was delivered to ${phone}.`,
+      refId: txnId,
+    });
+
     res.json({
       success:   true,
       requestId,
@@ -392,6 +414,13 @@ router.post('/data', async (req: Request, res: Response): Promise<void> => {
     });
 
     logger.warn({ userId, requestId }, 'Data purchase failed — wallet reversed');
+
+    await createNotification(userId, {
+      type:  'transaction',
+      title: 'Data Purchase Failed',
+      body:  `${resolvedPlanName ?? planCode} could not be delivered to ${phone}. Your wallet has been refunded.`,
+      refId: txnId,
+    });
 
     res.status(422).json({
       success:   false,

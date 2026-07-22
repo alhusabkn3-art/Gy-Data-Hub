@@ -41,17 +41,18 @@ function transformTransaction(t: Record<string, unknown>): Transaction {
 }
 
 function transformNotification(n: Record<string, unknown>): Notification {
-  const d       = new Date(n['createdAt'] as string);
+  const rawCreatedAt = n['createdAt'] as string;
+  const d       = new Date(rawCreatedAt);
   const diffMs  = Date.now() - d.getTime();
   const diffMin = Math.floor(diffMs / 60_000);
   const diffH   = Math.floor(diffMin / 60);
   const diffD   = Math.floor(diffH / 24);
 
   let timestamp: string;
-  if (diffMin < 1)      timestamp = 'Just now';
+  if (diffMin < 1)       timestamp = 'Just now';
   else if (diffMin < 60) timestamp = `${diffMin}m ago`;
-  else if (diffH < 24)  timestamp = `${diffH}h ago`;
-  else if (diffD < 7)   timestamp = `${diffD}d ago`;
+  else if (diffH < 24)   timestamp = `${diffH}h ago`;
+  else if (diffD < 7)    timestamp = `${diffD}d ago`;
   else timestamp = d.toLocaleDateString('en-NG', { day: 'numeric', month: 'short' });
 
   return {
@@ -60,7 +61,9 @@ function transformNotification(n: Record<string, unknown>): Notification {
     title:     n['title'] as string,
     body:      n['body'] as string,
     timestamp,
+    createdAt: rawCreatedAt,
     read:      n['read'] as boolean,
+    refId:     (n['refId'] as string | null) ?? undefined,
   };
 }
 
@@ -119,6 +122,12 @@ interface AppContextType {
   purchaseData: (params: { network: string; phone: string; planCode: string; planName: string; planPrice: string; idempotencyKey?: string }) => Promise<{ success: boolean; pending?: boolean; requestId?: string; planName?: string; balance?: number; error?: string }>;
   setActiveTab: (tab: string) => void;
   fundWallet: (amount: number) => Promise<boolean>;
+  /** Mark a single notification as read. */
+  markNotificationRead: (id: string) => Promise<void>;
+  /** Delete a single notification. */
+  deleteNotification: (id: string) => Promise<void>;
+  /** Delete all notifications for the current user. */
+  clearAllNotifications: () => Promise<void>;
 }
 
 // ── Provider ──────────────────────────────────────────────────────────────────
@@ -328,7 +337,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         requestId?: string; balance?: string; txnId?: string; error?: string;
       };
 
-      // pending → still processing; success/idempotent → sync state
+      // pending → still processing; success/idempotent → sync state + notifications
       if (res.ok && data.success) {
         if (data.balance != null) setBalance(parseFloat(data.balance));
         const txns = await api('/user/transactions');
@@ -336,6 +345,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           const rows = await txns.json() as Record<string, unknown>[];
           setTransactions(rows.map(transformTransaction));
         }
+        // Refresh notifications so the server-created purchase notification
+        // appears in the Notification Center immediately.
+        void refreshNotifications();
         return { success: true, requestId: data.requestId, balance: data.balance ? parseFloat(data.balance) : undefined };
       }
       if (res.ok && data.pending) {
@@ -369,6 +381,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           const rows = await txns.json() as Record<string, unknown>[];
           setTransactions(rows.map(transformTransaction));
         }
+        void refreshNotifications();
         return { success: true, requestId: data.requestId, planName: data.planName, balance: data.balance ? parseFloat(data.balance) : undefined };
       }
       if (res.ok && data.pending) {
@@ -389,15 +402,49 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const data = await res.json() as { balance: string; transaction: Record<string, unknown> };
       setBalance(parseFloat(data.balance));
       setTransactions(prev => [transformTransaction(data.transaction), ...prev]);
+      void refreshNotifications();
       return true;
     } catch { return false; }
   };
 
   // ── Notifications ─────────────────────────────────────────────────────────
+
+  /** Sync notifications from the server into local state. Non-fatal. */
+  const refreshNotifications = async () => {
+    try {
+      const res = await api('/user/notifications');
+      if (res.ok) {
+        const rows = await res.json() as Record<string, unknown>[];
+        setNotifications(rows.map(transformNotification));
+      }
+    } catch { /* silent */ }
+  };
+
   const markAllNotificationsRead = async (): Promise<void> => {
     try {
       await api('/user/notifications/read-all', { method: 'POST' });
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    } catch { /* silent */ }
+  };
+
+  const markNotificationRead = async (id: string): Promise<void> => {
+    try {
+      await api(`/user/notifications/${id}/read`, { method: 'PATCH' });
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    } catch { /* silent */ }
+  };
+
+  const deleteNotification = async (id: string): Promise<void> => {
+    try {
+      await api(`/user/notifications/${id}`, { method: 'DELETE' });
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    } catch { /* silent */ }
+  };
+
+  const clearAllNotifications = async (): Promise<void> => {
+    try {
+      await api('/user/notifications', { method: 'DELETE' });
+      setNotifications([]);
     } catch { /* silent */ }
   };
 
@@ -414,6 +461,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       requestPinReset, resetPin,
       toggleBalanceHidden, markAllNotificationsRead, updateSettings,
       addTransaction, purchaseAirtime, purchaseData, setActiveTab, fundWallet,
+      markNotificationRead, deleteNotification, clearAllNotifications,
     }}>
       {children}
     </AppContext.Provider>

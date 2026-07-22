@@ -10,6 +10,7 @@ export const notificationsTable = pgTable('notifications', {
   title:     text('title').notNull(),
   body:      text('body').notNull(),
   read:      boolean('read').notNull().default(false),
+  refId:     text('ref_id'),           // linked entity id — e.g. transaction uuid
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 

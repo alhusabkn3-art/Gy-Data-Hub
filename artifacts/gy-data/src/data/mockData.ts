@@ -35,5 +35,7 @@ export interface Notification {
   title: string;
   body: string;
   timestamp: string;    // relative e.g. "Just now", "2h ago"
+  createdAt: string;    // ISO timestamp — used for date grouping in UI
   read: boolean;
+  refId?: string | null; // linked entity id e.g. transaction UUID
 }

@@ -13,6 +13,7 @@ import {
 } from '@workspace/db/schema';
 import { hashPin, verifyPin } from '../lib/auth.js';
 import { logger } from '../lib/logger.js';
+import { createNotification } from '../lib/notifications.js';
 
 const router = Router();
 
@@ -78,6 +79,47 @@ router.post('/notifications/read-all', async (req: Request, res: Response): Prom
   res.json({ ok: true });
 });
 
+// ── PATCH /api/user/notifications/:id/read ────────────────────────────────────
+router.patch('/notifications/:id/read', async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params as { id: string };
+  const [updated] = await db
+    .update(notificationsTable)
+    .set({ read: true })
+    .where(
+      and(
+        eq(notificationsTable.id,     id),
+        eq(notificationsTable.userId, req.session.userId!),
+      ),
+    )
+    .returning({ id: notificationsTable.id });
+
+  if (!updated) { res.status(404).json({ error: 'Notification not found.' }); return; }
+  res.json({ ok: true });
+});
+
+// ── DELETE /api/user/notifications (clear all) ────────────────────────────────
+// Must be declared before /:id so Express doesn't swallow it as a param.
+router.delete('/notifications', async (req: Request, res: Response): Promise<void> => {
+  await db
+    .delete(notificationsTable)
+    .where(eq(notificationsTable.userId, req.session.userId!));
+  res.json({ ok: true });
+});
+
+// ── DELETE /api/user/notifications/:id ────────────────────────────────────────
+router.delete('/notifications/:id', async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params as { id: string };
+  await db
+    .delete(notificationsTable)
+    .where(
+      and(
+        eq(notificationsTable.id,     id),
+        eq(notificationsTable.userId, req.session.userId!),
+      ),
+    );
+  res.json({ ok: true });
+});
+
 // ── POST /api/user/wallet/fund ────────────────────────────────────────────────
 //
 // Atomic: SELECT ... FOR UPDATE locks the wallet row so concurrent fund
@@ -126,6 +168,15 @@ router.post('/wallet/fund', async (req: Request, res: Response): Promise<void> =
     });
 
     logger.info({ userId, amount: numericAmount }, 'Wallet funded');
+
+    // Fire non-fatal notification — failure here never blocks the response
+    await createNotification(userId, {
+      type:  'transaction',
+      title: 'Wallet Funded',
+      body:  `₦${numericAmount.toLocaleString()} has been added to your GY DATA wallet.`,
+      refId: txn!.id,
+    });
+
     res.json({ balance: newBalance, transaction: txn });
   } catch (err: unknown) {
     const e = err as { code?: string; message?: string };

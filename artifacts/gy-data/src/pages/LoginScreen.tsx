@@ -75,6 +75,9 @@ export default function LoginScreen() {
   const [isError,     setIsError]     = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [phoneCopied, setPhoneCopied] = useState(false);
+  // Controls whether the custom numpad is visible.
+  // Starts false so the numpad doesn't appear until the user taps the PIN area.
+  const [pinActive,   setPinActive]   = useState(false);
 
   const phoneInputRef = useRef<HTMLInputElement>(null);
 
@@ -109,12 +112,14 @@ export default function LoginScreen() {
         setPin('');
         setIsError(false);
         setIsLoggingIn(false);
+        setPinActive(false);          // collapse numpad, let user fix the phone number
         phoneInputRef.current?.focus();
       }, 1400);
     } else {
       toast.error('Incorrect PIN. Please try again.');
       setPin('');
       setIsLoggingIn(false);
+      // keep pinActive true so the numpad stays visible for re-entry
     }
   }, [isLoggingIn, login, phone, pin, phoneValid]);
 
@@ -234,7 +239,6 @@ export default function LoginScreen() {
               onKeyDown={e => { if (e.key === 'Enter' && phoneValid) phoneInputRef.current?.blur(); }}
               placeholder="0803 456 7890"
               autoComplete="tel"
-              autoFocus
               className="w-full h-12 rounded-xl text-sm font-medium outline-none transition-all"
               style={{
                 border:       `2px solid ${phoneError ? '#EF4444' : '#DDEAFF'}`,
@@ -244,6 +248,8 @@ export default function LoginScreen() {
                 paddingRight: phone.length > 0 ? '5.5rem' : '4rem',
               }}
               onFocus={e => {
+                // Collapse the numpad so the native phone keyboard has room
+                setPinActive(false);
                 e.currentTarget.style.borderColor = phoneError ? '#EF4444' : '#2563EB';
                 e.currentTarget.style.background  = phoneError ? '#FEF2F2' : '#EFF6FF';
               }}
@@ -324,11 +330,19 @@ export default function LoginScreen() {
           6-Digit PIN
         </label>
 
-        {/* PIN dot indicators */}
-        <div className="flex justify-center gap-2.5 mb-5">
+        {/* PIN dot indicators — tapping this row opens the numpad */}
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="Tap to enter PIN"
+          onClick={() => { phoneInputRef.current?.blur(); setPinActive(true); }}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { phoneInputRef.current?.blur(); setPinActive(true); } }}
+          className="flex justify-center gap-2.5 mb-5"
+          style={{ cursor: pinActive ? 'default' : 'pointer' }}
+        >
           {[...Array(6)].map((_, i) => {
             const isFilled = i < pin.length;
-            const isActive = i === pin.length;
+            const isActive = pinActive && i === pin.length;
             return (
               <motion.div
                 key={i}
@@ -364,38 +378,66 @@ export default function LoginScreen() {
           })}
         </div>
 
-        {/* ── Number keypad ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-3 gap-2.5 mb-5">
-          {keys.map((key, i) => (
-            <motion.button
-              key={i}
-              type="button"
-              whileTap={key ? { scale: 0.93 } : {}}
-              onClick={() => key && handleKey(key)}
-              disabled={!key || isLoggingIn}
-              style={key ? {
-                height: 52, borderRadius: 14,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: key === 'backspace' ? undefined : 22, fontWeight: 600,
-                color: '#0B1F4E', background: '#F0F5FF',
-                border: '1.5px solid #DDEAFF',
-                boxShadow: '0 2px 8px rgba(11,31,78,0.08)',
-                cursor: isLoggingIn ? 'not-allowed' : 'pointer',
-                transition: 'background 0.12s ease',
-              } : { opacity: 0, cursor: 'default', height: 52 }}
-              onMouseEnter={e => { if (key) (e.currentTarget as HTMLButtonElement).style.background = '#E0ECFF'; }}
-              onMouseLeave={e => { if (key) (e.currentTarget as HTMLButtonElement).style.background = '#F0F5FF'; }}
+        {/* "Tap to enter PIN" hint — visible only before the numpad is opened */}
+        <AnimatePresence>
+          {!pinActive && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.18 }}
+              className="text-center text-xs mb-5 -mt-3"
+              style={{ color: '#9BA8C0' }}
             >
-              {key === 'backspace' ? (
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0B1F4E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/>
-                  <line x1="18" y1="9" x2="12" y2="15"/>
-                  <line x1="12" y1="9" x2="18" y2="15"/>
-                </svg>
-              ) : key}
-            </motion.button>
-          ))}
-        </div>
+              Tap the boxes above to enter your PIN
+            </motion.p>
+          )}
+        </AnimatePresence>
+
+        {/* ── Number keypad — slides in when PIN area is tapped ─────── */}
+        <AnimatePresence>
+          {pinActive && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.22, ease: 'easeOut' }}
+              style={{ overflow: 'hidden' }}
+            >
+              <div className="grid grid-cols-3 gap-2.5 mb-5">
+                {keys.map((key, i) => (
+                  <motion.button
+                    key={i}
+                    type="button"
+                    whileTap={key ? { scale: 0.93 } : {}}
+                    onClick={() => key && handleKey(key)}
+                    disabled={!key || isLoggingIn}
+                    style={key ? {
+                      height: 52, borderRadius: 14,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: key === 'backspace' ? undefined : 22, fontWeight: 600,
+                      color: '#0B1F4E', background: '#F0F5FF',
+                      border: '1.5px solid #DDEAFF',
+                      boxShadow: '0 2px 8px rgba(11,31,78,0.08)',
+                      cursor: isLoggingIn ? 'not-allowed' : 'pointer',
+                      transition: 'background 0.12s ease',
+                    } : { opacity: 0, cursor: 'default', height: 52 }}
+                    onMouseEnter={e => { if (key) (e.currentTarget as HTMLButtonElement).style.background = '#E0ECFF'; }}
+                    onMouseLeave={e => { if (key) (e.currentTarget as HTMLButtonElement).style.background = '#F0F5FF'; }}
+                  >
+                    {key === 'backspace' ? (
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0B1F4E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/>
+                        <line x1="18" y1="9" x2="12" y2="15"/>
+                        <line x1="12" y1="9" x2="18" y2="15"/>
+                      </svg>
+                    ) : key}
+                  </motion.button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* ── Login button ──────────────────────────────────────────── */}
         <motion.button

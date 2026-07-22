@@ -13,23 +13,27 @@ import AdminManagement from './pages/AdminManagement';
 
 type AdminPage = 'dashboard' | 'users' | 'transactions' | 'wallet' | 'services' | 'notifications' | 'settings' | 'adminManagement';
 
-const pages: Record<AdminPage, React.ReactNode> = {
-  dashboard: <AdminDashboard />,
-  users: <AdminUsers />,
-  transactions: <AdminTransactions />,
-  wallet: <AdminWallet />,
-  services: <AdminServices />,
-  notifications: <AdminNotifications />,
-  settings: <AdminSettings />,
-  adminManagement: <AdminManagement />,
-};
-
 function AdminDashboardApp() {
   const [activePage, setActivePage] = useState<AdminPage>('dashboard');
+  const navigate = (p: string) => setActivePage(p as AdminPage);
+
+  const renderPage = () => {
+    switch (activePage) {
+      case 'dashboard':       return <AdminDashboard onNavigate={navigate} />;
+      case 'users':           return <AdminUsers />;
+      case 'transactions':    return <AdminTransactions />;
+      case 'wallet':          return <AdminWallet />;
+      case 'services':        return <AdminServices />;
+      case 'notifications':   return <AdminNotifications />;
+      case 'settings':        return <AdminSettings />;
+      case 'adminManagement': return <AdminManagement />;
+      default:                return <AdminDashboard onNavigate={navigate} />;
+    }
+  };
 
   return (
-    <AdminLayout activePage={activePage} onNavigate={(p) => setActivePage(p as AdminPage)}>
-      {pages[activePage]}
+    <AdminLayout activePage={activePage} onNavigate={navigate}>
+      {renderPage()}
     </AdminLayout>
   );
 }

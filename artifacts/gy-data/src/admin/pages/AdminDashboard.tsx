@@ -2,6 +2,7 @@ import React from 'react';
 import {
   Users, ArrowLeftRight, TrendingUp, Clock,
   UserCheck, AlertCircle, CheckCircle, XCircle, RefreshCw,
+  ChevronRight, Grid3X3,
 } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { SERVICE_CONFIG } from '../data/adminMockData';
@@ -12,18 +13,26 @@ function Skeleton({ className, style }: { className?: string; style?: React.CSSP
   return <div className={`animate-pulse bg-white/[0.07] rounded-lg ${className ?? ''}`} style={style} />;
 }
 
+/** Clickable stat card — navigates to `target` page when clicked. */
 function StatCard({
-  label, value, sub, icon: Icon, color, loading,
+  label, value, sub, icon: Icon, color, loading, onClick,
 }: {
   label: string; value: string; sub?: string;
   icon: React.ElementType; color: string; loading?: boolean;
+  onClick?: () => void;
 }) {
   return (
-    <div className="bg-card border border-border rounded-2xl p-4 flex flex-col gap-3">
+    <button
+      type="button"
+      onClick={onClick}
+      className={`bg-card border border-border rounded-2xl p-4 flex flex-col gap-3 text-left w-full transition-all ${
+        onClick ? 'cursor-pointer hover:border-primary/40 hover:bg-white/[0.04] active:scale-[0.98]' : 'cursor-default'
+      }`}
+    >
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${color}`}>
         <Icon className="w-5 h-5" />
       </div>
-      <div>
+      <div className="flex-1">
         {loading ? (
           <>
             <Skeleton className="h-7 w-20 mb-1.5" />
@@ -37,11 +46,52 @@ function StatCard({
           </>
         )}
       </div>
-    </div>
+      {onClick && (
+        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/40 self-end -mb-1" />
+      )}
+    </button>
   );
 }
 
-export default function AdminDashboard() {
+/** Clickable mini stat (success / pending / failed counts). */
+function MiniStatCard({
+  icon: Icon, iconClass, bgClass, value, label, loading, onClick,
+}: {
+  icon: React.ElementType; iconClass: string; bgClass: string;
+  value: string | number | undefined; label: string; loading?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`bg-card border border-border rounded-2xl p-4 flex items-center gap-3 w-full text-left transition-all ${
+        onClick ? 'cursor-pointer hover:border-primary/40 hover:bg-white/[0.04] active:scale-[0.98]' : 'cursor-default'
+      }`}
+    >
+      <div className={`w-9 h-9 rounded-full ${bgClass} flex items-center justify-center flex-shrink-0`}>
+        <Icon className={`w-4 h-4 ${iconClass}`} />
+      </div>
+      <div className="flex-1 min-w-0">
+        {loading
+          ? <Skeleton className="h-5 w-12 mb-1" />
+          : <p className={`text-base font-bold ${iconClass}`}>{value ?? '—'}</p>
+        }
+        <p className="text-xs text-muted-foreground">{label}</p>
+      </div>
+      {onClick && <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/40 flex-shrink-0" />}
+    </button>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+interface AdminDashboardProps {
+  /** Called when a dashboard card is clicked — navigates to that admin page. */
+  onNavigate: (page: string) => void;
+}
+
+export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const {
     stats, statsLoading, refreshStats,
     transactions, txnsLoading,
@@ -53,11 +103,8 @@ export default function AdminDashboard() {
   const recentTxns = transactions.slice(0, 8);
   const isLoading  = statsLoading;
 
-  // Revenue chart helpers
-  const maxRevenue = weeklyRevenue.length > 0 ? Math.max(...weeklyRevenue.map(d => d.amount), 1) : 1;
-
-  // Services sorted by revenue
-  const topServices = servicesData.slice(0, 5);
+  const maxRevenue   = weeklyRevenue.length > 0 ? Math.max(...weeklyRevenue.map(d => d.amount), 1) : 1;
+  const topServices  = servicesData.slice(0, 5);
   const totalSvcRevenue = topServices.reduce((a, s) => a + s.revenue, 0);
 
   const handleRefresh = () => {
@@ -68,7 +115,8 @@ export default function AdminDashboard() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Header */}
+
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl lg:text-2xl font-bold">Overview</h1>
@@ -86,7 +134,7 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* Primary stat cards */}
+      {/* ── Primary stat cards ──────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard
           label="Total Users"
@@ -95,6 +143,7 @@ export default function AdminDashboard() {
           icon={Users}
           color="bg-blue-500/10 text-blue-400"
           loading={isLoading && !stats}
+          onClick={() => onNavigate('users')}
         />
         <StatCard
           label="Total Transactions"
@@ -103,6 +152,7 @@ export default function AdminDashboard() {
           icon={ArrowLeftRight}
           color="bg-purple-500/10 text-purple-400"
           loading={isLoading && !stats}
+          onClick={() => onNavigate('transactions')}
         />
         <StatCard
           label="Total Revenue"
@@ -111,6 +161,7 @@ export default function AdminDashboard() {
           icon={TrendingUp}
           color="bg-green-500/10 text-green-400"
           loading={isLoading && !stats}
+          onClick={() => onNavigate('wallet')}
         />
         <StatCard
           label="Pending Transactions"
@@ -119,52 +170,50 @@ export default function AdminDashboard() {
           icon={Clock}
           color="bg-amber-500/10 text-amber-400"
           loading={isLoading && !stats}
+          onClick={() => onNavigate('transactions')}
         />
       </div>
 
-      {/* Transaction status breakdown */}
+      {/* ── Transaction status breakdown ────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-3">
-        <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-green-500/10 flex items-center justify-center flex-shrink-0">
-            <CheckCircle className="w-4 h-4 text-green-400" />
-          </div>
-          <div>
-            {isLoading && !stats
-              ? <Skeleton className="h-5 w-12 mb-1" />
-              : <p className="text-base font-bold text-green-400">{stats?.successfulTransactions.toLocaleString() ?? '—'}</p>
-            }
-            <p className="text-xs text-muted-foreground">Successful</p>
-          </div>
-        </div>
-        <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-amber-500/10 flex items-center justify-center flex-shrink-0">
-            <Clock className="w-4 h-4 text-amber-400" />
-          </div>
-          <div>
-            {isLoading && !stats
-              ? <Skeleton className="h-5 w-10 mb-1" />
-              : <p className="text-base font-bold text-amber-400">{stats?.pendingTransactions ?? '—'}</p>
-            }
-            <p className="text-xs text-muted-foreground">Pending</p>
-          </div>
-        </div>
-        <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-red-500/10 flex items-center justify-center flex-shrink-0">
-            <XCircle className="w-4 h-4 text-red-400" />
-          </div>
-          <div>
-            {isLoading && !stats
-              ? <Skeleton className="h-5 w-10 mb-1" />
-              : <p className="text-base font-bold text-red-400">{stats?.failedTransactions ?? '—'}</p>
-            }
-            <p className="text-xs text-muted-foreground">Failed</p>
-          </div>
-        </div>
+        <MiniStatCard
+          icon={CheckCircle}
+          iconClass="text-green-400"
+          bgClass="bg-green-500/10"
+          value={stats?.successfulTransactions.toLocaleString()}
+          label="Successful"
+          loading={isLoading && !stats}
+          onClick={() => onNavigate('transactions')}
+        />
+        <MiniStatCard
+          icon={Clock}
+          iconClass="text-amber-400"
+          bgClass="bg-amber-500/10"
+          value={stats?.pendingTransactions}
+          label="Pending"
+          loading={isLoading && !stats}
+          onClick={() => onNavigate('transactions')}
+        />
+        <MiniStatCard
+          icon={XCircle}
+          iconClass="text-red-400"
+          bgClass="bg-red-500/10"
+          value={stats?.failedTransactions}
+          label="Failed"
+          loading={isLoading && !stats}
+          onClick={() => onNavigate('transactions')}
+        />
       </div>
 
+      {/* ── Charts row ─────────────────────────────────────────────────────── */}
       <div className="grid lg:grid-cols-2 gap-4">
-        {/* Weekly Revenue chart */}
-        <div className="bg-card border border-border rounded-2xl p-4">
+
+        {/* Weekly Revenue chart — clicking navigates to Wallet */}
+        <button
+          type="button"
+          onClick={() => onNavigate('wallet')}
+          className="bg-card border border-border rounded-2xl p-4 text-left w-full cursor-pointer hover:border-primary/40 hover:bg-white/[0.04] transition-all active:scale-[0.99]"
+        >
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="font-bold text-sm">Weekly Revenue</h2>
@@ -172,6 +221,7 @@ export default function AdminDashboard() {
                 {stats ? `₦${(stats.weekRevenue / 1000).toFixed(0)}K this week` : 'Loading…'}
               </p>
             </div>
+            <ChevronRight className="w-4 h-4 text-muted-foreground/50" />
           </div>
 
           {revenueLoading ? (
@@ -207,11 +257,21 @@ export default function AdminDashboard() {
               })}
             </div>
           )}
-        </div>
+        </button>
 
-        {/* Top services */}
-        <div className="bg-card border border-border rounded-2xl p-4">
-          <h2 className="font-bold text-sm mb-4">Top Services</h2>
+        {/* Top services — clicking navigates to Services */}
+        <button
+          type="button"
+          onClick={() => onNavigate('services')}
+          className="bg-card border border-border rounded-2xl p-4 text-left w-full cursor-pointer hover:border-primary/40 hover:bg-white/[0.04] transition-all active:scale-[0.99]"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-bold text-sm">Top Services</h2>
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Grid3X3 className="w-3.5 h-3.5" />
+              <ChevronRight className="w-3.5 h-3.5" />
+            </div>
+          </div>
 
           {servicesLoading ? (
             <div className="space-y-3">
@@ -257,17 +317,23 @@ export default function AdminDashboard() {
               })}
             </div>
           )}
-        </div>
+        </button>
       </div>
 
-      {/* Recent transactions */}
+      {/* ── Recent transactions ─────────────────────────────────────────────── */}
       <div className="bg-card border border-border rounded-2xl overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-border">
+        <button
+          type="button"
+          onClick={() => onNavigate('transactions')}
+          className="w-full flex items-center justify-between p-4 border-b border-border hover:bg-white/[0.03] transition-colors cursor-pointer"
+        >
           <h2 className="font-bold text-sm">Recent Transactions</h2>
-          <span className="text-xs text-muted-foreground">
-            {recentTxns.length > 0 ? `${recentTxns.length} most recent` : 'No transactions yet'}
-          </span>
-        </div>
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span>{recentTxns.length > 0 ? `${recentTxns.length} most recent` : 'No transactions yet'}</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </div>
+        </button>
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -296,7 +362,11 @@ export default function AdminDashboard() {
                 </tr>
               ) : (
                 recentTxns.map(txn => (
-                  <tr key={txn.id} className="border-b border-border/50 hover:bg-white/[0.02] transition-colors">
+                  <tr
+                    key={txn.id}
+                    onClick={() => onNavigate('transactions')}
+                    className="border-b border-border/50 hover:bg-white/[0.04] transition-colors cursor-pointer"
+                  >
                     <td className="px-4 py-3">
                       <p className="font-medium text-sm truncate max-w-[120px]">{txn.userName}</p>
                       <p className="text-xs text-muted-foreground">{txn.time}</p>
@@ -315,13 +385,40 @@ export default function AdminDashboard() {
             </tbody>
           </table>
         </div>
+
+        {/* "View all" footer row */}
+        {recentTxns.length > 0 && (
+          <button
+            type="button"
+            onClick={() => onNavigate('transactions')}
+            className="w-full flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-primary hover:bg-primary/5 transition-colors border-t border-border"
+          >
+            View all transactions <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
-      {/* KYC summary */}
+      {/* ── KYC summary ─────────────────────────────────────────────────────── */}
       <div className="bg-card border border-border rounded-2xl p-4">
-        <h2 className="font-bold text-sm mb-4">User KYC Status</h2>
+        <button
+          type="button"
+          onClick={() => onNavigate('users')}
+          className="w-full flex items-center justify-between mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+        >
+          <h2 className="font-bold text-sm">User KYC Status</h2>
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Users className="w-3.5 h-3.5" />
+            <ChevronRight className="w-3.5 h-3.5" />
+          </div>
+        </button>
+
         <div className="grid grid-cols-3 gap-3">
-          <div className="text-center p-3 bg-green-500/5 border border-green-500/20 rounded-xl">
+          {/* Verified */}
+          <button
+            type="button"
+            onClick={() => onNavigate('users')}
+            className="text-center p-3 bg-green-500/5 border border-green-500/20 rounded-xl cursor-pointer hover:bg-green-500/10 hover:border-green-500/40 transition-all active:scale-[0.97]"
+          >
             <div className="w-8 h-8 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-2">
               <UserCheck className="w-4 h-4 text-green-400" />
             </div>
@@ -330,8 +427,14 @@ export default function AdminDashboard() {
               : <p className="text-lg font-bold text-green-400">{stats?.verifiedUsers ?? '—'}</p>
             }
             <p className="text-xs text-muted-foreground">Verified</p>
-          </div>
-          <div className="text-center p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl">
+          </button>
+
+          {/* Pending KYC */}
+          <button
+            type="button"
+            onClick={() => onNavigate('users')}
+            className="text-center p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl cursor-pointer hover:bg-amber-500/10 hover:border-amber-500/40 transition-all active:scale-[0.97]"
+          >
             <div className="w-8 h-8 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-2">
               <Clock className="w-4 h-4 text-amber-400" />
             </div>
@@ -340,24 +443,32 @@ export default function AdminDashboard() {
               : <p className="text-lg font-bold text-amber-400">{stats?.pendingKycUsers ?? '—'}</p>
             }
             <p className="text-xs text-muted-foreground">Pending</p>
-          </div>
-          <div className="text-center p-3 bg-red-500/5 border border-red-500/20 rounded-xl">
+          </button>
+
+          {/* Unverified / Suspended */}
+          <button
+            type="button"
+            onClick={() => onNavigate('users')}
+            className="text-center p-3 bg-red-500/5 border border-red-500/20 rounded-xl cursor-pointer hover:bg-red-500/10 hover:border-red-500/40 transition-all active:scale-[0.97]"
+          >
             <div className="w-8 h-8 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-2">
               <AlertCircle className="w-4 h-4 text-red-400" />
             </div>
             {isLoading && !stats
               ? <Skeleton className="h-6 w-10 mx-auto mb-1" />
-              : <p className="text-lg font-bold text-red-400">{stats ? stats.suspendedUsers + stats.unverifiedUsers : '—'}</p>
+              : <p className="text-lg font-bold text-red-400">
+                  {stats ? stats.suspendedUsers + stats.unverifiedUsers : '—'}
+                </p>
             }
             <p className="text-xs text-muted-foreground">Unverified / Suspended</p>
-          </div>
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-// ── StatusBadge — shared across admin pages ────────────────────────────────────
+// ── StatusBadge — shared across admin pages ───────────────────────────────────
 export function StatusBadge({ status }: {
   status: 'success' | 'pending' | 'failed' | 'active' | 'suspended' | 'sent' | 'draft' | 'scheduled' | string;
 }) {

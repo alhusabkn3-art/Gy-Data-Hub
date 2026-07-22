@@ -7,39 +7,71 @@ import { normalizeNigerianNumber } from '../components/PhoneInputWithContacts';
 
 // ── Hidden admin long-press trigger ──────────────────────────────────────────
 // Looks like a subtle design element — small circle with a tiny dot.
-// Hold 2 s to navigate to admin login; quick tap does nothing.
+// Hold 2 s to navigate to /admin-login; quick tap does nothing.
+// Uses native DOM listeners (not React synthetic events) for reliable
+// mobile/desktop pointer tracking.
 const ADMIN_HOLD_MS = 2000;
 
 function HiddenAdminTrigger({ onUnlock }: { onUnlock: () => void }) {
-  const timerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const btnRef        = useRef<HTMLButtonElement>(null);
+  const timerRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeIdRef   = useRef<number | null>(null);   // tracked pointer id
+  const onUnlockRef   = useRef(onUnlock);
   const [pressing, setPressing] = useState(false);
 
-  const cancel = useCallback(() => {
-    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
-    setPressing(false);
-  }, []);
+  // Keep onUnlock stable inside the effect without re-attaching listeners
+  useEffect(() => { onUnlockRef.current = onUnlock; }, [onUnlock]);
 
-  useEffect(() => () => cancel(), [cancel]);
+  useEffect(() => {
+    const el = btnRef.current;
+    if (!el) return;
 
-  const startPress = useCallback((e: React.PointerEvent) => {
-    e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    setPressing(true);
-    timerRef.current = setTimeout(() => {
-      cancel();
-      onUnlock();
-    }, ADMIN_HOLD_MS);
-  }, [cancel, onUnlock]);
+    function startHold(pointerId: number) {
+      if (activeIdRef.current !== null) return;   // already tracking
+      activeIdRef.current = pointerId;
+      try { el!.setPointerCapture(pointerId); } catch { /* ignore */ }
+      setPressing(true);
+      timerRef.current = setTimeout(() => {
+        // Timer fired — 2 s elapsed without release
+        activeIdRef.current = null;
+        timerRef.current    = null;
+        setPressing(false);
+        onUnlockRef.current();
+      }, ADMIN_HOLD_MS);
+    }
 
-  const endPress = useCallback(() => cancel(), [cancel]);
+    function cancelHold() {
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+      activeIdRef.current = null;
+      setPressing(false);
+    }
+
+    const onDown   = (e: PointerEvent) => { e.preventDefault(); startHold(e.pointerId); };
+    const onUp     = (e: PointerEvent) => { if (e.pointerId === activeIdRef.current) cancelHold(); };
+    const onCancel = (e: PointerEvent) => { if (e.pointerId === activeIdRef.current) cancelHold(); };
+    const onLeave  = (e: PointerEvent) => { if (e.pointerId === activeIdRef.current) cancelHold(); };
+    const noCtx    = (e: Event)        => e.preventDefault();
+
+    el.addEventListener('pointerdown',   onDown,   { passive: false });
+    el.addEventListener('pointerup',     onUp);
+    el.addEventListener('pointercancel', onCancel);
+    el.addEventListener('pointerleave',  onLeave);
+    el.addEventListener('contextmenu',   noCtx);
+
+    return () => {
+      cancelHold();
+      el.removeEventListener('pointerdown',   onDown);
+      el.removeEventListener('pointerup',     onUp);
+      el.removeEventListener('pointercancel', onCancel);
+      el.removeEventListener('pointerleave',  onLeave);
+      el.removeEventListener('contextmenu',   noCtx);
+    };
+  }, []); // attach once — onUnlock is read through onUnlockRef
 
   return (
     <button
+      ref={btnRef}
       type="button"
-      onPointerDown={startPress}
-      onPointerUp={endPress}
-      onPointerCancel={endPress}
-      onContextMenu={e => e.preventDefault()}
       aria-hidden="true"
       tabIndex={-1}
       style={{
@@ -74,21 +106,26 @@ function HiddenAdminTrigger({ onUnlock }: { onUnlock: () => void }) {
         transition: 'background 0.15s ease',
         position: 'relative', zIndex: 1,
       }} />
-      {/* Ripple ring — expands from centre while pressing */}
-      {pressing && (
-        <motion.div
-          initial={{ scale: 0, opacity: 0.5 }}
-          animate={{ scale: 2.8, opacity: 0 }}
-          transition={{ duration: ADMIN_HOLD_MS / 1000, ease: 'easeOut' }}
-          style={{
-            position:     'absolute',
-            width:        '100%',
-            height:       '100%',
-            borderRadius: '50%',
-            background:   'rgba(255,255,255,0.25)',
-          }}
-        />
-      )}
+      {/* Ripple ring — expands from centre while pressing, resets on release */}
+      <AnimatePresence>
+        {pressing && (
+          <motion.div
+            key="ripple"
+            initial={{ scale: 0, opacity: 0.5 }}
+            animate={{ scale: 2.8, opacity: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: ADMIN_HOLD_MS / 1000, ease: 'linear' }}
+            style={{
+              position:     'absolute',
+              width:        '100%',
+              height:       '100%',
+              borderRadius: '50%',
+              background:   'rgba(255,255,255,0.25)',
+              pointerEvents: 'none',
+            }}
+          />
+        )}
+      </AnimatePresence>
     </button>
   );
 }

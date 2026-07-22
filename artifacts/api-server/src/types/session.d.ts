@@ -2,8 +2,12 @@ import 'express-session';
 
 declare module 'express-session' {
   interface SessionData {
-    userId:  string;
-    isAdmin: boolean;
+    /** Regular customer session */
+    userId:    string;
+    /** Admin session flags */
+    isAdmin:   boolean;
+    adminId:   string;
+    adminRole: 'super_admin' | 'admin';
   }
 }
 

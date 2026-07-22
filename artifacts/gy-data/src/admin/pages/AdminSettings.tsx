@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Shield, Bell, Globe, Lock, Save, AlertTriangle, X, Eye, EyeOff, Pencil, Check } from 'lucide-react';
+import { Shield, Bell, Globe, Lock, Save, AlertTriangle, X, Eye, EyeOff, Pencil, Check, Crown } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
+import { ROLE_LABELS } from '../data/adminMockData';
 import { toast } from 'sonner';
 
 // ── Toggle row ────────────────────────────────────────────────────────────────
@@ -38,10 +39,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
       <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 bg-[#0A1628] border border-border rounded-2xl z-50 p-5 max-w-sm mx-auto shadow-2xl">
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-bold">{title}</h2>
-          <button
-            onClick={onClose}
-            className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
-          >
+          <button onClick={onClose} className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -52,10 +50,10 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 // ── Change PIN modal ──────────────────────────────────────────────────────────
+// Uses the real /api/admin/me/pin endpoint — verifies current PIN server-side.
 
 function ChangePinModal({ onClose }: { onClose: () => void }) {
-  const { adminAccounts, currentAdminId, changeAdminPin } = useAdminContext();
-  const me = adminAccounts.find(a => a.id === currentAdminId);
+  const { changeOwnPin } = useAdminContext();
 
   const [currentPin,  setCurrentPin]  = useState('');
   const [newPin,      setNewPin]      = useState('');
@@ -83,11 +81,8 @@ function ChangePinModal({ onClose }: { onClose: () => void }) {
           inputMode="numeric"
           className="w-full bg-background border-2 border-border focus:border-primary rounded-xl h-11 px-4 pr-12 text-sm outline-none transition-colors tracking-widest font-mono"
         />
-        <button
-          type="button"
-          onClick={onToggle}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
-        >
+        <button type="button" onClick={onToggle}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1">
           {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
         </button>
       </div>
@@ -96,19 +91,25 @@ function ChangePinModal({ onClose }: { onClose: () => void }) {
   );
 
   const submit = async () => {
+    // Local validation
     const e: Record<string, string> = {};
-    if (!me || currentPin !== me.pin) e.currentPin = 'Current PIN is incorrect';
-    if (newPin.length !== 6) e.newPin = 'New PIN must be exactly 6 digits';
-    if (newPin === currentPin) e.newPin = 'New PIN must be different from current PIN';
-    if (newPin !== confirmPin) e.confirmPin = 'PINs do not match';
+    if (currentPin.length !== 6) e.currentPin = 'Current PIN must be 6 digits';
+    if (newPin.length !== 6)     e.newPin = 'New PIN must be exactly 6 digits';
+    if (newPin === currentPin)   e.newPin = 'New PIN must differ from current PIN';
+    if (newPin !== confirmPin)   e.confirmPin = 'PINs do not match';
     setErrors(e);
     if (Object.keys(e).length > 0) return;
 
     setSaving(true);
-    await new Promise(r => setTimeout(r, 600)); // simulated async
-    changeAdminPin(currentAdminId, newPin);
-    toast.success('PIN updated successfully. Use your new PIN on next login.');
-    onClose();
+    // Server verifies current PIN — no client-side PIN comparison
+    const result = await changeOwnPin(currentPin, newPin);
+    setSaving(false);
+    if (result.ok) {
+      toast.success('PIN updated successfully. Use your new PIN on next login.');
+      onClose();
+    } else {
+      setErrors({ currentPin: result.error ?? 'PIN change failed.' });
+    }
   };
 
   return (
@@ -116,54 +117,19 @@ function ChangePinModal({ onClose }: { onClose: () => void }) {
       <div className="space-y-4">
         <div className="p-3 rounded-xl bg-amber-500/8 border border-amber-500/20 text-xs text-amber-400 flex items-start gap-2">
           <Lock className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-          <span>Your current PIN is required to set a new one. PINs are never stored in plain text.</span>
+          <span>Your current PIN is verified server-side. PINs are never stored in plain text.</span>
         </div>
-
-        <PinField
-          label="Current PIN"
-          value={currentPin}
-          onChange={setCurrentPin}
-          show={showCurrent}
-          onToggle={() => setShowCurrent(v => !v)}
-          errorKey="currentPin"
-          placeholder="Enter current PIN"
-        />
-        <PinField
-          label="New PIN"
-          value={newPin}
-          onChange={setNewPin}
-          show={showNew}
-          onToggle={() => setShowNew(v => !v)}
-          errorKey="newPin"
-          placeholder="Choose a new 6-digit PIN"
-        />
-        <PinField
-          label="Confirm New PIN"
-          value={confirmPin}
-          onChange={setConfirmPin}
-          show={showNew}
-          onToggle={() => setShowNew(v => !v)}
-          errorKey="confirmPin"
-          placeholder="Repeat new PIN"
-        />
-
+        <PinField label="Current PIN" value={currentPin} onChange={setCurrentPin}
+          show={showCurrent} onToggle={() => setShowCurrent(v => !v)} errorKey="currentPin" placeholder="Enter current PIN" />
+        <PinField label="New PIN" value={newPin} onChange={setNewPin}
+          show={showNew} onToggle={() => setShowNew(v => !v)} errorKey="newPin" placeholder="Choose a new 6-digit PIN" />
+        <PinField label="Confirm New PIN" value={confirmPin} onChange={setConfirmPin}
+          show={showNew} onToggle={() => setShowNew(v => !v)} errorKey="confirmPin" placeholder="Repeat new PIN" />
         <div className="flex gap-2 pt-1">
-          <button
-            onClick={onClose}
-            className="flex-1 h-11 border border-border rounded-xl text-sm font-semibold hover:bg-white/5 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={submit}
-            disabled={saving}
-            className="flex-1 h-11 bg-primary hover:bg-primary/90 disabled:opacity-60 text-white rounded-xl text-sm font-bold transition-colors shadow-[0_4px_16px_rgba(59,130,246,0.3)] flex items-center justify-center gap-2"
-          >
-            {saving ? (
-              <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</>
-            ) : (
-              <><Check className="w-4 h-4" />Update PIN</>
-            )}
+          <button onClick={onClose} className="flex-1 h-11 border border-border rounded-xl text-sm font-semibold hover:bg-white/5 transition-colors">Cancel</button>
+          <button onClick={submit} disabled={saving}
+            className="flex-1 h-11 bg-primary hover:bg-primary/90 disabled:opacity-60 text-white rounded-xl text-sm font-bold transition-colors shadow-[0_4px_16px_rgba(59,130,246,0.3)] flex items-center justify-center gap-2">
+            {saving ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</> : <><Check className="w-4 h-4" />Update PIN</>}
           </button>
         </div>
       </div>
@@ -172,28 +138,31 @@ function ChangePinModal({ onClose }: { onClose: () => void }) {
 }
 
 // ── Edit profile modal ────────────────────────────────────────────────────────
+// Uses /api/admin/me (PATCH) — updates own profile on the backend.
 
 function EditProfileModal({ onClose }: { onClose: () => void }) {
-  const { adminAccounts, currentAdminId, updateAdminAccount, adminEmail } = useAdminContext();
-  const me = adminAccounts.find(a => a.id === currentAdminId);
+  const { updateOwnProfile, adminEmail } = useAdminContext();
 
-  const [name,    setName]    = useState(me?.name ?? 'Super Admin');
-  const [email,   setEmail]   = useState(me?.email ?? adminEmail);
+  const [name,    setName]    = useState('');
+  const [email,   setEmail]   = useState(adminEmail);
   const [errors,  setErrors]  = useState<Record<string, string>>({});
   const [saving,  setSaving]  = useState(false);
 
   const submit = async () => {
     const e: Record<string, string> = {};
-    if (!name.trim()) e.name = 'Name is required';
+    if (name.trim() && name.trim().length < 2) e.name = 'Name must be at least 2 characters';
     if (!email.trim() || !/\S+@\S+\.\S+/.test(email)) e.email = 'Valid email required';
     setErrors(e);
     if (Object.keys(e).length > 0) return;
 
     setSaving(true);
-    await new Promise(r => setTimeout(r, 600));
-    updateAdminAccount(currentAdminId, { name: name.trim(), email: email.trim().toLowerCase() });
-    toast.success('Profile updated successfully.');
-    onClose();
+    const updates: { name?: string; email?: string } = {};
+    if (name.trim()) updates.name  = name.trim();
+    if (email.trim()) updates.email = email.trim().toLowerCase();
+    const ok = await updateOwnProfile(updates);
+    setSaving(false);
+    if (ok) { toast.success('Profile updated successfully.'); onClose(); }
+    else toast.error('Failed to update profile. Please try again.');
   };
 
   return (
@@ -201,43 +170,23 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
       <div className="space-y-4">
         <div>
           <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Display Name</label>
-          <input
-            value={name}
-            onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }}
+          <input value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }}
             className="w-full bg-background border-2 border-border focus:border-primary rounded-xl h-11 px-4 text-sm outline-none transition-colors"
-            placeholder="Your name"
-          />
+            placeholder="Your name (leave blank to keep current)" />
           {errors.name && <p className="text-xs text-red-400 mt-1">{errors.name}</p>}
         </div>
         <div>
           <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Email Address</label>
-          <input
-            type="email"
-            value={email}
-            onChange={e => { setEmail(e.target.value); setErrors(p => ({ ...p, email: '' })); }}
+          <input type="email" value={email} onChange={e => { setEmail(e.target.value); setErrors(p => ({ ...p, email: '' })); }}
             className="w-full bg-background border-2 border-border focus:border-primary rounded-xl h-11 px-4 text-sm outline-none transition-colors"
-            placeholder="admin@example.com"
-          />
+            placeholder="admin@example.com" />
           {errors.email && <p className="text-xs text-red-400 mt-1">{errors.email}</p>}
         </div>
-
         <div className="flex gap-2 pt-1">
-          <button
-            onClick={onClose}
-            className="flex-1 h-11 border border-border rounded-xl text-sm font-semibold hover:bg-white/5 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={submit}
-            disabled={saving}
-            className="flex-1 h-11 bg-primary hover:bg-primary/90 disabled:opacity-60 text-white rounded-xl text-sm font-bold transition-colors shadow-[0_4px_16px_rgba(59,130,246,0.3)] flex items-center justify-center gap-2"
-          >
-            {saving ? (
-              <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</>
-            ) : (
-              <><Check className="w-4 h-4" />Save Changes</>
-            )}
+          <button onClick={onClose} className="flex-1 h-11 border border-border rounded-xl text-sm font-semibold hover:bg-white/5 transition-colors">Cancel</button>
+          <button onClick={submit} disabled={saving}
+            className="flex-1 h-11 bg-primary hover:bg-primary/90 disabled:opacity-60 text-white rounded-xl text-sm font-bold transition-colors shadow-[0_4px_16px_rgba(59,130,246,0.3)] flex items-center justify-center gap-2">
+            {saving ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</> : <><Check className="w-4 h-4" />Save Changes</>}
           </button>
         </div>
       </div>
@@ -248,31 +197,26 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function AdminSettings() {
-  const { adminAccounts, currentAdminId, adminEmail, adminLogout } = useAdminContext();
-  const me = adminAccounts.find(a => a.id === currentAdminId);
+  const { adminEmail, adminRole, isSuperAdmin, adminLogout } = useAdminContext();
 
-  const [modal,        setModal]        = useState<'changePin' | 'editProfile' | null>(null);
-  const [maintenance,  setMaintenance]  = useState(false);
-  const [emailAlerts,  setEmailAlerts]  = useState(true);
-  const [smsAlerts,    setSmsAlerts]    = useState(false);
-  const [twoFactor,    setTwoFactor]    = useState(false);
+  const [modal,          setModal]         = useState<'changePin' | 'editProfile' | null>(null);
+  const [maintenance,    setMaintenance]   = useState(false);
+  const [emailAlerts,    setEmailAlerts]   = useState(true);
+  const [smsAlerts,      setSmsAlerts]     = useState(false);
+  const [twoFactor,      setTwoFactor]     = useState(false);
   const [autoApproveKYC, setAutoApproveKYC] = useState(false);
-  const [debugMode,    setDebugMode]    = useState(false);
-
-  const [appName,      setAppName]      = useState('GY DATA');
-  const [supportEmail, setSupportEmail] = useState('support@gydata.ng');
-  const [minDeposit,   setMinDeposit]   = useState('100');
-  const [maxDaily,     setMaxDaily]     = useState('500000');
-  const [cfgSaved,     setCfgSaved]     = useState(false);
+  const [debugMode,      setDebugMode]     = useState(false);
+  const [appName,        setAppName]       = useState('GY DATA');
+  const [supportEmail,   setSupportEmail]  = useState('support@gydata.ng');
+  const [minDeposit,     setMinDeposit]    = useState('100');
+  const [maxDaily,       setMaxDaily]      = useState('500000');
+  const [cfgSaved,       setCfgSaved]      = useState(false);
 
   const saveConfig = () => {
     setCfgSaved(true);
     toast.success('Configuration saved successfully.');
     setTimeout(() => setCfgSaved(false), 2000);
   };
-
-  const displayName = me?.name ?? 'Super Admin';
-  const displayEmail = me?.email ?? adminEmail;
 
   return (
     <div className="p-4 lg:p-6 space-y-6 max-w-3xl mx-auto">
@@ -289,11 +233,14 @@ export default function AdminSettings() {
         </div>
         <div className="flex items-center gap-4 mb-4 p-4 bg-background rounded-xl border border-border">
           <div className="w-14 h-14 rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center text-xl font-bold text-primary">
-            {displayName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+            {adminEmail ? adminEmail[0].toUpperCase() : 'A'}
           </div>
-          <div>
-            <p className="font-bold">{displayName}</p>
-            <p className="text-sm text-muted-foreground">{displayEmail}</p>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-bold">{ROLE_LABELS[adminRole] ?? 'Admin'}</p>
+              {isSuperAdmin && <Crown className="w-3.5 h-3.5 text-amber-400" />}
+            </div>
+            <p className="text-sm text-muted-foreground truncate">{adminEmail}</p>
             <div className="flex items-center gap-1.5 mt-1">
               <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
               <span className="text-xs text-green-400 font-medium">Active Session</span>
@@ -302,166 +249,102 @@ export default function AdminSettings() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => setModal('changePin')}
-            className="flex-1 h-10 text-xs font-semibold border border-border rounded-xl hover:bg-white/5 hover:border-white/20 transition-colors flex items-center justify-center gap-2"
-          >
-            <Lock className="w-3.5 h-3.5" /> Change PIN
-          </button>
-          <button
             onClick={() => setModal('editProfile')}
-            className="flex-1 h-10 text-xs font-semibold border border-border rounded-xl hover:bg-white/5 hover:border-white/20 transition-colors flex items-center justify-center gap-2"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold border border-border rounded-xl hover:bg-white/5 transition-colors"
           >
             <Pencil className="w-3.5 h-3.5" /> Edit Profile
           </button>
-        </div>
-      </div>
-
-      {/* App Configuration */}
-      <div className="bg-card border border-border rounded-2xl p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <Globe className="w-4 h-4 text-primary" />
-          <h2 className="font-bold text-sm">App Configuration</h2>
-        </div>
-        <div className="space-y-4">
-          <div>
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 block">App Name</label>
-            <input
-              value={appName}
-              onChange={e => setAppName(e.target.value)}
-              className="w-full bg-background border border-border focus:border-primary rounded-xl h-11 px-3 text-sm outline-none transition-colors"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 block">Support Email</label>
-            <input
-              value={supportEmail}
-              onChange={e => setSupportEmail(e.target.value)}
-              className="w-full bg-background border border-border focus:border-primary rounded-xl h-11 px-3 text-sm outline-none transition-colors"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 block">Min Deposit (₦)</label>
-              <input
-                type="number"
-                value={minDeposit}
-                onChange={e => setMinDeposit(e.target.value)}
-                className="w-full bg-background border border-border focus:border-primary rounded-xl h-11 px-3 text-sm outline-none transition-colors"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 block">Max Daily (₦)</label>
-              <input
-                type="number"
-                value={maxDaily}
-                onChange={e => setMaxDaily(e.target.value)}
-                className="w-full bg-background border border-border focus:border-primary rounded-xl h-11 px-3 text-sm outline-none transition-colors"
-              />
-            </div>
-          </div>
           <button
-            onClick={saveConfig}
-            className="w-full h-11 bg-primary hover:bg-primary/90 text-white rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(59,130,246,0.25)]"
+            onClick={() => setModal('changePin')}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold border border-border rounded-xl hover:bg-white/5 transition-colors"
           >
-            {cfgSaved ? <><Check className="w-4 h-4" /> Saved!</> : <><Save className="w-4 h-4" /> Save Configuration</>}
+            <Lock className="w-3.5 h-3.5" /> Change PIN
           </button>
         </div>
       </div>
 
-      {/* Notification Settings */}
+      {/* Notifications */}
       <div className="bg-card border border-border rounded-2xl p-5">
         <div className="flex items-center gap-2 mb-4">
           <Bell className="w-4 h-4 text-primary" />
           <h2 className="font-bold text-sm">Notifications</h2>
         </div>
-        <ToggleRow label="Email Alerts" description="Receive critical alerts via email" value={emailAlerts} onChange={v => { setEmailAlerts(v); toast.success(`Email alerts ${v ? 'enabled' : 'disabled'}.`); }} />
-        <ToggleRow label="SMS Alerts" description="Receive SMS for high-value transactions" value={smsAlerts} onChange={v => { setSmsAlerts(v); toast.success(`SMS alerts ${v ? 'enabled' : 'disabled'}.`); }} />
+        <ToggleRow label="Email Alerts" description="Receive admin alerts via email" value={emailAlerts} onChange={setEmailAlerts} />
+        <ToggleRow label="SMS Alerts"   description="Receive SMS for critical events" value={smsAlerts}   onChange={setSmsAlerts} />
+        <ToggleRow label="Debug Mode"   description="Log verbose debug information"  value={debugMode}   onChange={setDebugMode} />
       </div>
 
-      {/* Security Settings */}
+      {/* Security */}
       <div className="bg-card border border-border rounded-2xl p-5">
         <div className="flex items-center gap-2 mb-4">
           <Lock className="w-4 h-4 text-primary" />
           <h2 className="font-bold text-sm">Security</h2>
         </div>
-        <ToggleRow
-          label="Two-Factor Auth"
-          description="Require OTP for admin login"
-          value={twoFactor}
-          onChange={v => { setTwoFactor(v); toast[v ? 'success' : 'info'](v ? '2FA enabled — OTP will be required on next login.' : '2FA disabled.'); }}
-        />
-        <ToggleRow
-          label="Auto-approve KYC"
-          description="Automatically approve KYC submissions"
-          value={autoApproveKYC}
-          onChange={v => { setAutoApproveKYC(v); toast[v ? 'warning' : 'info'](v ? 'Auto-approve KYC enabled. Review submissions carefully.' : 'Auto-approve KYC disabled.'); }}
-        />
+        <ToggleRow label="Two-Factor Authentication" description="Require OTP in addition to PIN" value={twoFactor} onChange={setTwoFactor} />
       </div>
 
-      {/* System */}
-      <div className="bg-card border border-border rounded-2xl p-5">
+      {/* App configuration — super admin only */}
+      {isSuperAdmin && (
+        <div className="bg-card border border-border rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Globe className="w-4 h-4 text-primary" />
+              <h2 className="font-bold text-sm">App Configuration</h2>
+            </div>
+            <span className="text-[10px] font-semibold text-amber-400 border border-amber-400/30 bg-amber-500/8 rounded-full px-2 py-0.5">Super Admin</span>
+          </div>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">App Name</label>
+                <input value={appName} onChange={e => setAppName(e.target.value)}
+                  className="w-full bg-background border-2 border-border focus:border-primary rounded-xl h-11 px-4 text-sm outline-none transition-colors" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Support Email</label>
+                <input value={supportEmail} onChange={e => setSupportEmail(e.target.value)} type="email"
+                  className="w-full bg-background border-2 border-border focus:border-primary rounded-xl h-11 px-4 text-sm outline-none transition-colors" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Min Deposit (₦)</label>
+                <input value={minDeposit} onChange={e => setMinDeposit(e.target.value)} type="number"
+                  className="w-full bg-background border-2 border-border focus:border-primary rounded-xl h-11 px-4 text-sm outline-none transition-colors" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Max Daily Spend (₦)</label>
+                <input value={maxDaily} onChange={e => setMaxDaily(e.target.value)} type="number"
+                  className="w-full bg-background border-2 border-border focus:border-primary rounded-xl h-11 px-4 text-sm outline-none transition-colors" />
+              </div>
+            </div>
+            <ToggleRow label="Maintenance Mode" description="Take the app offline for maintenance" value={maintenance} onChange={setMaintenance} />
+            <ToggleRow label="Auto-approve KYC" description="Automatically verify submitted KYC" value={autoApproveKYC} onChange={setAutoApproveKYC} />
+            <button onClick={saveConfig}
+              className="flex items-center gap-2 px-5 py-2.5 bg-primary hover:bg-primary/90 text-white rounded-xl text-sm font-semibold transition-colors shadow-[0_4px_16px_rgba(59,130,246,0.3)]">
+              {cfgSaved ? <><Check className="w-4 h-4" />Saved!</> : <><Save className="w-4 h-4" />Save Configuration</>}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Danger zone */}
+      <div className="bg-card border border-red-500/20 rounded-2xl p-5">
         <div className="flex items-center gap-2 mb-4">
-          <AlertTriangle className="w-4 h-4 text-amber-400" />
-          <h2 className="font-bold text-sm">System</h2>
+          <AlertTriangle className="w-4 h-4 text-red-400" />
+          <h2 className="font-bold text-sm text-red-400">Danger Zone</h2>
         </div>
-        <ToggleRow
-          label="Maintenance Mode"
-          description="Disable customer app access for maintenance"
-          value={maintenance}
-          onChange={v => { setMaintenance(v); toast[v ? 'warning' : 'success'](v ? 'Maintenance mode ON — customer app is disabled.' : 'Maintenance mode OFF — customer app is live.'); }}
-        />
-        <ToggleRow
-          label="Debug Mode"
-          description="Log verbose system events to console"
-          value={debugMode}
-          onChange={v => { setDebugMode(v); if (v) toast.info('Debug mode enabled — check browser console for verbose logs.'); }}
-        />
-        {maintenance && (
-          <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-2.5">
-            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-300">Maintenance mode is active. Customer-facing app is currently inaccessible.</p>
-          </div>
-        )}
-      </div>
-
-      {/* API Keys — clearly labelled, no fake interactive elements */}
-      <div className="bg-card border border-border rounded-2xl p-5 opacity-60">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Lock className="w-4 h-4 text-muted-foreground" />
-            <h2 className="font-bold text-sm">API Keys</h2>
-          </div>
-          <span className="text-xs bg-zinc-500/10 text-zinc-400 border border-zinc-500/20 px-2 py-0.5 rounded-full font-semibold">Managed via Server Env</span>
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Signing out will end your admin session. You'll need your email and PIN to log back in.
+          </p>
+          <button
+            onClick={adminLogout}
+            className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-red-400 border border-red-500/25 rounded-xl hover:bg-red-500/10 transition-colors"
+          >
+            Sign Out of Admin Portal
+          </button>
         </div>
-        <p className="text-xs text-muted-foreground mb-3">
-          API keys are stored securely as server environment variables and are never exposed to the client. To rotate a key, update it in your hosting environment.
-        </p>
-        {[
-          { label: 'Monnify API Key',       env: 'MONNIFY_API_KEY' },
-          { label: 'Monnify Secret Key',    env: 'MONNIFY_SECRET_KEY' },
-          { label: 'Monnify Contract Code', env: 'MONNIFY_CONTRACT_CODE' },
-          { label: 'ClubKonnect API Key',   env: 'CLUBKONNECT_API_KEY' },
-          { label: 'ClubKonnect User ID',   env: 'CLUBKONNECT_USER_ID' },
-        ].map(k => (
-          <div key={k.label} className="flex items-center justify-between py-2.5 border-b border-border/50 last:border-0">
-            <span className="text-xs text-muted-foreground">{k.label}</span>
-            <code className="text-xs font-mono text-zinc-500">{k.env}</code>
-          </div>
-        ))}
       </div>
 
-      {/* Danger Zone */}
-      <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-5">
-        <h2 className="font-bold text-sm text-red-400 mb-3">Danger Zone</h2>
-        <button
-          onClick={adminLogout}
-          className="w-full h-11 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl text-sm font-semibold hover:bg-red-500/20 transition-colors"
-        >
-          Sign Out of Admin Portal
-        </button>
-      </div>
-
-      {/* Modals */}
       {modal === 'changePin'   && <ChangePinModal   onClose={() => setModal(null)} />}
       {modal === 'editProfile' && <EditProfileModal  onClose={() => setModal(null)} />}
     </div>

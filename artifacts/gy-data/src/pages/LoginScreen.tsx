@@ -5,10 +5,141 @@ import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import { normalizeNigerianNumber } from '../components/PhoneInputWithContacts';
 
-// ── Long-press config ─────────────────────────────────────────────────────────
-const LONG_PRESS_MS  = 2000;
-const MOVE_THRESHOLD = 12;
-const PROGRESS_FPS   = 60;
+// ── Admin long-press button ───────────────────────────────────────────────────
+const ADMIN_HOLD_MS = 2000;
+const ADMIN_FPS     = 60;
+
+interface AdminAccessButtonProps { onUnlock: () => void; }
+
+function AdminAccessButton({ onUnlock }: AdminAccessButtonProps) {
+  const [progress, setProgress] = useState(0);
+  const [pressing, setPressing] = useState(false);
+
+  const timerRef    = useRef<ReturnType<typeof setTimeout>  | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startRef    = useRef<number>(0);
+
+  const cancel = useCallback(() => {
+    if (timerRef.current)    { clearTimeout(timerRef.current);     timerRef.current    = null; }
+    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+    setPressing(false);
+    setProgress(0);
+  }, []);
+
+  useEffect(() => () => cancel(), [cancel]);
+
+  const startPress = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    startRef.current = Date.now();
+    setPressing(true);
+    setProgress(0);
+    intervalRef.current = setInterval(() => {
+      setProgress(Math.min((Date.now() - startRef.current) / ADMIN_HOLD_MS, 1));
+    }, 1000 / ADMIN_FPS);
+    timerRef.current = setTimeout(() => {
+      cancel();
+      onUnlock();
+    }, ADMIN_HOLD_MS);
+  }, [cancel, onUnlock]);
+
+  const endPress = useCallback(() => cancel(), [cancel]);
+
+  // SVG arc
+  const R    = 20;
+  const CIRC = 2 * Math.PI * R;
+
+  return (
+    <div className="flex flex-col items-center gap-2 select-none">
+      {/* Button — ring wraps the lock icon */}
+      <div
+        className="relative flex items-center justify-center"
+        style={{ width: 48, height: 48 }}
+      >
+        {/* Track ring (always visible at low opacity) */}
+        <svg
+          width="48" height="48" viewBox="0 0 48 48"
+          className="absolute inset-0 pointer-events-none"
+        >
+          <circle
+            cx="24" cy="24" r={R}
+            fill="none"
+            stroke="rgba(147,197,253,0.18)"
+            strokeWidth="2"
+          />
+          {/* Sweep arc */}
+          <circle
+            cx="24" cy="24" r={R}
+            fill="none"
+            stroke="rgba(147,197,253,0.90)"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeDasharray={CIRC}
+            strokeDashoffset={CIRC * (1 - progress)}
+            transform="rotate(-90 24 24)"
+            style={{ transition: pressing ? 'none' : 'stroke-dashoffset 0.25s ease' }}
+          />
+        </svg>
+
+        {/* Lock icon — the actual press target */}
+        <button
+          onPointerDown={startPress}
+          onPointerUp={endPress}
+          onPointerCancel={endPress}
+          onContextMenu={e => { if (pressing) e.preventDefault(); }}
+          aria-label="Admin access — hold for 2 seconds"
+          style={{
+            touchAction: 'none',
+            userSelect:  'none',
+            WebkitUserSelect: 'none',
+            width: 36, height: 36,
+            borderRadius: '50%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: 'none', background: 'transparent',
+            cursor: 'pointer',
+            transition: 'background 0.15s ease',
+          }}
+        >
+          {/* Lock SVG */}
+          <svg
+            width="16" height="16" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" strokeWidth="2"
+            strokeLinecap="round" strokeLinejoin="round"
+            style={{
+              color: pressing
+                ? `rgba(147,197,253,${0.55 + progress * 0.45})`
+                : 'rgba(147,197,253,0.50)',
+              transition: pressing ? 'none' : 'color 0.25s ease',
+            }}
+          >
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </button>
+      </div>
+
+      {/* Label */}
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 500,
+          letterSpacing: '0.06em',
+          color: pressing
+            ? `rgba(147,197,253,${0.50 + progress * 0.40})`
+            : 'rgba(147,197,253,0.38)',
+          textTransform: 'uppercase',
+          transition: pressing ? 'none' : 'color 0.25s ease',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+        }}
+      >
+        {pressing
+          ? progress >= 0.98 ? 'Opening…' : 'Hold…'
+          : 'Admin Access'}
+      </span>
+    </div>
+  );
+}
 
 // ── Login flow has two steps: phone → PIN ─────────────────────────────────────
 type LoginStep = 'phone' | 'pin';
@@ -17,62 +148,15 @@ export default function LoginScreen() {
   const { login } = useAppContext();
   const [, setLocation] = useLocation();
 
-  // ── Step state ───────────────────────────────────────────────────────────
-  const [step,       setStep]       = useState<LoginStep>('phone');
-  const [phone,      setPhone]      = useState('');
-  const [phoneError, setPhoneError] = useState('');
-  const [pin,        setPin]        = useState('');
-  const [isError,    setIsError]    = useState(false);
-  const [isLoggingIn,setIsLoggingIn]= useState(false);
-  const [phoneCopied,setPhoneCopied]= useState(false);
+  // ── Step state ────────────────────────────────────────────────────────────
+  const [step,        setStep]        = useState<LoginStep>('phone');
+  const [phone,       setPhone]       = useState('');
+  const [phoneError,  setPhoneError]  = useState('');
+  const [pin,         setPin]         = useState('');
+  const [isError,     setIsError]     = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [phoneCopied, setPhoneCopied] = useState(false);
   const phoneInputRef = useRef<HTMLInputElement>(null);
-
-  // ── Long-press state ──────────────────────────────────────────────────────
-  const [pressOrigin,   setPressOrigin]   = useState<{ x: number; y: number } | null>(null);
-  const [pressProgress, setPressProgress] = useState(0);
-
-  const lpTimer    = useRef<ReturnType<typeof setTimeout>  | null>(null);
-  const lpProgress = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lpOrigin   = useRef<{ x: number; y: number } | null>(null);
-  const lpStart    = useRef<number>(0);
-
-  const cancelLongPress = useCallback(() => {
-    if (lpTimer.current)    { clearTimeout(lpTimer.current);     lpTimer.current    = null; }
-    if (lpProgress.current) { clearInterval(lpProgress.current); lpProgress.current = null; }
-    lpOrigin.current = null;
-    setPressOrigin(null);
-    setPressProgress(0);
-  }, []);
-
-  useEffect(() => () => cancelLongPress(), [cancelLongPress]);
-
-  const handleBgPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.target !== e.currentTarget) return;
-    const origin = { x: e.clientX, y: e.clientY };
-    lpOrigin.current = origin;
-    lpStart.current  = Date.now();
-    setPressOrigin(origin);
-    setPressProgress(0);
-    lpProgress.current = setInterval(() => {
-      const p = Math.min((Date.now() - lpStart.current) / LONG_PRESS_MS, 1);
-      setPressProgress(p);
-    }, 1000 / PROGRESS_FPS);
-    lpTimer.current = setTimeout(() => { cancelLongPress(); setLocation('/admin'); }, LONG_PRESS_MS);
-  }, [cancelLongPress, setLocation]);
-
-  const handleBgPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (!lpOrigin.current) return;
-    const dx = e.clientX - lpOrigin.current.x;
-    const dy = e.clientY - lpOrigin.current.y;
-    if (Math.sqrt(dx * dx + dy * dy) > MOVE_THRESHOLD) cancelLongPress();
-  }, [cancelLongPress]);
-
-  const handleBgPointerUp     = useCallback(() => cancelLongPress(), [cancelLongPress]);
-  const handleBgPointerCancel = useCallback(() => cancelLongPress(), [cancelLongPress]);
-
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    if (lpTimer.current !== null) e.preventDefault();
-  }, []);
 
   // ── Step 1: phone Continue ────────────────────────────────────────────────
   const handlePhoneContinue = () => {
@@ -124,36 +208,7 @@ export default function LoginScreen() {
     <div
       className="min-h-screen flex flex-col items-center justify-center p-5 relative overflow-hidden"
       style={{ background: 'linear-gradient(160deg, #0B1F4E 0%, #102B6A 35%, #1A3D8F 65%, #1E4DB7 100%)' }}
-      onPointerDown={handleBgPointerDown}
-      onPointerMove={handleBgPointerMove}
-      onPointerUp={handleBgPointerUp}
-      onPointerCancel={handleBgPointerCancel}
-      onContextMenu={handleContextMenu}
     >
-      {/* ── Admin long-press ripple ──────────────────────────────────── */}
-      <AnimatePresence>
-        {pressOrigin && (
-          <>
-            <div className="pointer-events-none" style={{
-              position: 'fixed', left: pressOrigin.x, top: pressOrigin.y,
-              transform: 'translate(-50%, -50%)',
-              width: `${80 + pressProgress * 120}px`, height: `${80 + pressProgress * 120}px`,
-              borderRadius: '50%',
-              border: `1.5px solid rgba(255,255,255,${0.06 + pressProgress * 0.18})`,
-              background: `radial-gradient(circle, rgba(255,255,255,${pressProgress * 0.07}) 0%, transparent 65%)`,
-              transition: 'none', zIndex: 6,
-            }} />
-            <div className="pointer-events-none" style={{
-              position: 'fixed', left: pressOrigin.x, top: pressOrigin.y,
-              transform: 'translate(-50%, -50%)',
-              width: `${24 + pressProgress * 40}px`, height: `${24 + pressProgress * 40}px`,
-              borderRadius: '50%',
-              border: `2px solid rgba(255,255,255,${pressProgress * 0.32})`,
-              transition: 'none', zIndex: 6,
-            }} />
-          </>
-        )}
-      </AnimatePresence>
 
       {/* ── Background decorative layer ─────────────────────────────── */}
       <div className="absolute top-[-120px] left-[-100px] w-[380px] h-[380px] rounded-full pointer-events-none"
@@ -491,6 +546,12 @@ export default function LoginScreen() {
         )}
 
       </AnimatePresence>
+
+      {/* ── Admin Access — subtle long-press entry point ─────────────── */}
+      <div className="z-10 mt-8">
+        <AdminAccessButton onUnlock={() => setLocation('/admin')} />
+      </div>
+
     </div>
   );
 }

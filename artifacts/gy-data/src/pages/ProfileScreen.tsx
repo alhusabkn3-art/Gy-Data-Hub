@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, ShieldCheck, Lock, Fingerprint, HelpCircle, AlertTriangle, Info, LogOut, ChevronRight, Copy, X, Eye, EyeOff } from 'lucide-react';
+import { User, ShieldCheck, Lock, Fingerprint, HelpCircle, Info, LogOut, ChevronRight, Copy, X, Eye, EyeOff, CreditCard } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
@@ -90,36 +90,27 @@ export default function ProfileScreen() {
               <MenuRow
                 icon={User}
                 label="Personal Information"
-                onClick={() => toast.info('Personal information editing coming in the next update.')}
+                onClick={() => setLocation('/profile/personal')}
               />
               <MenuRow
-                icon={ShieldCheck}
+                icon={CreditCard}
                 label="Bank Account"
                 value={user.bankName}
-                onClick={() => toast.info('Bank account management coming soon!')}
+                onClick={() => setLocation('/profile/bank')}
               />
               <MenuRow
                 icon={ShieldCheck}
                 label="KYC Verification"
                 value={user.kycStatus === 'verified' ? 'Verified' : user.kycStatus === 'pending' ? 'Pending' : 'Unverified'}
                 valueColor={user.kycStatus === 'verified' ? 'text-green-500' : user.kycStatus === 'pending' ? 'text-yellow-500' : 'text-red-400'}
-                onClick={() => toast.info(user.kycStatus === 'verified' ? 'Your KYC is fully verified!' : 'KYC verification coming soon!')}
+                onClick={() => setLocation('/profile/kyc')}
               />
-              <div
-                onClick={copyReferral}
-                className="flex items-center justify-between p-4 hover:bg-black/5 transition-colors cursor-pointer"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                    <User className="w-4 h-4" />
-                  </div>
-                  <span className="font-medium text-sm">Referral Program</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-mono text-primary bg-primary/10 px-2 py-1 rounded border border-primary/20">{user.referralCode}</span>
-                  <Copy className="w-4 h-4 text-muted-foreground" />
-                </div>
-              </div>
+              <MenuRow
+                icon={Copy}
+                label="Referral Program"
+                value={user.referralCode}
+                onClick={() => setLocation('/profile/referral')}
+              />
             </div>
           </div>
 
@@ -127,10 +118,9 @@ export default function ProfileScreen() {
           <div>
             <h3 className="text-xs font-semibold text-muted-foreground mb-3 px-1 uppercase tracking-wider">Security</h3>
             <div className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border">
-              <MenuRow icon={Lock} label="Change Login PIN"    onClick={() => setShowPinModal('login')} />
-              <MenuRow icon={Lock} label="Change Purchase PIN" onClick={() => setShowPinModal('purchase')} />
-              <MenuRow icon={Fingerprint} label="Biometric Login" value="Off"
-                onClick={() => toast.info('Enable biometrics in Settings → Security')} />
+              <MenuRow icon={Lock}        label="Change Login PIN"    onClick={() => setShowPinModal('login')} />
+              <MenuRow icon={Lock}        label="Change Purchase PIN" onClick={() => setShowPinModal('purchase')} />
+              <MenuRow icon={Fingerprint} label="Security Settings"   onClick={() => setLocation('/settings')} />
             </div>
           </div>
 
@@ -138,12 +128,8 @@ export default function ProfileScreen() {
           <div>
             <h3 className="text-xs font-semibold text-muted-foreground mb-3 px-1 uppercase tracking-wider">Support</h3>
             <div className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border">
-              <MenuRow icon={HelpCircle} label="Help & Support"
-                onClick={() => toast.info('Support chat coming soon! Email: support@gydata.ng')} />
-              <MenuRow icon={AlertTriangle} label="Report a Problem"
-                onClick={() => toast.info('Problem reporting coming soon!')} />
-              <MenuRow icon={Info} label="About GY DATA" value="v1.0.0"
-                onClick={() => toast.info('GY DATA v1.0.0 — endless joy')} />
+              <MenuRow icon={HelpCircle} label="Help & Support"  onClick={() => setLocation('/profile/support')} />
+              <MenuRow icon={Info}       label="About GY DATA"   value="v1.0.0" onClick={() => setLocation('/profile/about')} />
             </div>
           </div>
 

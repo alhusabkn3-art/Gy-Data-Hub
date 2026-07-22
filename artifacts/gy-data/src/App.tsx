@@ -18,6 +18,12 @@ import ProfileScreen from './pages/ProfileScreen';
 import SettingsScreen from './pages/SettingsScreen';
 import BuyDataScreen from './pages/BuyDataScreen';
 import BuyAirtimeScreen from './pages/BuyAirtimeScreen';
+import PersonalInfoScreen from './pages/PersonalInfoScreen';
+import BankAccountScreen from './pages/BankAccountScreen';
+import KYCScreen from './pages/KYCScreen';
+import ReferralScreen from './pages/ReferralScreen';
+import SupportScreen from './pages/SupportScreen';
+import AboutScreen from './pages/AboutScreen';
 
 import BottomNav from './components/BottomNav';
 
@@ -56,10 +62,16 @@ function MainApp() {
     <div className="flex flex-col h-[100dvh] bg-background text-foreground overflow-hidden">
       <div className="flex-1 overflow-y-auto min-h-0">
         <Switch>
-          <Route path="/data"          component={BuyDataScreen} />
-          <Route path="/airtime"       component={BuyAirtimeScreen} />
-          <Route path="/settings"      component={SettingsScreen} />
-          <Route path="/notifications" component={NotificationsScreen} />
+          <Route path="/data"                component={BuyDataScreen} />
+          <Route path="/airtime"             component={BuyAirtimeScreen} />
+          <Route path="/settings"            component={SettingsScreen} />
+          <Route path="/notifications"       component={NotificationsScreen} />
+          <Route path="/profile/personal"    component={PersonalInfoScreen} />
+          <Route path="/profile/bank"        component={BankAccountScreen} />
+          <Route path="/profile/kyc"         component={KYCScreen} />
+          <Route path="/profile/referral"    component={ReferralScreen} />
+          <Route path="/profile/support"     component={SupportScreen} />
+          <Route path="/profile/about"       component={AboutScreen} />
           <Route path="/">
             {activeTab === 'home'    && <HomeScreen />}
             {activeTab === 'wallet'  && <WalletScreen />}

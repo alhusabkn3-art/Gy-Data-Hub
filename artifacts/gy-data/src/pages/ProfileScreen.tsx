@@ -14,9 +14,9 @@ export default function ProfileScreen() {
   // Guard — this screen only renders when logged in, but be defensive
   if (!user) return null;
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setShowLogoutDialog(false);
-    logout();
+    await logout();
     setLocation('/');
   };
 
@@ -210,8 +210,8 @@ function PinChangeModal({
   type, verifyPin, changePin, onClose,
 }: {
   type: 'login' | 'purchase';
-  verifyPin: (pin: string) => boolean;
-  changePin: (oldPin: string, newPin: string) => boolean;
+  verifyPin: (pin: string) => Promise<boolean>;
+  changePin: (oldPin: string, newPin: string) => Promise<boolean>;
   onClose: () => void;
 }) {
   const [step,       setStep]       = useState<'current' | 'new' | 'confirm'>('current');
@@ -219,11 +219,13 @@ function PinChangeModal({
   const [newPin,     setNewPin]     = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [showPin,    setShowPin]    = useState(false);
+  const [isWorking,  setIsWorking]  = useState(false);
 
   const label     = type === 'login' ? 'Login' : 'Purchase';
   const activePin = step === 'current' ? currentPin : step === 'new' ? newPin : confirmPin;
 
-  const handleKeyPress = (key: string) => {
+  const handleKeyPress = async (key: string) => {
+    if (isWorking) return;
     const setter  = step === 'current' ? setCurrentPin : step === 'new' ? setNewPin : setConfirmPin;
     const current = step === 'current' ? currentPin   : step === 'new' ? newPin    : confirmPin;
     if (key === 'backspace') { setter(current.slice(0, -1)); return; }
@@ -231,39 +233,42 @@ function PinChangeModal({
     const next = current + key;
     setter(next);
     if (next.length === 6) {
-      setTimeout(() => {
-        if (step === 'current') {
-          // Verify against the real stored PIN
-          if (!verifyPin(next)) {
-            toast.error('Incorrect current PIN.');
-            setter('');
-          } else {
-            setStep('new');
-          }
-        } else if (step === 'new') {
-          setStep('confirm');
+      await new Promise(r => setTimeout(r, 300));
+      if (step === 'current') {
+        setIsWorking(true);
+        const ok = await verifyPin(next);
+        setIsWorking(false);
+        if (!ok) {
+          toast.error('Incorrect current PIN.');
+          setter('');
         } else {
-          // Confirm step
-          if (next !== newPin) {
-            toast.error("PINs don't match. Try again.");
-            setter('');
-            setStep('new');
-            setNewPin('');
+          setStep('new');
+        }
+      } else if (step === 'new') {
+        setStep('confirm');
+      } else {
+        // Confirm step
+        if (next !== newPin) {
+          toast.error("PINs don't match. Try again.");
+          setter('');
+          setStep('new');
+          setNewPin('');
+        } else {
+          setIsWorking(true);
+          const ok = await changePin(currentPin, newPin);
+          setIsWorking(false);
+          if (ok) {
+            toast.success(`${label} PIN changed successfully!`);
+            onClose();
           } else {
-            const ok = changePin(currentPin, newPin);
-            if (ok) {
-              toast.success(`${label} PIN changed successfully!`);
-              onClose();
-            } else {
-              toast.error('Failed to update PIN. Please try again.');
-              setter('');
-              setStep('current');
-              setCurrentPin('');
-              setNewPin('');
-            }
+            toast.error('Failed to update PIN. Please try again.');
+            setter('');
+            setStep('current');
+            setCurrentPin('');
+            setNewPin('');
           }
         }
-      }, 300);
+      }
     }
   };
 
@@ -313,9 +318,13 @@ function PinChangeModal({
           ))}
         </div>
 
+        {isWorking && (
+          <p className="text-xs text-center text-muted-foreground mb-2">Verifying…</p>
+        )}
+
         <div className="grid grid-cols-3 gap-2 mb-4">
           {keys.map((key, i) => (
-            <button key={i} onClick={() => key && handleKeyPress(key)} disabled={!key}
+            <button key={i} onClick={() => key && handleKeyPress(key)} disabled={!key || isWorking}
               className={`h-12 rounded-xl flex items-center justify-center text-lg font-medium transition-all active:scale-95 ${
                 key ? 'bg-muted hover:bg-black/10 text-foreground' : 'opacity-0 cursor-default'
               }`}

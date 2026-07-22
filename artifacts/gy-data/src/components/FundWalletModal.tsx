@@ -21,15 +21,16 @@ export default function FundWalletModal({ open, onOpenChange }: { open: boolean,
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleFund = () => {
+  const handleFund = async () => {
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) return;
-    
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      fundWallet(Number(amount));
+    const ok = await fundWallet(Number(amount));
+    setIsLoading(false);
+    if (ok) {
       setShowSuccess(true);
-    }, 1500);
+    } else {
+      toast.error('Funding failed — please try again.');
+    }
   };
 
   const closeAndReset = () => {

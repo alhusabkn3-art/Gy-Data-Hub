@@ -19,7 +19,7 @@ const networks = [
 
 export default function BuyDataScreen() {
   const [, setLocation] = useLocation();
-  const { addTransaction, balance } = useAppContext();
+  const { purchaseData, balance } = useAppContext();
 
   const [step, setStep] = useState(1);
   const [network, setNetwork] = useState('');
@@ -77,7 +77,9 @@ export default function BuyDataScreen() {
     }
     setIsLoading(true);
     try {
-      const result = await buyData({
+      // Single server call: wallet debit + vendor purchase in one atomic operation.
+      // Success UI is shown only when the server confirms success.
+      const result = await purchaseData({
         network: selectedNetwork.id,
         phone,
         planCode: plan.DataPlan,
@@ -86,19 +88,9 @@ export default function BuyDataScreen() {
       });
 
       if (!result.success) {
-        toast.error(`Transaction ${result.status ?? 'failed'}. Please try again.`);
+        toast.error(result.error ?? 'Transaction failed. Please try again.');
         return;
       }
-
-      addTransaction({
-        type: 'data',
-        service: 'Data',
-        provider: selectedNetwork.name,
-        amount: planPrice,
-        status: 'success',
-        description: `${selectedNetwork.name} ${result.planName ?? plan.DataPlanName}`,
-        paymentMethod: 'Wallet',
-      });
 
       const now = new Date();
       setSuccessData({
@@ -116,11 +108,7 @@ export default function BuyDataScreen() {
       setShowSuccess(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Purchase failed';
-      toast.error(
-        msg.toLowerCase().includes('credentials') || msg.includes('503')
-          ? 'Service temporarily unavailable. Please try again later.'
-          : msg,
-      );
+      toast.error(msg.toLowerCase().includes('503') ? 'Service temporarily unavailable.' : msg);
     } finally {
       setIsLoading(false);
     }

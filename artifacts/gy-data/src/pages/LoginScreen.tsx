@@ -91,10 +91,10 @@ export default function LoginScreen() {
     else if (pin.length < 6) { setPin(p => p + key); setIsError(false); }
   };
 
-  const handleLogin = useCallback(() => {
+  const handleLogin = useCallback(async () => {
     if (isLoggingIn || pin.length < 6) return;
     setIsLoggingIn(true);
-    const result = login(phone, pin);
+    const result = await login(phone, pin);
     if (result === 'success') {
       // AppContext sets isLoggedIn → CustomerRouter will redirect automatically
       return;

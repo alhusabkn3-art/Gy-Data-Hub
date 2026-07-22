@@ -130,12 +130,15 @@ export default function RegisterScreen() {
   const [confirmPin, setConfirmPin] = useState('');
   const [pinError, setPinError] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [isCheckingPhone, setIsCheckingPhone] = useState(false);
 
-  const handleDetailsNext = () => {
+  const handleDetailsNext = async () => {
     const err = validateStep1(name, email, phone);
     if (err) { setFieldErrors(err); return; }
-    // Check for duplicate phone
-    if (accountExists(phone.replace(/\D/g, '').slice(0, 11))) {
+    setIsCheckingPhone(true);
+    const exists = await accountExists(phone.replace(/\D/g, '').slice(0, 11));
+    setIsCheckingPhone(false);
+    if (exists) {
       setFieldErrors('An account with this phone number already exists. Please sign in instead.');
       return;
     }
@@ -151,34 +154,39 @@ export default function RegisterScreen() {
     if (next.length === 6) setTimeout(() => setStep('confirm-pin'), 200);
   };
 
-  const handleConfirmPinKey = (key: string) => {
+  const handleConfirmPinKey = async (key: string) => {
     if (key === 'backspace') { setConfirmPin(p => p.slice(0, -1)); setPinError(false); return; }
     if (confirmPin.length >= 6) return;
     const next = confirmPin + key;
     setConfirmPin(next);
     if (next.length === 6) {
-      setTimeout(() => {
-        if (next !== newPin) {
-          setPinError(true);
-          toast.error("PINs don't match. Try again.");
+      await new Promise(r => setTimeout(r, 200));
+      if (next !== newPin) {
+        setPinError(true);
+        toast.error("PINs don't match. Try again.");
+        setConfirmPin('');
+      } else {
+        setIsCreating(true);
+        const result = await register(
+          name.trim(),
+          phone.replace(/\D/g, '').slice(0, 11),
+          email.trim(),
+          newPin,
+        );
+        if (result === 'phone_taken') {
+          toast.error('An account with this phone number already exists.');
+          setIsCreating(false);
+          setStep('details');
+          setNewPin('');
           setConfirmPin('');
+        } else if (result === 'error') {
+          toast.error('Registration failed. Please try again.');
+          setIsCreating(false);
         } else {
-          // Create the real account and auto-login
-          setIsCreating(true);
-          const result = register(name.trim(), phone.replace(/\D/g, '').slice(0, 11), email.trim(), newPin);
-          if (result === 'phone_taken') {
-            toast.error('An account with this phone number already exists.');
-            setIsCreating(false);
-            setStep('details');
-            setNewPin('');
-            setConfirmPin('');
-          } else {
-            setStep('success');
-            // Auto-navigate to home after showing success (user is now logged in)
-            setTimeout(() => setLocation('/'), 2200);
-          }
+          setStep('success');
+          setTimeout(() => setLocation('/'), 2200);
         }
-      }, 200);
+      }
     }
   };
 
@@ -316,7 +324,9 @@ export default function RegisterScreen() {
               </motion.p>
             )}
 
-            <GradientButton onClick={handleDetailsNext}>Continue</GradientButton>
+            <GradientButton onClick={handleDetailsNext} disabled={isCheckingPhone}>
+              {isCheckingPhone ? 'Checking…' : 'Continue'}
+            </GradientButton>
 
             <div className="text-center mt-5">
               <button onClick={() => setLocation('/')}

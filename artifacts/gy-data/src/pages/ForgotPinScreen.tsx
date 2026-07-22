@@ -129,7 +129,7 @@ function useCountdown(initial: number) {
 type Step = 'phone' | 'otp' | 'new-pin' | 'confirm-pin' | 'success';
 
 export default function ForgotPinScreen() {
-  const { resetPin, accountExists } = useAppContext();
+  const { requestPinReset, resetPin } = useAppContext();
   const [, setLocation] = useLocation();
   const [step, setStep] = useState<Step>('phone');
 
@@ -137,36 +137,52 @@ export default function ForgotPinScreen() {
   const [phoneError, setPhoneError] = useState('');
   const [isSending,  setIsSending]  = useState(false);
 
+  // The OTP entered by the user (verified server-side in the reset step)
   const [otp,      setOtp]      = useState('');
   const [otpError, setOtpError] = useState(false);
-  const { count: otpTimer, reset: resetTimer, expired: otpExpired } = useCountdown(60);
+  const { count: otpTimer, reset: resetTimer, expired: otpExpired } = useCountdown(300); // 5 min
 
   const [newPin,     setNewPin]     = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [pinError,   setPinError]   = useState(false);
 
-  // ── Step 1: phone ─────────────────────────────────────────────────────────
-  const handleSendOtp = () => {
+  // ── Step 1: request OTP ───────────────────────────────────────────────────
+  const handleSendOtp = async () => {
     const digits = phone.replace(/\D/g, '');
     if (!/^0[7-9][01]\d{8}$/.test(digits)) {
       setPhoneError('Enter a valid 11-digit Nigerian mobile number.');
       return;
     }
-    if (!accountExists(digits)) {
-      setPhoneError('No account found with this phone number.');
-      return;
-    }
-    setPhoneError('');
     setIsSending(true);
-    setTimeout(() => {
-      setIsSending(false);
-      setStep('otp');
-      resetTimer();
-      toast.success('A verification code has been sent to your number.');
-    }, 1200);
+    const result = await requestPinReset(digits);
+    setIsSending(false);
+
+    // Always show success message regardless of whether the phone exists —
+    // the backend does the same to avoid leaking account existence.
+    setPhoneError('');
+    setStep('otp');
+    resetTimer();
+    toast.success('A verification code has been sent to your number.');
+
+    // Dev-only: show the OTP in a toast so developers can test without SMS
+    if (result.devOtp) {
+      toast.info(`Dev mode — your code is: ${result.devOtp}`, { duration: 60_000 });
+    }
   };
 
-  // ── Step 2: OTP ───────────────────────────────────────────────────────────
+  const handleResendOtp = async () => {
+    const digits = phone.replace(/\D/g, '');
+    setIsSending(true);
+    const result = await requestPinReset(digits);
+    setIsSending(false);
+    resetTimer();
+    toast.success('A new verification code has been sent.');
+    if (result.devOtp) {
+      toast.info(`Dev mode — your code is: ${result.devOtp}`, { duration: 60_000 });
+    }
+  };
+
+  // ── Step 2: OTP entry (just collecting digits; verified in reset step) ────
   const handleOtpKey = (key: string) => {
     if (key === 'backspace') { setOtp(p => p.slice(0, -1)); setOtpError(false); return; }
     if (otp.length >= 6) return;
@@ -186,28 +202,32 @@ export default function ForgotPinScreen() {
     if (next.length === 6) setTimeout(() => setStep('confirm-pin'), 200);
   };
 
-  // ── Step 4: confirm PIN — calls resetPin() ────────────────────────────────
-  const handleConfirmPinKey = (key: string) => {
+  // ── Step 4: confirm PIN + server-side OTP verification ────────────────────
+  const handleConfirmPinKey = async (key: string) => {
     if (key === 'backspace') { setConfirmPin(p => p.slice(0, -1)); setPinError(false); return; }
     if (confirmPin.length >= 6) return;
     const next = confirmPin + key;
     setConfirmPin(next);
     if (next.length === 6) {
-      setTimeout(() => {
-        if (next !== newPin) {
-          setPinError(true);
-          toast.error("PINs don't match. Try again.");
+      await new Promise(r => setTimeout(r, 200));
+      if (next !== newPin) {
+        setPinError(true);
+        toast.error("PINs don't match. Try again.");
+        setConfirmPin('');
+      } else {
+        // Server verifies OTP hash + expiry + resets PIN atomically
+        const ok = await resetPin(phone.replace(/\D/g, ''), otp, newPin);
+        if (!ok) {
+          toast.error('Verification failed — your code may have expired. Please start again.');
+          setStep('phone');
+          setOtp('');
+          setNewPin('');
           setConfirmPin('');
+          setPinError(false);
         } else {
-          const ok = resetPin(phone.replace(/\D/g, ''), newPin);
-          if (!ok) {
-            toast.error('Could not update PIN. Please start again.');
-            setStep('phone');
-          } else {
-            setStep('success');
-          }
+          setStep('success');
         }
-      }, 200);
+      }
     }
   };
 
@@ -215,7 +235,7 @@ export default function ForgotPinScreen() {
   const goBack = () => {
     if (step === 'phone') { setLocation('/'); return; }
     if (step === 'otp') { setStep('phone'); setOtp(''); setOtpError(false); return; }
-    if (step === 'new-pin') { setStep('otp'); setNewPin(''); setOtp(''); return; }
+    if (step === 'new-pin') { setStep('otp'); setNewPin(''); return; }
     if (step === 'confirm-pin') { setStep('new-pin'); setNewPin(''); setConfirmPin(''); setPinError(false); return; }
   };
 
@@ -231,12 +251,15 @@ export default function ForgotPinScreen() {
     phone: 1, otp: 2, 'new-pin': 3, 'confirm-pin': 4, success: 4,
   };
 
+  const otpMins = Math.floor(otpTimer / 60);
+  const otpSecs = otpTimer % 60;
+  const otpLabel = `${otpMins}:${otpSecs.toString().padStart(2, '0')}`;
+
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-start pt-12 p-5 relative overflow-hidden"
       style={{ background: 'linear-gradient(160deg, #0B1F4E 0%, #102B6A 35%, #1A3D8F 65%, #1E4DB7 100%)' }}
     >
-      {/* Background orbs */}
       <div className="absolute top-[-120px] left-[-100px] w-[380px] h-[380px] rounded-full pointer-events-none"
         style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.22) 0%, transparent 70%)' }} />
       <div className="absolute bottom-[-100px] right-[-80px] w-[340px] h-[340px] rounded-full pointer-events-none"
@@ -296,7 +319,7 @@ export default function ForgotPinScreen() {
                 </svg>
               </div>
               <h2 className="text-xl font-bold mb-1" style={{ color: '#0B1F4E' }}>Account Recovery</h2>
-              <p className="text-sm" style={{ color: '#6B7FA3' }}>We'll send a verification code to your registered phone number.</p>
+              <p className="text-sm" style={{ color: '#6B7FA3' }}>Enter your registered phone number to receive a verification code.</p>
             </div>
 
             <div className="mb-6">
@@ -356,13 +379,13 @@ export default function ForgotPinScreen() {
             </motion.div>
             <div className="text-center">
               {otpExpired ? (
-                <button onClick={() => { resetTimer(); toast.success('A new code has been sent.'); }}
+                <button onClick={handleResendOtp} disabled={isSending}
                   className="text-sm font-semibold" style={{ color: '#2563EB' }}>
-                  Resend Code
+                  {isSending ? 'Sending…' : 'Resend Code'}
                 </button>
               ) : (
                 <p className="text-sm" style={{ color: '#9BA8C0' }}>
-                  Resend code in <span className="font-semibold" style={{ color: '#0B1F4E' }}>{otpTimer}s</span>
+                  Code expires in <span className="font-semibold" style={{ color: '#0B1F4E' }}>{otpLabel}</span>
                 </p>
               )}
             </div>

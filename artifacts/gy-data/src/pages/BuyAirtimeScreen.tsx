@@ -21,7 +21,7 @@ const quickAmounts = [100, 200, 500, 1000, 2000, 5000];
 
 export default function BuyAirtimeScreen() {
   const [, setLocation] = useLocation();
-  const { addTransaction, balance } = useAppContext();
+  const { purchaseAirtime, balance } = useAppContext();
 
   const [network, setNetwork] = useState('');
   const [phone, setPhone] = useState('');
@@ -43,26 +43,18 @@ export default function BuyAirtimeScreen() {
     }
     setIsLoading(true);
     try {
-      const result = await buyAirtime({
+      // Single server call: wallet debit + vendor purchase in one atomic operation.
+      // Success UI is shown only when the server confirms success.
+      const result = await purchaseAirtime({
         network: selectedNetwork.id,
         phone,
         amount: numAmount,
       });
 
       if (!result.success) {
-        toast.error(`Transaction ${result.status ?? 'failed'}. Please try again.`);
+        toast.error(result.error ?? 'Transaction failed. Please try again.');
         return;
       }
-
-      addTransaction({
-        type: 'airtime',
-        service: 'Airtime',
-        provider: selectedNetwork.name,
-        amount: numAmount,
-        status: 'success',
-        description: `${selectedNetwork.name} Airtime`,
-        paymentMethod: 'Wallet',
-      });
 
       const now = new Date();
       setSuccessData({
@@ -80,11 +72,7 @@ export default function BuyAirtimeScreen() {
       setShowSuccess(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Purchase failed';
-      toast.error(
-        msg.toLowerCase().includes('credentials') || msg.includes('503')
-          ? 'Service temporarily unavailable. Please try again later.'
-          : msg,
-      );
+      toast.error(msg.toLowerCase().includes('503') ? 'Service temporarily unavailable.' : msg);
     } finally {
       setIsLoading(false);
     }

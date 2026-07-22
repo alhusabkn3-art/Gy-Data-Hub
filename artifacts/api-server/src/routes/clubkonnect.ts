@@ -1,5 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import * as ck from '../lib/clubkonnect.js';
+import { requireAuth } from './user.js';
 import { logger } from '../lib/logger.js';
 
 const router = Router();
@@ -48,8 +49,9 @@ router.get('/data-plans', async (req: Request, res: Response): Promise<void> => 
 });
 
 // ── POST /api/clubkonnect/airtime ──────────────────────────────────────────
-// Body: { network, phone, amount }
-router.post('/airtime', async (req: Request, res: Response): Promise<void> => {
+// Requires authentication — mutates vendor state and must be scoped to a user.
+// Prefer /api/purchase/airtime for frontend use (it also handles wallet debit).
+router.post('/airtime', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { network, phone, amount } = req.body as { network?: string; phone?: string; amount?: number };
 
   if (!network || !phone || amount === undefined) {
@@ -82,8 +84,9 @@ router.post('/airtime', async (req: Request, res: Response): Promise<void> => {
 });
 
 // ── POST /api/clubkonnect/data ─────────────────────────────────────────────
-// Body: { network, phone, planCode, planName, planPrice }
-router.post('/data', async (req: Request, res: Response): Promise<void> => {
+// Requires authentication — mutates vendor state and must be scoped to a user.
+// Prefer /api/purchase/data for frontend use (it also handles wallet debit).
+router.post('/data', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { network, phone, planCode, planName, planPrice } = req.body as {
     network?: string; phone?: string; planCode?: string; planName?: string; planPrice?: string;
   };

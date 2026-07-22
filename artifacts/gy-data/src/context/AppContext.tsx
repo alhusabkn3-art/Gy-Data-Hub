@@ -1,73 +1,66 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { User, Transaction, Notification, StoredAccount } from '../data/mockData';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { User, Transaction, Notification } from '../data/mockData';
 
-// ── localStorage helpers ──────────────────────────────────────────────────────
-const ACCOUNTS_KEY = 'gyd_accounts';
-const SESSION_KEY  = 'gyd_session';
+// ── API helper ────────────────────────────────────────────────────────────────
+const api = (path: string, opts?: RequestInit) =>
+  fetch(`/api${path}`, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...(opts?.headers ?? {}) },
+    ...opts,
+  });
 
-function loadAccounts(): StoredAccount[] {
-  try { return JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || '[]'); }
-  catch { return []; }
-}
+// ── Transform raw DB rows → frontend shapes ───────────────────────────────────
 
-function saveAccounts(accounts: StoredAccount[]) {
-  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
-}
+function transformTransaction(t: Record<string, unknown>): Transaction {
+  const d = new Date(t['createdAt'] as string);
+  const today     = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
 
-function loadSessionUserId(): string | null {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw).userId ?? null;
-  } catch { return null; }
-}
+  let date: string;
+  if (d.toDateString() === today.toDateString())     date = 'Today';
+  else if (d.toDateString() === yesterday.toDateString()) date = 'Yesterday';
+  else date = d.toLocaleDateString('en-NG', { day: 'numeric', month: 'short' });
 
-function saveSession(userId: string) {
-  localStorage.setItem(SESSION_KEY, JSON.stringify({ userId }));
-}
-
-function clearSession() {
-  localStorage.removeItem(SESSION_KEY);
-}
-
-// ── Account generators ────────────────────────────────────────────────────────
-function genId() {
-  return 'USR-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-}
-
-function genAccountNumber() {
-  return String(Math.floor(Math.random() * 9_000_000_000) + 1_000_000_000);
-}
-
-function genReferralCode(firstName: string) {
-  return 'GY-' + firstName.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4) +
-         Math.floor(Math.random() * 900 + 100);
-}
-
-function normalizePhone(phone: string) {
-  return phone.replace(/\D/g, '').slice(0, 11);
-}
-
-function accountToUser(a: StoredAccount): User {
   return {
-    id: a.id, name: a.name, firstName: a.firstName, lastName: a.lastName,
-    email: a.email, phone: a.phone, accountNumber: a.accountNumber,
-    bankName: a.bankName, referralCode: a.referralCode,
-    kycStatus: a.kycStatus, createdAt: a.createdAt,
+    id:            t['id'] as string,
+    type:          t['type'] as Transaction['type'],
+    service:       t['service'] as string,
+    provider:      t['provider'] as string,
+    amount:        parseFloat(t['amount'] as string),
+    date,
+    time:          d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    status:        t['status'] as Transaction['status'],
+    description:   (t['description'] as string) ?? '',
+    paymentMethod: (t['paymentMethod'] as string | null) ?? undefined,
   };
 }
 
-// ── Mutate one account in localStorage ───────────────────────────────────────
-function persistChanges(userId: string, changes: Partial<StoredAccount>) {
-  const accounts = loadAccounts();
-  const idx = accounts.findIndex(a => a.id === userId);
-  if (idx !== -1) {
-    accounts[idx] = { ...accounts[idx], ...changes };
-    saveAccounts(accounts);
-  }
+function transformNotification(n: Record<string, unknown>): Notification {
+  const d       = new Date(n['createdAt'] as string);
+  const diffMs  = Date.now() - d.getTime();
+  const diffMin = Math.floor(diffMs / 60_000);
+  const diffH   = Math.floor(diffMin / 60);
+  const diffD   = Math.floor(diffH / 24);
+
+  let timestamp: string;
+  if (diffMin < 1)      timestamp = 'Just now';
+  else if (diffMin < 60) timestamp = `${diffMin}m ago`;
+  else if (diffH < 24)  timestamp = `${diffH}h ago`;
+  else if (diffD < 7)   timestamp = `${diffD}d ago`;
+  else timestamp = d.toLocaleDateString('en-NG', { day: 'numeric', month: 'short' });
+
+  return {
+    id:        n['id'] as string,
+    type:      n['type'] as Notification['type'],
+    title:     n['title'] as string,
+    body:      n['body'] as string,
+    timestamp,
+    read:      n['read'] as boolean,
+  };
 }
 
-// ── Settings type ─────────────────────────────────────────────────────────────
+// ── Settings ──────────────────────────────────────────────────────────────────
 interface AppSettings {
   biometrics: boolean;
   theme: 'light' | 'dark' | 'system';
@@ -87,6 +80,7 @@ const defaultSettings: AppSettings = {
 // ── Context type ──────────────────────────────────────────────────────────────
 interface AppContextType {
   isLoggedIn: boolean;
+  isLoading: boolean;          // true while initial session check is in flight
   user: User | null;
   balance: number;
   balanceHidden: boolean;
@@ -96,225 +90,301 @@ interface AppContextType {
   settings: AppSettings;
   activeTab: string;
 
-  /** Login by phone + PIN. Returns 'success' | 'no_account' | 'wrong_pin' */
-  login: (phone: string, pin: string) => 'success' | 'no_account' | 'wrong_pin';
-  logout: () => void;
-  /** Register a new account and auto-login. Returns 'success' | 'phone_taken' */
-  register: (name: string, phone: string, email: string, pin: string) => 'success' | 'phone_taken';
-  /** Returns true if the given phone number has a registered account */
-  accountExists: (phone: string) => boolean;
-  /** Verify the current user's stored PIN without changing it */
-  verifyPin: (pin: string) => boolean;
-  /** Change PIN: verifies oldPin first. Returns false if oldPin is wrong. */
-  changePin: (oldPin: string, newPin: string) => boolean;
-  /** Update PIN for the account matching phone (for Forgot PIN flow) */
-  resetPin: (phone: string, newPin: string) => boolean;
+  /** Login by phone + PIN. */
+  login: (phone: string, pin: string) => Promise<'success' | 'no_account' | 'wrong_pin'>;
+  logout: () => Promise<void>;
+  /** Register and auto-login. */
+  register: (name: string, phone: string, email: string, pin: string) => Promise<'success' | 'phone_taken' | 'error'>;
+  /** Check if phone has an account (server-side). */
+  accountExists: (phone: string) => Promise<boolean>;
+  /** Verify the current user's PIN without changing it. */
+  verifyPin: (pin: string) => Promise<boolean>;
+  /** Change PIN: verifies oldPin first. */
+  changePin: (oldPin: string, newPin: string) => Promise<boolean>;
+  /** Step 1 of forgot-PIN: request a server-side OTP (returns devOtp in non-production). */
+  requestPinReset: (phone: string) => Promise<{ ok: boolean; devOtp?: string }>;
+  /** Step 2 of forgot-PIN: verify the OTP and reset the PIN. */
+  resetPin: (phone: string, otp: string, newPin: string) => Promise<boolean>;
 
   toggleBalanceHidden: () => void;
-  markAllNotificationsRead: () => void;
+  markAllNotificationsRead: () => Promise<void>;
   updateSettings: (settings: Partial<AppSettings>) => void;
-  addTransaction: (transaction: Omit<Transaction, 'id' | 'date' | 'time'>) => void;
+  /** @deprecated Use purchaseAirtime / purchaseData — they orchestrate wallet+vendor atomically on the server. */
+  addTransaction: (transaction: Omit<Transaction, 'id' | 'date' | 'time'>) => Promise<boolean>;
+  purchaseAirtime: (params: { network: string; phone: string; amount: number }) => Promise<{ success: boolean; requestId?: string; balance?: number; error?: string }>;
+  purchaseData: (params: { network: string; phone: string; planCode: string; planName: string; planPrice: string }) => Promise<{ success: boolean; requestId?: string; planName?: string; balance?: number; error?: string }>;
   setActiveTab: (tab: string) => void;
-  fundWallet: (amount: number) => void;
+  fundWallet: (amount: number) => Promise<boolean>;
 }
-
-// ── Restore session on first load ─────────────────────────────────────────────
-const _initialUserId   = loadSessionUserId();
-const _initialAccounts = loadAccounts();
-const _initialAccount  = _initialUserId
-  ? _initialAccounts.find(a => a.id === _initialUserId) ?? null
-  : null;
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
-  const [isLoggedIn,    setIsLoggedIn]    = useState(!!_initialAccount);
-  const [user,          setUser]          = useState<User | null>(_initialAccount ? accountToUser(_initialAccount) : null);
-  const [balance,       setBalance]       = useState(_initialAccount?.balance ?? 0);
-  const [balanceHidden, setBalanceHidden] = useState(defaultSettings.hideBalanceDefault);
-  const [transactions,  setTransactions]  = useState<Transaction[]>(_initialAccount?.transactions ?? []);
-  const [notifications, setNotifications] = useState<Notification[]>(_initialAccount?.notifications ?? []);
+  const [isLoggedIn,    setIsLoggedIn]    = useState(false);
+  const [isLoading,     setIsLoading]     = useState(true); // true until /me resolves
+  const [user,          setUser]          = useState<User | null>(null);
+  const [balance,       setBalance]       = useState(0);
+  const [balanceHidden, setBalanceHidden] = useState(false);
+  const [transactions,  setTransactions]  = useState<Transaction[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [settings,      setSettings]      = useState(defaultSettings);
   const [activeTab,     setActiveTab]     = useState('home');
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  // ── Auth ──────────────────────────────────────────────────────────────────
-  const login = (phone: string, pin: string): 'success' | 'no_account' | 'wrong_pin' => {
-    const norm     = normalizePhone(phone);
-    const accounts = loadAccounts();
-    const account  = accounts.find(a => normalizePhone(a.phone) === norm);
-    if (!account) return 'no_account';
-    if (account.pin !== pin) return 'wrong_pin';
+  // ── Restore session on mount ──────────────────────────────────────────────
+  useEffect(() => {
+    api('/auth/me')
+      .then(async res => {
+        if (!res.ok) return; // 401 → stay logged out
+        const data = await res.json() as {
+          user: User;
+          balance: string;
+          transactions: Record<string, unknown>[];
+          notifications: Record<string, unknown>[];
+        };
+        setUser(data.user);
+        setBalance(parseFloat(data.balance));
+        setTransactions(data.transactions.map(transformTransaction));
+        setNotifications(data.notifications.map(transformNotification));
+        setIsLoggedIn(true);
+      })
+      .catch(() => { /* network error — stay logged out */ })
+      .finally(() => setIsLoading(false));
+  }, []);
 
-    setUser(accountToUser(account));
-    setBalance(account.balance);
-    setTransactions(account.transactions);
-    setNotifications(account.notifications);
-    setIsLoggedIn(true);
-    setActiveTab('home');
-    saveSession(account.id);
-    return 'success';
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  const login = async (phone: string, pin: string): Promise<'success' | 'no_account' | 'wrong_pin'> => {
+    try {
+      const res = await api('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ phone, loginPin: pin }),
+      });
+      if (res.status === 401) {
+        const body = await res.json() as { error: string };
+        return body.error === 'no_account' ? 'no_account' : 'wrong_pin';
+      }
+      if (!res.ok) return 'wrong_pin';
+      const data = await res.json() as {
+        user: User;
+        balance: string;
+        transactions: Record<string, unknown>[];
+        notifications: Record<string, unknown>[];
+      };
+      setUser(data.user);
+      setBalance(parseFloat(data.balance));
+      setTransactions(data.transactions.map(transformTransaction));
+      setNotifications(data.notifications.map(transformNotification));
+      setIsLoggedIn(true);
+      setActiveTab('home');
+      return 'success';
+    } catch {
+      return 'wrong_pin';
+    }
   };
 
-  const logout = () => {
-    clearSession();
+  const logout = async (): Promise<void> => {
+    try {
+      await api('/auth/logout', { method: 'POST' });
+    } catch { /* ignore */ }
     setIsLoggedIn(false);
     setUser(null);
     setBalance(0);
     setTransactions([]);
     setNotifications([]);
-    setBalanceHidden(false);
     setActiveTab('home');
   };
 
-  const register = (
+  const register = async (
     name: string, phone: string, email: string, pin: string,
-  ): 'success' | 'phone_taken' => {
-    const norm     = normalizePhone(phone);
-    const accounts = loadAccounts();
-    if (accounts.some(a => normalizePhone(a.phone) === norm)) return 'phone_taken';
-
-    const parts     = name.trim().split(' ');
-    const firstName = parts[0];
-    const lastName  = parts.slice(1).join(' ');
-    const id        = genId();
-
-    const welcomeNotification: Notification = {
-      id: `NOT-WELCOME-${Date.now()}`,
-      type: 'system',
-      title: 'Welcome to GY DATA! 🎉',
-      body: `Hi ${firstName}! Your account is ready. Buy data, airtime, and more in seconds.`,
-      timestamp: 'Just now',
-      read: false,
-    };
-
-    const newAccount: StoredAccount = {
-      id, name: name.trim(), firstName, lastName,
-      email: email.trim(), phone: norm,
-      accountNumber: genAccountNumber(),
-      bankName: 'GY DATA Wallet',
-      referralCode: genReferralCode(firstName),
-      kycStatus: 'unverified',
-      createdAt: new Date().toISOString(),
-      pin,
-      balance: 0,
-      transactions: [],
-      notifications: [welcomeNotification],
-    };
-
-    accounts.push(newAccount);
-    saveAccounts(accounts);
-    saveSession(id);
-
-    setUser(accountToUser(newAccount));
-    setBalance(0);
-    setTransactions([]);
-    setNotifications([welcomeNotification]);
-    setIsLoggedIn(true);
-    setActiveTab('home');
-    return 'success';
-  };
-
-  const accountExists = (phone: string): boolean => {
-    const norm = normalizePhone(phone);
-    return loadAccounts().some(a => normalizePhone(a.phone) === norm);
-  };
-
-  const verifyPin = (pin: string): boolean => {
-    if (!user) return false;
-    const account = loadAccounts().find(a => a.id === user.id);
-    return account?.pin === pin;
-  };
-
-  const changePin = (oldPin: string, newPin: string): boolean => {
-    if (!user) return false;
-    const accounts = loadAccounts();
-    const idx = accounts.findIndex(a => a.id === user.id);
-    if (idx === -1 || accounts[idx].pin !== oldPin) return false;
-    accounts[idx].pin = newPin;
-    saveAccounts(accounts);
-    return true;
-  };
-
-  const resetPin = (phone: string, newPin: string): boolean => {
-    const norm     = normalizePhone(phone);
-    const accounts = loadAccounts();
-    const idx      = accounts.findIndex(a => normalizePhone(a.phone) === norm);
-    if (idx === -1) return false;
-    accounts[idx].pin = newPin;
-    saveAccounts(accounts);
-    return true;
-  };
-
-  // ── Wallet & transactions ─────────────────────────────────────────────────
-  const addTransaction = (txn: Omit<Transaction, 'id' | 'date' | 'time'>) => {
-    if (!user) return;
-    const newTxn: Transaction = {
-      ...txn,
-      id: `TXN-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      date: 'Today',
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-
-    setTransactions(prev => {
-      const next = [newTxn, ...prev];
-      persistChanges(user.id, { transactions: next });
-      return next;
-    });
-
-    if (txn.status === 'success' && txn.type !== 'wallet_fund') {
-      setBalance(prev => {
-        const next = prev - txn.amount;
-        persistChanges(user.id, { balance: next });
-        return next;
+  ): Promise<'success' | 'phone_taken' | 'error'> => {
+    try {
+      const res = await api('/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ name, phone, email, loginPin: pin }),
       });
+      if (res.status === 409) return 'phone_taken';
+      if (!res.ok) return 'error';
+      const data = await res.json() as {
+        user: User;
+        balance: string;
+        transactions: Record<string, unknown>[];
+        notifications: Record<string, unknown>[];
+      };
+      setUser(data.user);
+      setBalance(parseFloat(data.balance));
+      setTransactions(data.transactions.map(transformTransaction));
+      setNotifications(data.notifications.map(transformNotification));
+      setIsLoggedIn(true);
+      setActiveTab('home');
+      return 'success';
+    } catch {
+      return 'error';
     }
   };
 
-  const fundWallet = (amount: number) => {
-    if (!user) return;
-    setBalance(prev => {
-      const next = prev + amount;
-      persistChanges(user.id, { balance: next });
-      return next;
-    });
-    addTransaction({
-      type: 'wallet_fund',
-      service: 'Wallet Funding',
-      provider: 'Bank Transfer',
-      amount,
-      status: 'success',
-      description: 'Funded wallet via Bank Transfer',
-      paymentMethod: 'Bank Transfer',
-    });
+  const accountExists = async (phone: string): Promise<boolean> => {
+    try {
+      const res = await api(`/auth/check-phone?phone=${encodeURIComponent(phone)}`);
+      if (!res.ok) return false;
+      const data = await res.json() as { exists: boolean };
+      return data.exists;
+    } catch { return false; }
+  };
+
+  const verifyPin = async (pin: string): Promise<boolean> => {
+    try {
+      const res = await api('/user/check-pin', {
+        method: 'POST',
+        body: JSON.stringify({ pin }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json() as { valid: boolean };
+      return data.valid;
+    } catch { return false; }
+  };
+
+  const changePin = async (oldPin: string, newPin: string): Promise<boolean> => {
+    try {
+      const res = await api('/user/pin', {
+        method: 'PUT',
+        body: JSON.stringify({ currentPin: oldPin, newPin }),
+      });
+      return res.ok;
+    } catch { return false; }
+  };
+
+  const requestPinReset = async (phone: string): Promise<{ ok: boolean; devOtp?: string }> => {
+    try {
+      const res = await api('/auth/forgot-pin/request', {
+        method: 'POST',
+        body: JSON.stringify({ phone }),
+      });
+      if (!res.ok) return { ok: false };
+      const data = await res.json() as { message: string; otp?: string };
+      return { ok: true, devOtp: data.otp };
+    } catch { return { ok: false }; }
+  };
+
+  const resetPin = async (phone: string, otp: string, newPin: string): Promise<boolean> => {
+    try {
+      const res = await api('/auth/forgot-pin/reset', {
+        method: 'POST',
+        body: JSON.stringify({ phone, otp, newPin }),
+      });
+      return res.ok;
+    } catch { return false; }
+  };
+
+  // ── Wallet & transactions ─────────────────────────────────────────────────
+
+  /**
+   * @deprecated Use purchaseAirtime / purchaseData for spend transactions.
+   * This now only records a wallet_fund-style transaction record and is kept
+   * for backwards compatibility. Purchase screens must use the orchestrated endpoints.
+   */
+  const addTransaction = async (txn: Omit<Transaction, 'id' | 'date' | 'time'>): Promise<boolean> => {
+    if (!user) return false;
+    try {
+      const res = await api('/user/transactions', {
+        method: 'POST',
+        body: JSON.stringify({
+          type:          txn.type,
+          service:       txn.service,
+          provider:      txn.provider,
+          amount:        txn.amount,
+          description:   txn.description,
+          paymentMethod: txn.paymentMethod,
+        }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json() as Record<string, unknown>;
+      setTransactions(prev => [transformTransaction(data), ...prev]);
+      if (typeof data['balance'] === 'string') setBalance(parseFloat(data['balance']));
+      return true;
+    } catch { return false; }
+  };
+
+  /** Server-orchestrated airtime purchase: wallet debit + vendor call in one request. */
+  const purchaseAirtime = async (params: { network: string; phone: string; amount: number }) => {
+    try {
+      const res = await api('/purchase/airtime', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
+      const data = await res.json() as { success: boolean; requestId?: string; balance?: string; txnId?: string; error?: string };
+      if (res.ok && data.success) {
+        if (data.balance != null) setBalance(parseFloat(data.balance));
+        // Sync transactions from server on next context poll — or force a refresh
+        const txns = await api('/user/transactions');
+        if (txns.ok) {
+          const rows = await txns.json() as Record<string, unknown>[];
+          setTransactions(rows.map(transformTransaction));
+        }
+        return { success: true, requestId: data.requestId, balance: data.balance ? parseFloat(data.balance) : undefined };
+      }
+      return { success: false, error: data.error ?? 'Purchase failed' };
+    } catch { return { success: false, error: 'Network error' }; }
+  };
+
+  /** Server-orchestrated data purchase: wallet debit + vendor call in one request. */
+  const purchaseData = async (params: { network: string; phone: string; planCode: string; planName: string; planPrice: string }) => {
+    try {
+      const res = await api('/purchase/data', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
+      const data = await res.json() as { success: boolean; requestId?: string; planName?: string; balance?: string; txnId?: string; error?: string };
+      if (res.ok && data.success) {
+        if (data.balance != null) setBalance(parseFloat(data.balance));
+        const txns = await api('/user/transactions');
+        if (txns.ok) {
+          const rows = await txns.json() as Record<string, unknown>[];
+          setTransactions(rows.map(transformTransaction));
+        }
+        return { success: true, requestId: data.requestId, planName: data.planName, balance: data.balance ? parseFloat(data.balance) : undefined };
+      }
+      return { success: false, error: data.error ?? 'Purchase failed' };
+    } catch { return { success: false, error: 'Network error' }; }
+  };
+
+  const fundWallet = async (amount: number): Promise<boolean> => {
+    if (!user) return false;
+    try {
+      const res = await api('/user/wallet/fund', {
+        method: 'POST',
+        body: JSON.stringify({ amount }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json() as { balance: string; transaction: Record<string, unknown> };
+      setBalance(parseFloat(data.balance));
+      setTransactions(prev => [transformTransaction(data.transaction), ...prev]);
+      return true;
+    } catch { return false; }
   };
 
   // ── Notifications ─────────────────────────────────────────────────────────
-  const markAllNotificationsRead = () => {
-    if (!user) return;
-    setNotifications(prev => {
-      const next = prev.map(n => ({ ...n, read: true }));
-      persistChanges(user.id, { notifications: next });
-      return next;
-    });
+  const markAllNotificationsRead = async (): Promise<void> => {
+    try {
+      await api('/user/notifications/read-all', { method: 'POST' });
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    } catch { /* silent */ }
   };
 
   // ── Settings ──────────────────────────────────────────────────────────────
   const toggleBalanceHidden = () => setBalanceHidden(p => !p);
-
-  const updateSettings = (newSettings: Partial<AppSettings>) => {
+  const updateSettings = (newSettings: Partial<AppSettings>) =>
     setSettings(prev => ({ ...prev, ...newSettings }));
-  };
 
   return (
     <AppContext.Provider value={{
-      isLoggedIn, user, balance, balanceHidden, transactions,
+      isLoggedIn, isLoading, user, balance, balanceHidden, transactions,
       notifications, unreadCount, settings, activeTab,
-      login, logout, register, accountExists, verifyPin, changePin, resetPin,
+      login, logout, register, accountExists, verifyPin, changePin,
+      requestPinReset, resetPin,
       toggleBalanceHidden, markAllNotificationsRead, updateSettings,
-      addTransaction, setActiveTab, fundWallet,
+      addTransaction, purchaseAirtime, purchaseData, setActiveTab, fundWallet,
     }}>
       {children}
     </AppContext.Provider>

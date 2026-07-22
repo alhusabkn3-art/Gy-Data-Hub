@@ -1,8 +1,6 @@
-// ── Types only — no mock/demo data ────────────────────────────────────────────
-// All user data lives in localStorage, managed exclusively by AppContext.
-// Storage keys:
-//   "gyd_accounts"  →  StoredAccount[]
-//   "gyd_session"   →  { userId: string }
+// ── Frontend types ─────────────────────────────────────────────────────────────
+// These match the shapes returned by the API and held in AppContext state.
+// No mock/demo data lives here — all data comes from the real backend.
 
 export interface User {
   id: string;
@@ -15,7 +13,7 @@ export interface User {
   bankName: string;
   referralCode: string;
   kycStatus: 'unverified' | 'pending' | 'verified';
-  createdAt: string;
+  createdAt: string;    // ISO timestamp
 }
 
 export interface Transaction {
@@ -24,8 +22,8 @@ export interface Transaction {
   service: string;
   provider: string;
   amount: number;
-  date: string;
-  time: string;
+  date: string;         // human-readable e.g. "Today", "Yesterday", "12 Jul"
+  time: string;         // e.g. "03:45 PM"
   status: 'success' | 'pending' | 'failed';
   description: string;
   paymentMethod?: string;
@@ -36,14 +34,6 @@ export interface Notification {
   type: 'transaction' | 'promo' | 'system' | 'security';
   title: string;
   body: string;
-  timestamp: string;
+  timestamp: string;    // relative e.g. "Just now", "2h ago"
   read: boolean;
-}
-
-// ── Internal localStorage shape (used only by AppContext) ─────────────────────
-export interface StoredAccount extends User {
-  pin: string;
-  balance: number;
-  transactions: Transaction[];
-  notifications: Notification[];
 }

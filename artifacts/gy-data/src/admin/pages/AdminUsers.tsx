@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Search, UserCheck, UserX, Eye, X, Phone, Mail, CreditCard, Calendar, ShoppingBag, RefreshCw } from 'lucide-react';
+import React, { useState } from 'react';
+import { Search, UserCheck, UserX, Eye, X, Phone, Mail, CreditCard, Calendar, ShoppingBag, RefreshCw, Send, MessageSquare } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { StatusBadge } from './AdminDashboard';
 import { AdminUser } from '../data/adminMockData';
@@ -7,6 +7,113 @@ import { toast } from 'sonner';
 
 type FilterStatus = 'all' | 'active' | 'suspended' | 'pending';
 type FilterKYC    = 'all' | 'verified' | 'pending' | 'unverified' | 'failed';
+
+// ── Send Message modal ────────────────────────────────────────────────────────
+
+function SendMessageModal({ user, onClose }: { user: AdminUser; onClose: () => void }) {
+  const { addAnnouncement, stats } = useAdminContext();
+  const [subject, setSubject] = useState('');
+  const [body,    setBody]    = useState('');
+  const [sending, setSending] = useState(false);
+  const [errors,  setErrors]  = useState<Record<string, string>>({});
+
+  const submit = async () => {
+    const e: Record<string, string> = {};
+    if (!subject.trim()) e.subject = 'Subject is required';
+    if (!body.trim())    e.body    = 'Message body is required';
+    setErrors(e);
+    if (Object.keys(e).length > 0) return;
+
+    setSending(true);
+    await new Promise(r => setTimeout(r, 700));
+
+    // Store as a targeted announcement so it appears in Notifications history
+    addAnnouncement({
+      title:  subject.trim(),
+      body:   `[To: ${user.name} · ${user.phone}] ${body.trim()}`,
+      target: 'all',
+      status: 'sent',
+    });
+
+    toast.success(`Message sent to ${user.name}.`);
+    onClose();
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/60 z-[60] backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 bg-[#0A1628] border border-border rounded-2xl z-[60] p-5 max-w-md mx-auto shadow-2xl">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <MessageSquare className="w-4 h-4 text-primary" />
+            <h2 className="font-bold">Send Message</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Recipient pill */}
+        <div className="flex items-center gap-2.5 p-3 bg-primary/5 border border-primary/15 rounded-xl mb-4">
+          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary border border-primary/20 flex-shrink-0">
+            {user.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold truncate">{user.name}</p>
+            <p className="text-[10px] text-muted-foreground">{user.phone}</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Subject</label>
+            <input
+              type="text"
+              value={subject}
+              onChange={e => { setSubject(e.target.value); setErrors(p => ({ ...p, subject: '' })); }}
+              placeholder="Message subject…"
+              className="w-full bg-background border border-border focus:border-primary rounded-xl h-11 px-3 text-sm outline-none transition-colors"
+            />
+            {errors.subject && <p className="text-xs text-red-400 mt-1">{errors.subject}</p>}
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Message</label>
+            <textarea
+              value={body}
+              onChange={e => { setBody(e.target.value); setErrors(p => ({ ...p, body: '' })); }}
+              placeholder="Write your message here…"
+              rows={4}
+              className="w-full bg-background border border-border focus:border-primary rounded-xl px-3 py-3 text-sm outline-none transition-colors resize-none"
+            />
+            {errors.body && <p className="text-xs text-red-400 mt-1">{errors.body}</p>}
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={onClose}
+              className="flex-1 h-11 border border-border rounded-xl text-sm font-semibold hover:bg-white/5 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={submit}
+              disabled={sending}
+              className="flex-1 h-11 bg-primary hover:bg-primary/90 disabled:opacity-60 text-white rounded-xl text-sm font-bold transition-colors shadow-[0_4px_16px_rgba(59,130,246,0.3)] flex items-center justify-center gap-2"
+            >
+              {sending
+                ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Sending…</>
+                : <><Send className="w-4 h-4" />Send Message</>
+              }
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
 
 function Skeleton({ className }: { className?: string }) {
   return <div className={`animate-pulse bg-white/[0.07] rounded-lg ${className ?? ''}`} />;
@@ -17,7 +124,8 @@ export default function AdminUsers() {
   const [search,       setSearch]       = useState('');
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
   const [filterKYC,    setFilterKYC]    = useState<FilterKYC>('all');
-  const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
+  const [selectedUser,  setSelectedUser]  = useState<AdminUser | null>(null);
+  const [messagingUser, setMessagingUser] = useState<AdminUser | null>(null);
 
   // Client-side filter on the loaded batch
   const filtered = users.filter(u => {
@@ -203,6 +311,11 @@ export default function AdminUsers() {
         )}
       </div>
 
+      {/* Send Message Modal */}
+      {messagingUser && (
+        <SendMessageModal user={messagingUser} onClose={() => setMessagingUser(null)} />
+      )}
+
       {/* User Detail Modal */}
       {selectedUser && (
         <>
@@ -266,10 +379,10 @@ export default function AdminUsers() {
                   </button>
                 )}
                 <button
-                  onClick={() => toast.info('Message user — coming soon')}
+                  onClick={() => { setMessagingUser(selectedUser); setSelectedUser(null); }}
                   className="flex-1 h-10 bg-primary/10 text-primary border border-primary/20 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-primary/20 transition-colors"
                 >
-                  Send Message
+                  <MessageSquare className="w-3.5 h-3.5" /> Send Message
                 </button>
               </div>
             </div>

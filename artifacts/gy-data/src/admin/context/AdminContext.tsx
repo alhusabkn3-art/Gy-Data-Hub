@@ -10,7 +10,6 @@
  */
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import {
-  adminCredentials,
   adminAccounts as seedAdminAccounts,
   adminAnnouncements as seedAnnouncements,
   AdminUser,
@@ -200,15 +199,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   // ── Auth ────────────────────────────────────────────────────────────────────
 
   const adminLogin = async (email: string, pin: string): Promise<boolean> => {
-    // Step 1: fast local credential check (keeps UX snappy)
-    if (
-      email.trim().toLowerCase() !== adminCredentials.email ||
-      pin !== adminCredentials.pin
-    ) {
-      return false;
-    }
-
-    // Step 2: establish backend admin session so data endpoints work
+    // Validate credentials server-side — no credential comparison in client code
     try {
       const res = await adminApi('/api/admin/session', {
         method: 'POST',
@@ -219,9 +210,16 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       return false;
     }
 
+    const normalizedEmail = email.trim().toLowerCase();
     setIsAdminLoggedIn(true);
-    setAdminEmail(email.trim().toLowerCase());
+    setAdminEmail(normalizedEmail);
     setCurrentAdminId('ADM-001');
+
+    // Populate the super admin account with the real session credentials
+    // so Settings → Change PIN and Edit Profile reflect the live account.
+    setAdminAccounts(prev => prev.map(a =>
+      a.isSuperAdmin ? { ...a, email: normalizedEmail, pin } : a
+    ));
 
     // Fetch all dashboard data in parallel after login
     void Promise.all([

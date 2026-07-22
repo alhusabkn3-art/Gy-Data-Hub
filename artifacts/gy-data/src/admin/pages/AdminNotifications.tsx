@@ -18,7 +18,7 @@ const targetLabels: Record<string, string> = {
 };
 
 export default function AdminNotifications() {
-  const { announcements, addAnnouncement } = useAdminContext();
+  const { announcements, addAnnouncement, stats } = useAdminContext();
   const [showCompose, setShowCompose] = useState(false);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -160,9 +160,9 @@ export default function AdminNotifications() {
                   onChange={e => setTarget(e.target.value as typeof target)}
                   className="w-full bg-background border border-border focus:border-primary rounded-xl h-11 px-3 text-sm outline-none transition-colors"
                 >
-                  <option value="all">All Users (1,247)</option>
-                  <option value="verified">KYC Verified Only (1,089)</option>
-                  <option value="unverified">Unverified Only (158)</option>
+                  <option value="all">All Users{stats ? ` (${stats.totalUsers.toLocaleString()})` : ''}</option>
+                  <option value="verified">KYC Verified Only{stats ? ` (${stats.verifiedUsers.toLocaleString()})` : ''}</option>
+                  <option value="unverified">Unverified Only{stats ? ` (${stats.unverifiedUsers.toLocaleString()})` : ''}</option>
                 </select>
               </div>
               <div className="flex gap-3 pt-2">

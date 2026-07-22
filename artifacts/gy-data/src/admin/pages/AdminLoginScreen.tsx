@@ -72,7 +72,7 @@ export default function AdminLoginScreen() {
               </label>
               <input
                 type="email"
-                placeholder="admin@gyd.com"
+                placeholder="Admin email address"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleLogin()}

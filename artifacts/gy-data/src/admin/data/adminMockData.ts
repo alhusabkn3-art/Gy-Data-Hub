@@ -1,16 +1,18 @@
 /**
- * adminMockData.ts
+ * adminTypes.ts  (kept as adminMockData.ts for import compatibility)
  *
- * Shared types, constants, and configuration for the admin dashboard.
+ * Shared TypeScript interfaces, role configuration, and service display
+ * metadata for the GY DATA admin dashboard.
  *
- * ⚠️  All aggregate statistics (user counts, revenue figures, transaction
- * totals, service breakdowns, weekly charts) are now fetched from the real
- * backend via /api/admin/* endpoints.  Only the following are defined here:
- *   • TypeScript interfaces used across admin pages
- *   • Admin account management data (in-memory, not yet backed by DB)
- *   • Role configuration (labels, colours, permissions)
- *   • Service display config (icon/colour metadata, not counts)
- *   • Announcement seed data (in-memory; real push backend TBD)
+ * All live data (stats, users, transactions, revenue, services) is fetched
+ * from the real backend at /api/admin/*.  This file contains NO hardcoded
+ * fake records, fake statistics, or placeholder production data.
+ *
+ * In-memory state:
+ *   • Admin account management — stored in AdminContext React state.
+ *     The logged-in super admin record is populated from the live session.
+ *   • Announcements — stored in AdminContext React state.
+ *     Starts empty; records are created by the logged-in admin at runtime.
  */
 
 // ── Customer-facing data shapes ───────────────────────────────────────────────
@@ -94,11 +96,8 @@ export interface Announcement {
   recipients: number;
 }
 
-// ── Admin credentials (frontend validation — keep in sync with backend env vars) ──
-export const adminCredentials = {
-  email: 'admin@gyd.com',
-  pin:   '125125',
-};
+// (Admin credentials are validated server-side via POST /api/admin/session.
+//  They are NOT stored in client code.)
 
 // ── Admin account management ──────────────────────────────────────────────────
 
@@ -136,13 +135,20 @@ export const ROLE_PERMISSIONS: Record<AdminRole, string[]> = {
   support:     ['Dashboard', 'Users (View only)', 'Transactions (View only)'],
 };
 
-/** Initial admin accounts — stored in-memory until admin management is backend-backed. */
+/**
+ * Initial admin accounts — stored in React state in AdminContext.
+ * The super admin entry is populated with real email + PIN from the live
+ * login session (set by adminLogin in AdminContext).  This seed is a
+ * structural placeholder only — no credentials are hardcoded here.
+ */
 export const adminAccounts: AdminAccount[] = [
   {
-    id: 'ADM-001', name: 'Super Admin', email: 'admin@gyd.com',
+    id: 'ADM-001', name: 'Super Admin', email: '',
     role: 'super_admin', status: 'active',
-    createdAt: 'Jan 1, 2024', lastLogin: 'Today',
-    pin: '125125', isSuperAdmin: true,
+    createdAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    lastLogin: 'Just now',
+    pin: '',          // populated from live login session in AdminContext
+    isSuperAdmin: true,
   },
 ];
 
@@ -159,13 +165,5 @@ export const SERVICE_CONFIG: Record<string, { label: string; icon: string; color
   exam:        { label: 'Exam Pins',   icon: '📝', color: '#14B8A6' },
 };
 
-// ── Announcement seed data (in-memory) ────────────────────────────────────────
-export const adminAnnouncements: Announcement[] = [
-  {
-    id: 'ANN-001',
-    title: '🎉 Welcome to GY DATA',
-    body: 'GY DATA is now live! Buy data, airtime, pay bills and more at the best prices.',
-    target: 'all', status: 'sent',
-    sentAt: new Date().toLocaleString(), recipients: 0,
-  },
-];
+// ── Announcements — starts empty; created by admin at runtime ─────────────────
+export const adminAnnouncements: Announcement[] = [];

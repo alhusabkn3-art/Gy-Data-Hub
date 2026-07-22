@@ -1,20 +1,25 @@
-import React, { useState } from 'react';
-import { Search, UserCheck, UserX, Eye, X, Phone, Mail, CreditCard, Calendar, ShoppingBag } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, UserCheck, UserX, Eye, X, Phone, Mail, CreditCard, Calendar, ShoppingBag, RefreshCw } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { StatusBadge } from './AdminDashboard';
 import { AdminUser } from '../data/adminMockData';
 import { toast } from 'sonner';
 
 type FilterStatus = 'all' | 'active' | 'suspended' | 'pending';
-type FilterKYC = 'all' | 'verified' | 'pending' | 'unverified' | 'failed';
+type FilterKYC    = 'all' | 'verified' | 'pending' | 'unverified' | 'failed';
+
+function Skeleton({ className }: { className?: string }) {
+  return <div className={`animate-pulse bg-white/[0.07] rounded-lg ${className ?? ''}`} />;
+}
 
 export default function AdminUsers() {
-  const { users, suspendUser, activateUser } = useAdminContext();
-  const [search, setSearch] = useState('');
+  const { users, usersTotal, usersLoading, updateUserStatus, fetchUsers } = useAdminContext();
+  const [search,       setSearch]       = useState('');
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
-  const [filterKYC, setFilterKYC] = useState<FilterKYC>('all');
+  const [filterKYC,    setFilterKYC]    = useState<FilterKYC>('all');
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
 
+  // Client-side filter on the loaded batch
   const filtered = users.filter(u => {
     const matchSearch =
       u.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -22,20 +27,20 @@ export default function AdminUsers() {
       u.phone.includes(search) ||
       u.id.toLowerCase().includes(search.toLowerCase());
     const matchStatus = filterStatus === 'all' || u.status === filterStatus;
-    const matchKYC = filterKYC === 'all' || u.kycStatus === filterKYC;
+    const matchKYC    = filterKYC    === 'all' || u.kycStatus === filterKYC;
     return matchSearch && matchStatus && matchKYC;
   });
 
-  const handleSuspend = (u: AdminUser) => {
-    suspendUser(u.id);
-    toast.success(`${u.name} has been suspended.`);
-    setSelectedUser(null);
+  const handleSuspend = async (u: AdminUser) => {
+    const ok = await updateUserStatus(u.id, 'suspended');
+    if (ok) { toast.success(`${u.name} has been suspended.`); setSelectedUser(null); }
+    else     toast.error('Failed to suspend user. Please try again.');
   };
 
-  const handleActivate = (u: AdminUser) => {
-    activateUser(u.id);
-    toast.success(`${u.name} has been activated.`);
-    setSelectedUser(null);
+  const handleActivate = async (u: AdminUser) => {
+    const ok = await updateUserStatus(u.id, 'active');
+    if (ok) { toast.success(`${u.name} has been activated.`); setSelectedUser(null); }
+    else     toast.error('Failed to activate user. Please try again.');
   };
 
   return (
@@ -44,15 +49,32 @@ export default function AdminUsers() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl lg:text-2xl font-bold">Users</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{users.length} registered users</p>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {usersLoading ? 'Loading…' : `${usersTotal.toLocaleString()} registered users`}
+          </p>
         </div>
-        <div className="flex gap-2 text-xs">
-          <div className="bg-green-500/10 border border-green-500/20 text-green-400 px-3 py-1.5 rounded-xl font-semibold">
-            {users.filter(u => u.status === 'active').length} Active
+        <div className="flex items-center gap-2">
+          <div className="flex gap-2 text-xs">
+            {usersLoading ? (
+              <Skeleton className="h-7 w-20 rounded-xl" />
+            ) : (
+              <>
+                <div className="bg-green-500/10 border border-green-500/20 text-green-400 px-3 py-1.5 rounded-xl font-semibold">
+                  {users.filter(u => u.status === 'active').length} Active
+                </div>
+                <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-3 py-1.5 rounded-xl font-semibold">
+                  {users.filter(u => u.status === 'suspended').length} Suspended
+                </div>
+              </>
+            )}
           </div>
-          <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-3 py-1.5 rounded-xl font-semibold">
-            {users.filter(u => u.status === 'suspended').length} Suspended
-          </div>
+          <button
+            onClick={() => fetchUsers()}
+            disabled={usersLoading}
+            className="w-8 h-8 flex items-center justify-center rounded-xl bg-card border border-border text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${usersLoading ? 'animate-spin' : ''}`} />
+          </button>
         </div>
       </div>
 
@@ -106,10 +128,31 @@ export default function AdminUsers() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {usersLoading && users.length === 0 ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={i} className="border-b border-border/50">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <Skeleton className="w-8 h-8 rounded-full flex-shrink-0" />
+                        <div>
+                          <Skeleton className="h-4 w-28 mb-1" />
+                          <Skeleton className="h-3 w-36" />
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 hidden md:table-cell"><Skeleton className="h-4 w-28" /></td>
+                    <td className="px-4 py-3 hidden sm:table-cell text-right"><Skeleton className="h-4 w-20 ml-auto" /></td>
+                    <td className="px-4 py-3 text-center"><Skeleton className="h-5 w-16 mx-auto rounded-full" /></td>
+                    <td className="px-4 py-3 text-center"><Skeleton className="h-5 w-14 mx-auto rounded-full" /></td>
+                    <td className="px-4 py-3 text-center"><Skeleton className="h-6 w-12 mx-auto rounded-lg" /></td>
+                  </tr>
+                ))
+              ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-12 text-muted-foreground text-sm">
-                    No users match your filters.
+                  <td colSpan={6} className="text-center py-14 text-muted-foreground text-sm">
+                    {users.length === 0
+                      ? 'No registered users yet.'
+                      : 'No users match your filters.'}
                   </td>
                 </tr>
               ) : (
@@ -151,8 +194,11 @@ export default function AdminUsers() {
           </table>
         </div>
         {filtered.length > 0 && (
-          <div className="px-4 py-3 border-t border-border text-xs text-muted-foreground">
-            Showing {filtered.length} of {users.length} users
+          <div className="px-4 py-3 border-t border-border text-xs text-muted-foreground flex items-center justify-between">
+            <span>Showing {filtered.length} of {usersTotal.toLocaleString()} users</span>
+            {usersTotal > users.length && (
+              <span className="text-amber-400">Showing first {users.length} — use filters to narrow down</span>
+            )}
           </div>
         )}
       </div>
@@ -175,16 +221,19 @@ export default function AdminUsers() {
                   <p className="text-xs text-muted-foreground">{selectedUser.id}</p>
                 </div>
               </div>
-              <button onClick={() => setSelectedUser(null)} className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors">
+              <button
+                onClick={() => setSelectedUser(null)}
+                className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="space-y-3 text-sm">
-              <DetailRow icon={Mail} label="Email" value={selectedUser.email} />
-              <DetailRow icon={Phone} label="Phone" value={selectedUser.phone} />
-              <DetailRow icon={CreditCard} label="Bank" value={`${selectedUser.bankName} · ${selectedUser.accountNumber}`} />
-              <DetailRow icon={Calendar} label="Joined" value={selectedUser.joinedDate} />
+              <DetailRow icon={Mail}        label="Email"        value={selectedUser.email} />
+              <DetailRow icon={Phone}       label="Phone"        value={selectedUser.phone} />
+              <DetailRow icon={CreditCard}  label="Bank"         value={`${selectedUser.bankName} · ${selectedUser.accountNumber}`} />
+              <DetailRow icon={Calendar}    label="Joined"       value={selectedUser.joinedDate} />
               <DetailRow icon={ShoppingBag} label="Transactions" value={`${selectedUser.transactionCount} txns · ₦${selectedUser.totalSpent.toLocaleString()} spent`} />
 
               <div className="flex gap-3 pt-2">
@@ -217,7 +266,7 @@ export default function AdminUsers() {
                   </button>
                 )}
                 <button
-                  onClick={() => { toast.info('Message user — coming soon'); }}
+                  onClick={() => toast.info('Message user — coming soon')}
                   className="flex-1 h-10 bg-primary/10 text-primary border border-primary/20 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-primary/20 transition-colors"
                 >
                   Send Message

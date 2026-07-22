@@ -4,6 +4,7 @@ import clubkonnectRouter from "./clubkonnect.js";
 import authRouter from "./auth.js";
 import userRouter from "./user.js";
 import purchaseRouter from "./purchase.js";
+import adminRouter from "./admin.js";
 
 const router: IRouter = Router();
 
@@ -12,5 +13,6 @@ router.use("/auth",        authRouter);
 router.use("/user",        userRouter);
 router.use("/purchase",    purchaseRouter);
 router.use("/clubkonnect", clubkonnectRouter);
+router.use("/admin",       adminRouter);
 
 export default router;

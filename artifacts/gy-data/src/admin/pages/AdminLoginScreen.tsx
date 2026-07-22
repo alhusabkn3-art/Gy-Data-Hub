@@ -12,22 +12,25 @@ export default function AdminLoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [shake, setShake] = useState(false);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!email || !pin) {
       toast.error('Please enter your email and PIN.');
       return;
     }
     setIsLoading(true);
-    setTimeout(() => {
-      const ok = adminLogin(email, pin);
-      setIsLoading(false);
+    try {
+      const ok = await adminLogin(email, pin);
       if (!ok) {
         setShake(true);
         setTimeout(() => setShake(false), 500);
         toast.error('Invalid admin credentials.');
         setPin('');
       }
-    }, 900);
+    } catch {
+      toast.error('Authentication failed. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

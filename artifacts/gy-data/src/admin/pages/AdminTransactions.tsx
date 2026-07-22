@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { Search, X, User, Hash, Calendar, CreditCard } from 'lucide-react';
+import { Search, X, User, Hash, Calendar, CreditCard, RefreshCw } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { StatusBadge } from './AdminDashboard';
 import { AdminTransaction } from '../data/adminMockData';
 
 type FilterStatus = 'all' | 'success' | 'pending' | 'failed';
-type FilterType = 'all' | 'data' | 'airtime' | 'electricity' | 'cable' | 'betting' | 'exam' | 'wallet_fund';
+type FilterType   = 'all' | 'data' | 'airtime' | 'electricity' | 'cable' | 'betting' | 'exam' | 'wallet_fund';
 
 const typeLabels: Record<string, string> = {
   data: 'Data', airtime: 'Airtime', electricity: 'Electricity',
@@ -17,13 +17,18 @@ const typeIcons: Record<string, string> = {
   betting: '🎯', exam: '📝', wallet_fund: '💰',
 };
 
-export default function AdminTransactions() {
-  const { transactions, stats } = useAdminContext();
-  const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
-  const [filterType, setFilterType] = useState<FilterType>('all');
-  const [selected, setSelected] = useState<AdminTransaction | null>(null);
+function Skeleton({ className }: { className?: string }) {
+  return <div className={`animate-pulse bg-white/[0.07] rounded-lg ${className ?? ''}`} />;
+}
 
+export default function AdminTransactions() {
+  const { transactions, txnsTotal, txnsLoading, stats, fetchTransactions } = useAdminContext();
+  const [search,       setSearch]       = useState('');
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
+  const [filterType,   setFilterType]   = useState<FilterType>('all');
+  const [selected,     setSelected]     = useState<AdminTransaction | null>(null);
+
+  // Client-side filter on the loaded batch
   const filtered = transactions.filter(t => {
     const matchSearch =
       t.userName.toLowerCase().includes(search.toLowerCase()) ||
@@ -31,7 +36,7 @@ export default function AdminTransactions() {
       t.reference.toLowerCase().includes(search.toLowerCase()) ||
       t.provider.toLowerCase().includes(search.toLowerCase());
     const matchStatus = filterStatus === 'all' || t.status === filterStatus;
-    const matchType = filterType === 'all' || t.type === filterType;
+    const matchType   = filterType   === 'all' || t.type === filterType;
     return matchSearch && matchStatus && matchType;
   });
 
@@ -44,19 +49,37 @@ export default function AdminTransactions() {
         <div>
           <h1 className="text-xl lg:text-2xl font-bold">Transactions</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {stats.totalTransactions.toLocaleString()} total · ₦{(stats.totalRevenue / 1_000_000).toFixed(1)}M revenue
+            {txnsLoading && !stats
+              ? 'Loading…'
+              : `${(stats?.totalTransactions ?? txnsTotal).toLocaleString()} total · ₦${((stats?.totalRevenue ?? 0) / 1_000_000).toFixed(1)}M revenue`
+            }
           </p>
         </div>
-        <div className="flex gap-2 flex-wrap text-xs">
-          <div className="bg-green-500/10 border border-green-500/20 text-green-400 px-3 py-1.5 rounded-xl font-semibold">
-            {stats.successfulTransactions.toLocaleString()} Success
+        <div className="flex items-center gap-2">
+          <div className="flex gap-2 flex-wrap text-xs">
+            {txnsLoading && !stats ? (
+              <Skeleton className="h-7 w-52 rounded-xl" />
+            ) : (
+              <>
+                <div className="bg-green-500/10 border border-green-500/20 text-green-400 px-3 py-1.5 rounded-xl font-semibold">
+                  {(stats?.successfulTransactions ?? 0).toLocaleString()} Success
+                </div>
+                <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 px-3 py-1.5 rounded-xl font-semibold">
+                  {stats?.pendingTransactions ?? 0} Pending
+                </div>
+                <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-3 py-1.5 rounded-xl font-semibold">
+                  {stats?.failedTransactions ?? 0} Failed
+                </div>
+              </>
+            )}
           </div>
-          <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 px-3 py-1.5 rounded-xl font-semibold">
-            {stats.pendingTransactions} Pending
-          </div>
-          <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-3 py-1.5 rounded-xl font-semibold">
-            {stats.failedTransactions} Failed
-          </div>
+          <button
+            onClick={() => fetchTransactions()}
+            disabled={txnsLoading}
+            className="w-8 h-8 flex items-center justify-center rounded-xl bg-card border border-border text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${txnsLoading ? 'animate-spin' : ''}`} />
+          </button>
         </div>
       </div>
 
@@ -98,14 +121,14 @@ export default function AdminTransactions() {
         </select>
       </div>
 
-      {/* Summary row */}
-      {search || filterStatus !== 'all' || filterType !== 'all' ? (
+      {/* Filter summary */}
+      {(search || filterStatus !== 'all' || filterType !== 'all') && (
         <div className="flex items-center gap-3 text-sm bg-primary/5 border border-primary/20 rounded-xl px-4 py-2.5">
           <span className="text-muted-foreground">{filtered.length} results</span>
           <span className="text-muted-foreground">·</span>
           <span className="font-semibold text-primary">₦{totalFiltered.toLocaleString()} revenue</span>
         </div>
-      ) : null}
+      )}
 
       {/* Table */}
       <div className="bg-card border border-border rounded-2xl overflow-hidden">
@@ -122,10 +145,23 @@ export default function AdminTransactions() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {txnsLoading && transactions.length === 0 ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={i} className="border-b border-border/50">
+                    <td className="px-4 py-3"><Skeleton className="h-4 w-24" /></td>
+                    <td className="px-4 py-3 hidden md:table-cell"><Skeleton className="h-4 w-28" /></td>
+                    <td className="px-4 py-3 hidden lg:table-cell"><Skeleton className="h-4 w-20" /></td>
+                    <td className="px-4 py-3 text-right"><Skeleton className="h-4 w-16 ml-auto" /></td>
+                    <td className="px-4 py-3 text-center"><Skeleton className="h-5 w-16 mx-auto rounded-full" /></td>
+                    <td className="px-4 py-3 text-center"><Skeleton className="h-6 w-12 mx-auto rounded-lg" /></td>
+                  </tr>
+                ))
+              ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-12 text-muted-foreground">
-                    No transactions match your filters.
+                  <td colSpan={6} className="text-center py-14 text-muted-foreground">
+                    {transactions.length === 0
+                      ? 'No transactions yet.'
+                      : 'No transactions match your filters.'}
                   </td>
                 </tr>
               ) : (
@@ -135,14 +171,14 @@ export default function AdminTransactions() {
                       <div className="flex items-center gap-2.5">
                         <span className="text-base">{typeIcons[txn.type] ?? '💳'}</span>
                         <div>
-                          <p className="font-medium text-xs">{txn.id}</p>
+                          <p className="font-medium text-xs">{txn.id.slice(0, 8)}…</p>
                           <p className="text-[10px] text-muted-foreground">{txn.date} · {txn.time}</p>
                         </div>
                       </div>
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell">
                       <p className="font-medium truncate max-w-[120px]">{txn.userName}</p>
-                      <p className="text-xs text-muted-foreground">{txn.userId}</p>
+                      <p className="text-xs text-muted-foreground">{txn.phone ?? txn.userId.slice(0, 8)}</p>
                     </td>
                     <td className="px-4 py-3 hidden lg:table-cell">
                       <p>{typeLabels[txn.type] ?? txn.service}</p>
@@ -172,7 +208,7 @@ export default function AdminTransactions() {
         </div>
         {filtered.length > 0 && (
           <div className="px-4 py-3 border-t border-border text-xs text-muted-foreground flex items-center justify-between">
-            <span>Showing {filtered.length} transactions</span>
+            <span>Showing {filtered.length} of {txnsTotal.toLocaleString()} transactions</span>
             <span className="font-semibold text-foreground">
               ₦{filtered.reduce((a, t) => a + t.amount, 0).toLocaleString()} total volume
             </span>
@@ -192,20 +228,23 @@ export default function AdminTransactions() {
               <div className="flex items-center gap-2">
                 <span className="text-xl">{typeIcons[selected.type] ?? '💳'}</span>
                 <div>
-                  <h2 className="font-bold text-sm">{selected.id}</h2>
+                  <h2 className="font-bold text-sm">{selected.id.slice(0, 12)}…</h2>
                   <StatusBadge status={selected.status} />
                 </div>
               </div>
-              <button onClick={() => setSelected(null)} className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center">
+              <button
+                onClick={() => setSelected(null)}
+                className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="space-y-3 text-sm">
-              <Row icon={User} label="User" value={`${selected.userName} (${selected.userId})`} />
-              <Row icon={Hash} label="Reference" value={selected.reference} mono />
-              <Row icon={CreditCard} label="Service" value={`${typeLabels[selected.type]} · ${selected.provider}`} />
-              <Row icon={Calendar} label="Date" value={`${selected.date} · ${selected.time}`} />
+              <Row icon={User}       label="User"      value={`${selected.userName}${selected.phone ? ` · ${selected.phone}` : ''}`} />
+              <Row icon={Hash}       label="Reference" value={selected.reference || 'N/A'} mono />
+              <Row icon={CreditCard} label="Service"   value={`${typeLabels[selected.type] ?? selected.service} · ${selected.provider}`} />
+              <Row icon={Calendar}   label="Date"      value={`${selected.date} · ${selected.time}`} />
 
               <div className="bg-background rounded-xl p-4 border border-border text-center mt-2">
                 <p className={`text-2xl font-bold ${selected.type === 'wallet_fund' ? 'text-green-400' : ''}`}>

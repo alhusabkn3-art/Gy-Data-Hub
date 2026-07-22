@@ -26,30 +26,31 @@ function HiddenAdminTrigger({ onUnlock }: { onUnlock: () => void }) {
     const el = btnRef.current;
     if (!el) return;
 
-    function startHold(pointerId: number) {
-      if (activeIdRef.current !== null) return;   // already tracking
-      activeIdRef.current = pointerId;
-      try { el!.setPointerCapture(pointerId); } catch { /* ignore */ }
+    // No setPointerCapture — keeping it absent lets pointerleave fire normally
+    // when the finger/cursor moves off the element mid-hold.
+    function startHold() {
+      if (activeIdRef.current !== null) return;  // guard against duplicate events
+      activeIdRef.current = 1;                   // sentinel — just marks "active"
       setPressing(true);
       timerRef.current = setTimeout(() => {
-        // Timer fired — 2 s elapsed without release
         activeIdRef.current = null;
         timerRef.current    = null;
         setPressing(false);
-        onUnlockRef.current();
+        onUnlockRef.current();                   // ← navigate to /admin-login
       }, ADMIN_HOLD_MS);
     }
 
     function cancelHold() {
+      if (!timerRef.current && activeIdRef.current === null) return;
       if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
       activeIdRef.current = null;
       setPressing(false);
     }
 
-    const onDown   = (e: PointerEvent) => { e.preventDefault(); startHold(e.pointerId); };
-    const onUp     = (e: PointerEvent) => { if (e.pointerId === activeIdRef.current) cancelHold(); };
-    const onCancel = (e: PointerEvent) => { if (e.pointerId === activeIdRef.current) cancelHold(); };
-    const onLeave  = (e: PointerEvent) => { if (e.pointerId === activeIdRef.current) cancelHold(); };
+    const onDown   = (e: PointerEvent) => { e.preventDefault(); startHold(); };
+    const onUp     = ()                 => cancelHold();
+    const onCancel = ()                 => cancelHold();
+    const onLeave  = ()                 => cancelHold();
     const noCtx    = (e: Event)        => e.preventDefault();
 
     el.addEventListener('pointerdown',   onDown,   { passive: false });
@@ -66,7 +67,7 @@ function HiddenAdminTrigger({ onUnlock }: { onUnlock: () => void }) {
       el.removeEventListener('pointerleave',  onLeave);
       el.removeEventListener('contextmenu',   noCtx);
     };
-  }, []); // attach once — onUnlock is read through onUnlockRef
+  }, []); // attach once — onUnlock read through onUnlockRef
 
   return (
     <button

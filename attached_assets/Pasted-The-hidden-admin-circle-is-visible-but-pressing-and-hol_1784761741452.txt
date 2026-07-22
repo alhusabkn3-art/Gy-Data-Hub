@@ -1,0 +1,53 @@
+The hidden admin circle is visible, but pressing and holding it for 2 seconds still does NOT navigate to /admin-login.
+
+Please debug and fix the actual interaction now.
+
+IMPORTANT:
+Do not only change the visual design. Inspect the existing login page code and make sure the hidden circle is actually connected to a working press-and-hold event handler.
+
+Requirements:
+1. The hidden admin circle must be a real interactive button element.
+2. When the user presses and holds it continuously for 2000 milliseconds, navigate to:
+   /admin-login
+3. A quick tap must do nothing.
+4. Releasing before 2 seconds must cancel the timer.
+5. Support mobile touch and desktop mouse reliably.
+
+Use a robust pointer-based implementation if possible:
+- onPointerDown: start a 2000ms timer
+- onPointerUp: cancel the timer if it has not completed
+- onPointerCancel: cancel the timer
+- onPointerLeave: cancel the timer
+- If the timer reaches 2000ms, navigate to /admin-login
+
+Make sure the event handlers are actually attached to the visible circle element.
+
+Also verify that the route /admin-login actually exists and is reachable.
+If the route does not exist, create the route properly without breaking the existing user login flow.
+
+Use the correct navigation method for the existing app framework:
+- If using React Router, use navigate('/admin-login')
+- If using another router, use its correct navigation method
+- Do not rely on a fake or non-existent route
+
+Add a small visible debug indication during the hold, such as a subtle progress/glow effect, so we can confirm that the press-and-hold timer is actually running.
+
+Do not change:
+- The existing GY DATA login design
+- The logo
+- ENDLESS JOY tagline
+- Phone number input
+- 6-digit PIN input
+- Login functionality
+- Forgot PIN
+- Create Account
+- Monnify integration
+- Dashboard
+- Any other existing functionality
+
+After fixing, test the actual flow:
+1. Open the login page.
+2. Press and hold the hidden circle continuously for 2 seconds.
+3. Confirm that /admin-login opens.
+4. Tap quickly and confirm that nothing happens.
+5. Release before 2 seconds and confirm that navigation is cancelled.

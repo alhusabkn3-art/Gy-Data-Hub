@@ -119,7 +119,7 @@ function CustomerApp() {
 
 function RootRouter() {
   const [location] = useLocation();
-  const isAdmin = location === '/admin' || location.startsWith('/admin/');
+  const isAdmin = location === '/admin' || location === '/admin-login' || location.startsWith('/admin/');
 
   if (isAdmin) {
     return (

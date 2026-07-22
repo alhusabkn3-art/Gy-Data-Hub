@@ -30,7 +30,7 @@ function MainApp() {
 
   return (
     <div className="flex flex-col h-[100dvh] bg-background text-foreground overflow-hidden">
-      <div className="flex-1 overflow-y-auto pb-20">
+      <div className="flex-1 overflow-y-auto min-h-0">
         <Switch>
           <Route path="/data" component={BuyDataScreen} />
           <Route path="/airtime" component={BuyAirtimeScreen} />

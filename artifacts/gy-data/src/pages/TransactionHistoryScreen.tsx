@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Wifi, Phone, Zap, Tv, ArrowDownLeft, ReceiptText, X } from 'lucide-react';
+import { Search, Wifi, Phone, Zap, Tv, ArrowDownLeft, ReceiptText, X, SearchX } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { Transaction } from '../data/mockData';
 import TransactionReceipt from '../components/TransactionReceipt';
@@ -26,15 +26,21 @@ export default function TransactionHistoryScreen() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'success' | 'pending' | 'failed'>('all');
   const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const filteredTransactions = transactions.filter(txn => {
     if (filter !== 'all' && txn.status !== filter) return false;
     if (search) {
-      const q = search.toLowerCase();
+      const q = search.toLowerCase().trim();
       return (
+        txn.id.toLowerCase().includes(q) ||
+        txn.type.toLowerCase().includes(q) ||
         txn.service.toLowerCase().includes(q) ||
         txn.provider.toLowerCase().includes(q) ||
-        txn.amount.toString().includes(q)
+        txn.description.toLowerCase().includes(q) ||
+        txn.amount.toString().includes(q) ||
+        txn.status.toLowerCase().includes(q) ||
+        (txn.paymentMethod ?? '').toLowerCase().includes(q)
       );
     }
     return true;
@@ -52,15 +58,31 @@ export default function TransactionHistoryScreen() {
       </div>
 
       {/* Search */}
-      <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+      <div className="relative mb-4 group">
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground transition-colors group-focus-within:text-primary" />
         <input
+          ref={searchRef}
           type="text"
-          placeholder="Search transactions..."
+          placeholder="Phone, reference, service, amount…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="w-full bg-card border border-border rounded-xl h-12 pl-10 pr-4 text-sm focus:border-primary outline-none transition-colors"
+          className="w-full bg-card border border-border rounded-xl h-11 pl-10 pr-9 text-sm focus:border-primary outline-none transition-colors placeholder:text-muted-foreground/60"
         />
+        <AnimatePresence>
+          {search && (
+            <motion.button
+              initial={{ opacity: 0, scale: 0.7 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.7 }}
+              transition={{ duration: 0.12 }}
+              onClick={() => { setSearch(''); searchRef.current?.focus(); }}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-muted-foreground/15 flex items-center justify-center hover:bg-muted-foreground/25 transition-colors"
+              aria-label="Clear search"
+            >
+              <X className="w-3.5 h-3.5 text-muted-foreground" />
+            </motion.button>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Filter tabs */}
@@ -112,10 +134,30 @@ export default function TransactionHistoryScreen() {
             </button>
           ))
         ) : (
-          <div className="text-center py-12">
-            <ReceiptText className="w-12 h-12 text-muted-foreground opacity-50 mx-auto mb-3" />
-            <p className="text-muted-foreground font-medium">No transactions found</p>
-          </div>
+          <motion.div
+            key={search ? 'no-search' : 'no-txns'}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2 }}
+            className="text-center py-14"
+          >
+            {search ? (
+              <>
+                <div className="w-14 h-14 rounded-full bg-muted-foreground/8 flex items-center justify-center mx-auto mb-4">
+                  <SearchX className="w-7 h-7 text-muted-foreground/50" />
+                </div>
+                <p className="font-semibold text-sm text-foreground/80 mb-1">No transaction found</p>
+                <p className="text-xs text-muted-foreground/60 max-w-[200px] mx-auto leading-relaxed">
+                  Try searching by phone number, reference, service, or amount
+                </p>
+              </>
+            ) : (
+              <>
+                <ReceiptText className="w-12 h-12 text-muted-foreground opacity-30 mx-auto mb-3" />
+                <p className="text-muted-foreground font-medium text-sm">No transactions yet</p>
+              </>
+            )}
+          </motion.div>
         )}
       </div>
 

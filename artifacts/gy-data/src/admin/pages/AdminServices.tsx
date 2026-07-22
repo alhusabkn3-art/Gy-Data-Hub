@@ -2,6 +2,7 @@ import React from 'react';
 import { TrendingUp, CheckCircle, XCircle, Clock, RefreshCw } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { SERVICE_CONFIG } from '../data/adminMockData';
+import { fmtNaira } from '../utils/format';
 
 function Skeleton({ className }: { className?: string }) {
   return <div className={`animate-pulse bg-white/[0.07] rounded-lg ${className ?? ''}`} />;
@@ -42,7 +43,7 @@ export default function AdminServices() {
         <div className="bg-card border border-border rounded-2xl p-4 text-center">
           {isLoading
             ? <Skeleton className="h-7 w-24 mx-auto mb-1" />
-            : <p className="text-2xl font-bold">₦{(totalRevenue / 1_000_000).toFixed(2)}M</p>
+            : <p className="text-2xl font-bold">{fmtNaira(totalRevenue)}</p>
           }
           <p className="text-xs text-muted-foreground mt-1">Total Revenue</p>
         </div>
@@ -123,12 +124,7 @@ export default function AdminServices() {
                     <div className="flex justify-between mb-1">
                       <span className="text-xs text-muted-foreground">Revenue</span>
                       <span className="text-xs font-semibold">
-                        ₦{s.revenue >= 1_000_000
-                          ? `${(s.revenue / 1_000_000).toFixed(2)}M`
-                          : s.revenue >= 1_000
-                          ? `${(s.revenue / 1_000).toFixed(0)}K`
-                          : s.revenue.toLocaleString()
-                        } · {revPct}%
+                        {fmtNaira(s.revenue)} · {revPct}%
                       </span>
                     </div>
                     <div className="h-1.5 bg-background rounded-full overflow-hidden">

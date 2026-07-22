@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { SERVICE_CONFIG } from '../data/adminMockData';
+import { fmtNaira } from '../utils/format';
 
 // ── Shared UI helpers ─────────────────────────────────────────────────────────
 
@@ -156,8 +157,8 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         />
         <StatCard
           label="Total Revenue"
-          value={stats ? `₦${(stats.totalRevenue / 1_000_000).toFixed(2)}M` : '—'}
-          sub={stats ? `₦${stats.todayRevenue.toLocaleString()} today` : undefined}
+          value={stats ? fmtNaira(stats.totalRevenue) : '—'}
+          sub={stats ? `${fmtNaira(stats.todayRevenue)} today` : undefined}
           icon={TrendingUp}
           color="bg-green-500/10 text-green-400"
           loading={isLoading && !stats}
@@ -218,7 +219,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             <div>
               <h2 className="font-bold text-sm">Weekly Revenue</h2>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {stats ? `₦${(stats.weekRevenue / 1000).toFixed(0)}K this week` : 'Loading…'}
+                {stats ? `${fmtNaira(stats.weekRevenue)} this week` : 'Loading…'}
               </p>
             </div>
             <ChevronRight className="w-4 h-4 text-muted-foreground/50" />
@@ -303,7 +304,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                         <span className="text-sm font-medium">{cfg?.label ?? s.type}</span>
                       </div>
                       <span className="text-xs text-muted-foreground">
-                        {pct}% · ₦{(s.revenue / 1000).toFixed(0)}K
+                        {pct}% · {fmtNaira(s.revenue)}
                       </span>
                     </div>
                     <div className="h-1.5 bg-background rounded-full overflow-hidden">

@@ -2,6 +2,7 @@ import React from 'react';
 import { Wallet, TrendingUp, ArrowDownCircle, ArrowUpCircle, RefreshCw } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { StatusBadge } from './AdminDashboard';
+import { fmtNaira, fmtNairaFull } from '../utils/format';
 
 function Skeleton({ className }: { className?: string }) {
   return <div className={`animate-pulse bg-white/[0.07] rounded-lg ${className ?? ''}`} />;
@@ -47,7 +48,7 @@ export default function AdminWallet() {
           </div>
           {isLoading
             ? <Skeleton className="h-7 w-24 mb-1" />
-            : <p className="text-2xl font-bold">₦{stats ? (stats.totalWalletBalance / 1_000_000).toFixed(2) : '—'}M</p>
+            : <p className="text-2xl font-bold">{stats ? fmtNaira(stats.totalWalletBalance) : '—'}</p>
           }
           <p className="text-xs text-muted-foreground mt-0.5">Total Wallet Balance</p>
         </div>
@@ -58,7 +59,7 @@ export default function AdminWallet() {
           </div>
           {isLoading
             ? <Skeleton className="h-7 w-24 mb-1" />
-            : <p className="text-2xl font-bold">₦{stats ? (stats.totalRevenue / 1_000_000).toFixed(2) : '—'}M</p>
+            : <p className="text-2xl font-bold">{stats ? fmtNaira(stats.totalRevenue) : '—'}</p>
           }
           <p className="text-xs text-muted-foreground mt-0.5">Total Funded (All Time)</p>
         </div>
@@ -69,7 +70,7 @@ export default function AdminWallet() {
           </div>
           {isLoading
             ? <Skeleton className="h-7 w-24 mb-1" />
-            : <p className="text-2xl font-bold">₦{stats ? (stats.totalRevenue / 1_000_000).toFixed(2) : '—'}M</p>
+            : <p className="text-2xl font-bold">{stats ? fmtNaira(stats.totalRevenue) : '—'}</p>
           }
           <p className="text-xs text-muted-foreground mt-0.5">Total Spent (Services)</p>
         </div>
@@ -116,12 +117,7 @@ export default function AdminWallet() {
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-sm font-medium">{label}</span>
                         <span className={`text-sm font-bold ${color}`}>
-                          ₦{amount >= 1_000_000
-                            ? `${(amount / 1_000_000).toFixed(2)}M`
-                            : amount >= 1_000
-                            ? `${(amount / 1_000).toFixed(0)}K`
-                            : amount.toLocaleString()
-                          }
+                          {fmtNaira(amount)}
                         </span>
                       </div>
                       <div className="h-1.5 bg-background rounded-full overflow-hidden">
@@ -134,13 +130,13 @@ export default function AdminWallet() {
 
               <div className="grid grid-cols-2 gap-3 mt-6">
                 <div className="bg-background rounded-xl p-3 border border-border text-center">
-                  <p className="text-lg font-bold">₦{(stats?.avgTransactionValue ?? 0).toLocaleString()}</p>
+                  <p className="text-lg font-bold">{fmtNaira(stats?.avgTransactionValue ?? 0)}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">Avg. Transaction</p>
                 </div>
                 <div className="bg-background rounded-xl p-3 border border-border text-center">
                   <p className="text-lg font-bold">
                     {stats && stats.totalUsers > 0
-                      ? `₦${Math.round(stats.totalRevenue / stats.totalUsers).toLocaleString()}`
+                      ? fmtNaira(Math.round(stats.totalRevenue / stats.totalUsers))
                       : '—'
                     }
                   </p>
@@ -170,8 +166,8 @@ export default function AdminWallet() {
                 { label: 'Active Users',      value: stats?.activeUsers.toLocaleString() ?? '—' },
                 { label: 'Suspended Users',   value: stats?.suspendedUsers.toLocaleString() ?? '—' },
                 { label: 'KYC Verified',      value: stats?.verifiedUsers.toLocaleString() ?? '—' },
-                { label: 'Wallet Balance',    value: stats ? `₦${(stats.totalWalletBalance / 1_000_000).toFixed(2)}M` : '—' },
-                { label: 'Avg. Balance/User', value: stats && stats.totalUsers > 0 ? `₦${Math.round(stats.totalWalletBalance / stats.totalUsers).toLocaleString()}` : '—' },
+                { label: 'Wallet Balance',    value: stats ? fmtNairaFull(stats.totalWalletBalance) : '—' },
+                { label: 'Avg. Balance/User', value: stats && stats.totalUsers > 0 ? fmtNaira(Math.round(stats.totalWalletBalance / stats.totalUsers)) : '—' },
               ].map(({ label, value }) => (
                 <div key={label} className="flex justify-between items-center py-3 border-b border-border/50 last:border-0">
                   <span className="text-sm text-muted-foreground">{label}</span>

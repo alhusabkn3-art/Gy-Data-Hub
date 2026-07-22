@@ -3,6 +3,7 @@ import { Search, X, User, Hash, Calendar, CreditCard, RefreshCw } from 'lucide-r
 import { useAdminContext } from '../context/AdminContext';
 import { StatusBadge } from './AdminDashboard';
 import { AdminTransaction } from '../data/adminMockData';
+import { fmtNaira } from '../utils/format';
 
 type FilterStatus = 'all' | 'success' | 'pending' | 'failed';
 type FilterType   = 'all' | 'data' | 'airtime' | 'electricity' | 'cable' | 'betting' | 'exam' | 'wallet_fund';
@@ -51,7 +52,7 @@ export default function AdminTransactions() {
           <p className="text-sm text-muted-foreground mt-0.5">
             {txnsLoading && !stats
               ? 'Loading…'
-              : `${(stats?.totalTransactions ?? txnsTotal).toLocaleString()} total · ₦${((stats?.totalRevenue ?? 0) / 1_000_000).toFixed(1)}M revenue`
+              : `${(stats?.totalTransactions ?? txnsTotal).toLocaleString()} total · ${fmtNaira(stats?.totalRevenue ?? 0)} revenue`
             }
           </p>
         </div>

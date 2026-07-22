@@ -6,17 +6,17 @@ import { toast } from 'sonner';
 import { normalizeNigerianNumber } from '../components/PhoneInputWithContacts';
 
 // ── Hidden admin long-press trigger ──────────────────────────────────────────
-// Completely invisible to normal users — no icon, ring, or label.
-// Only someone who already knows this area exists can activate it.
-const ADMIN_HOLD_MS = 2500;
+// Looks like a subtle design element — small circle with a tiny dot.
+// Hold 2 s to navigate to admin login; quick tap does nothing.
+const ADMIN_HOLD_MS = 2000;
 
 function HiddenAdminTrigger({ onUnlock }: { onUnlock: () => void }) {
-  const timerRef    = useRef<ReturnType<typeof setTimeout>  | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [pressing, setPressing] = useState(false);
 
   const cancel = useCallback(() => {
-    if (timerRef.current)    { clearTimeout(timerRef.current);     timerRef.current    = null; }
-    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    setPressing(false);
   }, []);
 
   useEffect(() => () => cancel(), [cancel]);
@@ -24,6 +24,7 @@ function HiddenAdminTrigger({ onUnlock }: { onUnlock: () => void }) {
   const startPress = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setPressing(true);
     timerRef.current = setTimeout(() => {
       cancel();
       onUnlock();
@@ -42,24 +43,53 @@ function HiddenAdminTrigger({ onUnlock }: { onUnlock: () => void }) {
       aria-hidden="true"
       tabIndex={-1}
       style={{
-        // Completely invisible — no background, no border, no visible content
-        position:   'absolute',
-        bottom:     0,
-        right:      0,
-        width:      48,
-        height:     48,
-        background: 'transparent',
-        border:     'none',
-        outline:    'none',
-        cursor:     'default',
-        touchAction:'none',
-        userSelect: 'none',
+        position:         'absolute',
+        bottom:           28,
+        left:             '50%',
+        transform:        'translateX(-50%)',
+        width:            36,
+        height:           36,
+        borderRadius:     '50%',
+        background:       pressing ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.04)',
+        border:           '1px solid rgba(255,255,255,0.18)',
+        outline:          'none',
+        cursor:           'default',
+        touchAction:      'none',
+        userSelect:       'none',
         WebkitUserSelect: 'none',
-        // No visible indicator whatsoever
-        color:      'transparent',
-        boxShadow:  'none',
+        boxShadow:        pressing
+          ? '0 0 14px rgba(255,255,255,0.18), 0 0 28px rgba(99,130,246,0.22)'
+          : '0 0 8px rgba(255,255,255,0.08)',
+        display:          'flex',
+        alignItems:       'center',
+        justifyContent:   'center',
+        transition:       'background 0.15s ease, box-shadow 0.15s ease',
+        overflow:         'hidden',
       }}
-    />
+    >
+      {/* Tiny centre dot */}
+      <div style={{
+        width: 5, height: 5, borderRadius: '50%',
+        background: pressing ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.3)',
+        transition: 'background 0.15s ease',
+        position: 'relative', zIndex: 1,
+      }} />
+      {/* Ripple ring — expands from centre while pressing */}
+      {pressing && (
+        <motion.div
+          initial={{ scale: 0, opacity: 0.5 }}
+          animate={{ scale: 2.8, opacity: 0 }}
+          transition={{ duration: ADMIN_HOLD_MS / 1000, ease: 'easeOut' }}
+          style={{
+            position:     'absolute',
+            width:        '100%',
+            height:       '100%',
+            borderRadius: '50%',
+            background:   'rgba(255,255,255,0.25)',
+          }}
+        />
+      )}
+    </button>
   );
 }
 
@@ -146,7 +176,7 @@ export default function LoginScreen() {
 
   return (
     <div
-      className="min-h-screen flex flex-col items-center justify-center p-5 relative overflow-hidden"
+      className="min-h-screen flex flex-col items-center p-5 pt-14 relative overflow-hidden"
       style={{ background: 'linear-gradient(160deg, #0B1F4E 0%, #102B6A 35%, #1A3D8F 65%, #1E4DB7 100%)' }}
     >
 
@@ -168,7 +198,7 @@ export default function LoginScreen() {
       </svg>
 
       {/* ── Logo ─────────────────────────────────────────────────────── */}
-      <div className="w-full max-w-sm z-10 flex flex-col items-center mb-6">
+      <div className="w-full max-w-sm z-10 flex flex-col items-center mb-4">
         <div className="mb-4 flex flex-col items-center">
           <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-3"
             style={{ background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)', boxShadow: '0 8px 32px rgba(37,99,235,0.45), 0 2px 8px rgba(0,0,0,0.2)' }}>
@@ -201,7 +231,7 @@ export default function LoginScreen() {
           background:   '#ffffff',
           borderRadius: 28,
           boxShadow:    '0 24px 60px rgba(11,31,78,0.35), 0 8px 24px rgba(11,31,78,0.2)',
-          padding:      '28px 24px 24px',
+          padding:      '22px 22px 20px',
         }}
       >
         {/* Header */}
@@ -490,7 +520,7 @@ export default function LoginScreen() {
           Completely invisible 48×48 px target in the bottom-right corner.
           No visible icon, ring, or label — only discoverable by those who
           know it exists. Hold for 2.5 s to open the admin portal.        ── */}
-      <HiddenAdminTrigger onUnlock={() => setLocation('/admin')} />
+      <HiddenAdminTrigger onUnlock={() => setLocation('/admin-login')} />
 
     </div>
   );

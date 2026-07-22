@@ -1,0 +1,56 @@
+Update the current GY DATA login page with the following changes. Keep everything fully functional and do not break any existing authentication or navigation logic.
+
+1. REDUCE THE WHITE LOGIN CARD SIZE
+- Make the current white login card/container noticeably smaller in height.
+- Keep it centered horizontally.
+- Create significantly more empty space below the card.
+- Do not remove any important login functionality.
+
+2. KEEP THE EXISTING DESIGN AND FUNCTIONALITY
+Do not change:
+- The GY DATA logo
+- The "ENDLESS JOY" tagline
+- The existing blue background and visual style
+- Colors and fonts
+- Phone number input
+- Nigeria +234 phone prefix
+- Paste button
+- 6-digit PIN input
+- Login button
+- Forgot PIN link
+- Create Account link
+- Any existing authentication logic or functionality
+
+Only adjust the layout and spacing as requested.
+
+3. ADD A SUBTLE HIDDEN ADMIN LOGIN ACCESS
+
+At the very bottom center of the login screen, below the white login card and inside the blue background, add a very small circular button.
+
+The button must be intentionally subtle and should not look like a normal visible "Admin Login" button.
+
+Design:
+- Small circular button, approximately 36px × 36px.
+- Transparent or very low-opacity background.
+- Very thin soft white border with low opacity.
+- A tiny dot in the center.
+- Add a very subtle glow or shadow.
+- It should blend naturally into the background and look like part of the visual design.
+- Do not add any text or label such as "Admin Login".
+- Most normal users should not immediately notice that it is interactive.
+
+4. HIDDEN ADMIN LOGIN BEHAVIOR
+
+When the user presses and holds the small circular button for approximately 2 seconds:
+- Navigate to the existing Admin Login page at:
+  /admin-login
+
+Important:
+- A normal quick tap should do nothing.
+- Only a successful 2-second press-and-hold should navigate to /admin-login.
+- Add a subtle ripple or visual feedback while the button is being pressed.
+- Support both mobile touch and desktop mouse interaction.
+- Prevent accidental navigation when the user only taps the button briefly.
+
+5. RESPONSIVE DESIGN
+- The login page must remain fully responsive on all mobile

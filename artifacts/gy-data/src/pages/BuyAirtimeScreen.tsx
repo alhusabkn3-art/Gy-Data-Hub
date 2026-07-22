@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronLeft } from 'lucide-react';
 import { useLocation } from 'wouter';
@@ -7,7 +7,6 @@ import { useAppContext } from '../context/AppContext';
 import SuccessModal from '@/components/SuccessModal';
 import type { ReceiptData } from '@/components/TransactionReceipt';
 import { toast } from 'sonner';
-import { buyAirtime } from '@/lib/api';
 import PhoneInputWithContacts, { isValidNigerianNumber } from '@/components/PhoneInputWithContacts';
 
 const networks = [
@@ -31,6 +30,13 @@ export default function BuyAirtimeScreen() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [successData, setSuccessData] = useState<ReceiptData | null>(null);
 
+  // ── Idempotency key ───────────────────────────────────────────────────────
+  // Generated once on first press and reused on retries for the same purchase
+  // intent. Reset whenever any input changes so a genuinely different purchase
+  // always gets a fresh key and therefore a fresh server-side transaction.
+  const idempotencyKey = useRef<string | null>(null);
+  useEffect(() => { idempotencyKey.current = null; }, [network, phone, amount]);
+
   const selectedNetwork = networks.find(n => n.id === network);
   const canProceed = network && isValidNigerianNumber(phone) && Number(amount) > 0;
   const numAmount = Number(amount);
@@ -41,20 +47,43 @@ export default function BuyAirtimeScreen() {
       toast.error('Insufficient wallet balance. Please fund your wallet.');
       return;
     }
+
+    // Generate a key the first time; reuse it on retries (network timeout, etc.)
+    if (!idempotencyKey.current) {
+      idempotencyKey.current = `GY-AIR-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    }
+
     setIsLoading(true);
     try {
       // Single server call: wallet debit + vendor purchase in one atomic operation.
-      // Success UI is shown only when the server confirms success.
+      // The idempotency key ensures retries don't produce duplicate charges.
       const result = await purchaseAirtime({
         network: selectedNetwork.id,
         phone,
         amount: numAmount,
+        idempotencyKey: idempotencyKey.current,
       });
 
-      if (!result.success) {
-        toast.error(result.error ?? 'Transaction failed. Please try again.');
+      // Pending: server already knows about this transaction but hasn't settled it.
+      if (result.pending) {
+        toast.info('Transaction is being processed. Check your transaction history shortly.');
         return;
       }
+
+      if (!result.success) {
+        // previous_attempt_failed → the key's transaction already failed and the
+        // wallet was compensated. Reset the key so a fresh press creates a new txn.
+        if (result.error === 'previous_attempt_failed') {
+          idempotencyKey.current = null;
+          toast.error('Previous attempt failed. Tap "Pay" again to retry.');
+        } else {
+          toast.error(result.error ?? 'Transaction failed. Please try again.');
+        }
+        return;
+      }
+
+      // Success — clear the key; this purchase intent is complete.
+      idempotencyKey.current = null;
 
       const now = new Date();
       setSuccessData({
@@ -71,6 +100,8 @@ export default function BuyAirtimeScreen() {
       });
       setShowSuccess(true);
     } catch (err: unknown) {
+      // Network-level error (fetch threw). The key is intentionally NOT cleared
+      // so the next press retries with the same key — safe to retry.
       const msg = err instanceof Error ? err.message : 'Purchase failed';
       toast.error(msg.toLowerCase().includes('503') ? 'Service temporarily unavailable.' : msg);
     } finally {

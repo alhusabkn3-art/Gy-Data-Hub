@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronLeft, RefreshCw, AlertCircle } from 'lucide-react';
 import { useLocation } from 'wouter';
@@ -35,6 +35,12 @@ export default function BuyDataScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [successData, setSuccessData] = useState<ReceiptData | null>(null);
+
+  // ── Idempotency key ───────────────────────────────────────────────────────
+  // Reset whenever the purchase intent changes so different orders always get
+  // a fresh key. Preserved across retries for the same intent (network timeout etc.).
+  const idempotencyKey = useRef<string | null>(null);
+  useEffect(() => { idempotencyKey.current = null; }, [network, phone, plan]);
 
   const selectedNetwork = networks.find(n => n.id === network);
 
@@ -75,22 +81,44 @@ export default function BuyDataScreen() {
       toast.error('Insufficient wallet balance. Please fund your wallet.');
       return;
     }
+
+    // Generate a key the first time; reuse it on retries (network timeout, etc.)
+    if (!idempotencyKey.current) {
+      idempotencyKey.current = `GY-DAT-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    }
+
     setIsLoading(true);
     try {
       // Single server call: wallet debit + vendor purchase in one atomic operation.
-      // Success UI is shown only when the server confirms success.
+      // The idempotency key ensures retries don't produce duplicate charges.
       const result = await purchaseData({
         network: selectedNetwork.id,
         phone,
         planCode: plan.DataPlan,
         planName: plan.DataPlanName,
         planPrice: plan.Price,
+        idempotencyKey: idempotencyKey.current,
       });
 
-      if (!result.success) {
-        toast.error(result.error ?? 'Transaction failed. Please try again.');
+      // Pending: server already knows about this transaction but hasn't settled it.
+      if (result.pending) {
+        toast.info('Transaction is being processed. Check your transaction history shortly.');
         return;
       }
+
+      if (!result.success) {
+        // previous_attempt_failed → wallet was already compensated; let the user retry fresh.
+        if (result.error === 'previous_attempt_failed') {
+          idempotencyKey.current = null;
+          toast.error('Previous attempt failed. Tap "Pay" again to retry.');
+        } else {
+          toast.error(result.error ?? 'Transaction failed. Please try again.');
+        }
+        return;
+      }
+
+      // Success — clear the key; this purchase intent is complete.
+      idempotencyKey.current = null;
 
       const now = new Date();
       setSuccessData({
@@ -107,6 +135,7 @@ export default function BuyDataScreen() {
       });
       setShowSuccess(true);
     } catch (err: unknown) {
+      // Network-level error. Key is preserved so the next press retries safely.
       const msg = err instanceof Error ? err.message : 'Purchase failed';
       toast.error(msg.toLowerCase().includes('503') ? 'Service temporarily unavailable.' : msg);
     } finally {

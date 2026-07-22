@@ -20,18 +20,92 @@
  * but their mutating endpoints are now protected by requireAuth as well.
  */
 import { Router, type Request, type Response } from 'express';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { db } from '@workspace/db';
 import { walletsTable, transactionsTable } from '@workspace/db/schema';
 import * as ck from '../lib/clubkonnect.js';
 import { requireAuth } from './user.js';
 import { logger } from '../lib/logger.js';
 
+// ── Idempotency helper ────────────────────────────────────────────────────────
+//
+// Reads an existing transaction by (userId, idempotencyKey).
+// Returns the appropriate early response if a matching record exists:
+//   success  → return the original success payload (no second debit)
+//   pending  → return pending status (still processing or stale in-flight)
+//   failed   → return 422 so the client knows to issue a fresh request
+//
+// Returns `true` when a response was sent and the caller should return early.
+// Returns `false` when no matching record was found (proceed normally).
+//
+async function handleIdempotency(
+  res: Response,
+  userId: string,
+  idempotencyKey: string,
+  extra?: Record<string, unknown>,
+): Promise<boolean> {
+  const [existing] = await db
+    .select()
+    .from(transactionsTable)
+    .where(
+      and(
+        eq(transactionsTable.userId, userId),
+        eq(transactionsTable.reference, idempotencyKey),
+      ),
+    );
+
+  if (!existing) return false; // no match — caller proceeds normally
+
+  logger.info(
+    { userId, idempotencyKey, status: existing.status },
+    'Idempotent request — returning existing transaction',
+  );
+
+  if (existing.status === 'success') {
+    const [wallet] = await db
+      .select()
+      .from(walletsTable)
+      .where(eq(walletsTable.userId, userId));
+
+    res.json({
+      success:    true,
+      idempotent: true,           // lets the client know this was a dedup
+      requestId:  idempotencyKey,
+      txnId:      existing.id,
+      balance:    wallet?.balance ?? '0',
+      ...extra,
+    });
+    return true;
+  }
+
+  if (existing.status === 'pending') {
+    // Transaction is still in-flight (or stuck). Don't create a duplicate.
+    res.status(200).json({
+      success:  false,
+      pending:  true,
+      requestId: idempotencyKey,
+      txnId:    existing.id,
+      error:    'Transaction is still being processed. Please check your transaction history.',
+    });
+    return true;
+  }
+
+  // failed — wallet was already compensated. Signal client to use a new key.
+  res.status(422).json({
+    success:  false,
+    error:    'previous_attempt_failed',
+    requestId: idempotencyKey,
+  });
+  return true;
+}
+
 const router = Router();
 router.use(requireAuth);
 
 // ── POST /api/purchase/airtime ────────────────────────────────────────────────
 // Body: { network, phone, amount }
+// Header: Idempotency-Key (optional) — if provided, duplicate requests return the
+//   existing transaction instead of charging the wallet a second time.
 router.post('/airtime', async (req: Request, res: Response): Promise<void> => {
   const { network, phone, amount } = req.body as {
     network?: string; phone?: string; amount?: number;
@@ -47,8 +121,22 @@ router.post('/airtime', async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  const userId = req.session.userId!;
-  const requestId = `GY-AIR-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  const userId          = req.session.userId!;
+  const idempotencyKey  = (req.headers['idempotency-key'] ?? '') as string;
+
+  // ── Idempotency check: return existing result for duplicate requests ───────
+  if (idempotencyKey) {
+    try {
+      const handled = await handleIdempotency(res, userId, idempotencyKey, { network, phone, amount: numericAmount });
+      if (handled) return;
+    } catch (err) {
+      logger.error({ err, idempotencyKey }, 'Idempotency check failed — proceeding with fresh request');
+    }
+  }
+
+  // Use the provided key as the reference so retries can be correlated.
+  // Fall back to a fresh reference when no key is provided (backward-compatible).
+  const requestId = idempotencyKey || `GY-AIR-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 
   // ── Step 1: Atomic wallet debit + pending transaction ────────────────────
   let txnId: string;
@@ -166,6 +254,7 @@ router.post('/airtime', async (req: Request, res: Response): Promise<void> => {
 
 // ── POST /api/purchase/data ───────────────────────────────────────────────────
 // Body: { network, phone, planCode, planName, planPrice }
+// Header: Idempotency-Key (optional) — see /airtime for semantics.
 router.post('/data', async (req: Request, res: Response): Promise<void> => {
   const { network, phone, planCode, planName, planPrice } = req.body as {
     network?: string; phone?: string; planCode?: string; planName?: string; planPrice?: string;
@@ -181,8 +270,20 @@ router.post('/data', async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  const userId = req.session.userId!;
-  const requestId = `GY-DAT-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  const userId         = req.session.userId!;
+  const idempotencyKey = (req.headers['idempotency-key'] ?? '') as string;
+
+  // ── Idempotency check: return existing result for duplicate requests ───────
+  if (idempotencyKey) {
+    try {
+      const handled = await handleIdempotency(res, userId, idempotencyKey, { network, phone, amount: numericAmount, planName: planName ?? planCode });
+      if (handled) return;
+    } catch (err) {
+      logger.error({ err, idempotencyKey }, 'Idempotency check failed — proceeding with fresh request');
+    }
+  }
+
+  const requestId = idempotencyKey || `GY-DAT-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 
   // ── Step 1: Atomic wallet debit + pending transaction ────────────────────
   let txnId: string;

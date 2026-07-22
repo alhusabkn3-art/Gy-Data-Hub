@@ -2,12 +2,16 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { User, Transaction, Notification } from '../data/mockData';
 
 // ── API helper ────────────────────────────────────────────────────────────────
-const api = (path: string, opts?: RequestInit) =>
-  fetch(`/api${path}`, {
+// Note: `headers` must be extracted before spreading `restOpts` so that
+// spreading opts at the end does NOT overwrite the merged Content-Type header.
+const api = (path: string, opts?: RequestInit) => {
+  const { headers: extraHeaders, ...restOpts } = opts ?? {};
+  return fetch(`/api${path}`, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(opts?.headers ?? {}) },
-    ...opts,
+    ...restOpts,
+    headers: { 'Content-Type': 'application/json', ...(extraHeaders ?? {}) },
   });
+};
 
 // ── Transform raw DB rows → frontend shapes ───────────────────────────────────
 
@@ -111,8 +115,8 @@ interface AppContextType {
   updateSettings: (settings: Partial<AppSettings>) => void;
   /** @deprecated Use purchaseAirtime / purchaseData — they orchestrate wallet+vendor atomically on the server. */
   addTransaction: (transaction: Omit<Transaction, 'id' | 'date' | 'time'>) => Promise<boolean>;
-  purchaseAirtime: (params: { network: string; phone: string; amount: number }) => Promise<{ success: boolean; requestId?: string; balance?: number; error?: string }>;
-  purchaseData: (params: { network: string; phone: string; planCode: string; planName: string; planPrice: string }) => Promise<{ success: boolean; requestId?: string; planName?: string; balance?: number; error?: string }>;
+  purchaseAirtime: (params: { network: string; phone: string; amount: number; idempotencyKey?: string }) => Promise<{ success: boolean; pending?: boolean; requestId?: string; balance?: number; error?: string }>;
+  purchaseData: (params: { network: string; phone: string; planCode: string; planName: string; planPrice: string; idempotencyKey?: string }) => Promise<{ success: boolean; pending?: boolean; requestId?: string; planName?: string; balance?: number; error?: string }>;
   setActiveTab: (tab: string) => void;
   fundWallet: (amount: number) => Promise<boolean>;
 }
@@ -306,17 +310,27 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     } catch { return false; }
   };
 
-  /** Server-orchestrated airtime purchase: wallet debit + vendor call in one request. */
-  const purchaseAirtime = async (params: { network: string; phone: string; amount: number }) => {
+  /** Server-orchestrated airtime purchase: wallet debit + vendor call in one request.
+   *  Accepts an optional idempotencyKey — the server returns the existing transaction
+   *  result instead of charging the wallet a second time when the key matches. */
+  const purchaseAirtime = async (params: { network: string; phone: string; amount: number; idempotencyKey?: string }) => {
     try {
+      const headers: Record<string, string> = {};
+      if (params.idempotencyKey) headers['Idempotency-Key'] = params.idempotencyKey;
+
       const res = await api('/purchase/airtime', {
         method: 'POST',
-        body: JSON.stringify(params),
+        headers,
+        body: JSON.stringify({ network: params.network, phone: params.phone, amount: params.amount }),
       });
-      const data = await res.json() as { success: boolean; requestId?: string; balance?: string; txnId?: string; error?: string };
+      const data = await res.json() as {
+        success: boolean; pending?: boolean;
+        requestId?: string; balance?: string; txnId?: string; error?: string;
+      };
+
+      // pending → still processing; success/idempotent → sync state
       if (res.ok && data.success) {
         if (data.balance != null) setBalance(parseFloat(data.balance));
-        // Sync transactions from server on next context poll — or force a refresh
         const txns = await api('/user/transactions');
         if (txns.ok) {
           const rows = await txns.json() as Record<string, unknown>[];
@@ -324,18 +338,30 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }
         return { success: true, requestId: data.requestId, balance: data.balance ? parseFloat(data.balance) : undefined };
       }
+      if (res.ok && data.pending) {
+        return { success: false, pending: true, requestId: data.requestId, error: data.error };
+      }
       return { success: false, error: data.error ?? 'Purchase failed' };
     } catch { return { success: false, error: 'Network error' }; }
   };
 
-  /** Server-orchestrated data purchase: wallet debit + vendor call in one request. */
-  const purchaseData = async (params: { network: string; phone: string; planCode: string; planName: string; planPrice: string }) => {
+  /** Server-orchestrated data purchase: wallet debit + vendor call in one request.
+   *  Accepts an optional idempotencyKey — see purchaseAirtime for semantics. */
+  const purchaseData = async (params: { network: string; phone: string; planCode: string; planName: string; planPrice: string; idempotencyKey?: string }) => {
     try {
+      const headers: Record<string, string> = {};
+      if (params.idempotencyKey) headers['Idempotency-Key'] = params.idempotencyKey;
+
       const res = await api('/purchase/data', {
         method: 'POST',
-        body: JSON.stringify(params),
+        headers,
+        body: JSON.stringify({ network: params.network, phone: params.phone, planCode: params.planCode, planName: params.planName, planPrice: params.planPrice }),
       });
-      const data = await res.json() as { success: boolean; requestId?: string; planName?: string; balance?: string; txnId?: string; error?: string };
+      const data = await res.json() as {
+        success: boolean; pending?: boolean;
+        requestId?: string; planName?: string; balance?: string; txnId?: string; error?: string;
+      };
+
       if (res.ok && data.success) {
         if (data.balance != null) setBalance(parseFloat(data.balance));
         const txns = await api('/user/transactions');
@@ -344,6 +370,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           setTransactions(rows.map(transformTransaction));
         }
         return { success: true, requestId: data.requestId, planName: data.planName, balance: data.balance ? parseFloat(data.balance) : undefined };
+      }
+      if (res.ok && data.pending) {
+        return { success: false, pending: true, requestId: data.requestId, error: data.error };
       }
       return { success: false, error: data.error ?? 'Purchase failed' };
     } catch { return { success: false, error: 'Network error' }; }

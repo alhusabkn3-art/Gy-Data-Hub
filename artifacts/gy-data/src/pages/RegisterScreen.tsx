@@ -3,11 +3,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import { ChevronLeft } from 'lucide-react';
+import { useAppContext } from '../context/AppContext';
 
-// ── Shared keypad keys ────────────────────────────────────────────────────────
+// ── Shared sub-components ─────────────────────────────────────────────────────
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'backspace'];
-
-// ── Sub-components ────────────────────────────────────────────────────────────
 
 function PinIndicators({ pin, isError }: { pin: string; isError: boolean }) {
   return (
@@ -107,8 +106,7 @@ function GradientButton({ onClick, children, disabled }: { onClick: () => void; 
   );
 }
 
-// ── Validation helpers ────────────────────────────────────────────────────────
-
+// ── Validation ────────────────────────────────────────────────────────────────
 function validateStep1(name: string, email: string, phone: string): string | null {
   if (!name.trim() || name.trim().length < 2) return 'Please enter your full name.';
   if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Please enter a valid email address.';
@@ -117,34 +115,34 @@ function validateStep1(name: string, email: string, phone: string): string | nul
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
-
 type Step = 'details' | 'set-pin' | 'confirm-pin' | 'success';
 
 export default function RegisterScreen() {
+  const { register, accountExists } = useAppContext();
   const [, setLocation] = useLocation();
 
   const [step, setStep] = useState<Step>('details');
-
-  // Step 1 fields
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [fieldErrors, setFieldErrors] = useState<string>('');
-
-  // PIN steps
+  const [fieldErrors, setFieldErrors] = useState('');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [pinError, setPinError] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
 
-  // ── Step 1 submit ──────────────────────────────────────────────────────────
   const handleDetailsNext = () => {
     const err = validateStep1(name, email, phone);
     if (err) { setFieldErrors(err); return; }
+    // Check for duplicate phone
+    if (accountExists(phone.replace(/\D/g, '').slice(0, 11))) {
+      setFieldErrors('An account with this phone number already exists. Please sign in instead.');
+      return;
+    }
     setFieldErrors('');
     setStep('set-pin');
   };
 
-  // ── Step 2 — set new PIN ───────────────────────────────────────────────────
   const handleSetPinKey = (key: string) => {
     if (key === 'backspace') { setNewPin(p => p.slice(0, -1)); return; }
     if (newPin.length >= 6) return;
@@ -153,7 +151,6 @@ export default function RegisterScreen() {
     if (next.length === 6) setTimeout(() => setStep('confirm-pin'), 200);
   };
 
-  // ── Step 3 — confirm PIN ───────────────────────────────────────────────────
   const handleConfirmPinKey = (key: string) => {
     if (key === 'backspace') { setConfirmPin(p => p.slice(0, -1)); setPinError(false); return; }
     if (confirmPin.length >= 6) return;
@@ -166,7 +163,20 @@ export default function RegisterScreen() {
           toast.error("PINs don't match. Try again.");
           setConfirmPin('');
         } else {
-          setStep('success');
+          // Create the real account and auto-login
+          setIsCreating(true);
+          const result = register(name.trim(), phone.replace(/\D/g, '').slice(0, 11), email.trim(), newPin);
+          if (result === 'phone_taken') {
+            toast.error('An account with this phone number already exists.');
+            setIsCreating(false);
+            setStep('details');
+            setNewPin('');
+            setConfirmPin('');
+          } else {
+            setStep('success');
+            // Auto-navigate to home after showing success (user is now logged in)
+            setTimeout(() => setLocation('/'), 2200);
+          }
         }
       }, 200);
     }
@@ -179,10 +189,8 @@ export default function RegisterScreen() {
   };
 
   const stepLabel: Record<Step, string> = {
-    details: 'Personal Details',
-    'set-pin': 'Set Your PIN',
-    'confirm-pin': 'Confirm Your PIN',
-    success: 'Account Created!',
+    details: 'Personal Details', 'set-pin': 'Set Your PIN',
+    'confirm-pin': 'Confirm Your PIN', success: 'Account Created!',
   };
 
   const stepProgress: Record<Step, number> = {
@@ -207,11 +215,9 @@ export default function RegisterScreen() {
       {/* Header */}
       <div className="w-full max-w-sm z-10 flex items-center gap-3 mb-6">
         {step !== 'success' && (
-          <button
-            onClick={goBack}
+          <button onClick={goBack}
             className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
-            style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)' }}
-          >
+            style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)' }}>
             <ChevronLeft className="w-5 h-5 text-white" />
           </button>
         )}
@@ -257,10 +263,9 @@ export default function RegisterScreen() {
               <div>
                 <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: '#6B7FA3' }}>Full Name</label>
                 <input
-                  type="text"
-                  value={name}
+                  type="text" value={name}
                   onChange={e => { setName(e.target.value); setFieldErrors(''); }}
-                  placeholder="e.g. Emeka Johnson"
+                  placeholder="Your full name"
                   autoComplete="name"
                   className="w-full h-12 rounded-xl px-4 text-sm font-medium outline-none transition-colors"
                   style={{ border: '2px solid #DDEAFF', background: '#F8FAFF', color: '#0B1F4E' }}
@@ -271,8 +276,7 @@ export default function RegisterScreen() {
               <div>
                 <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: '#6B7FA3' }}>Email Address</label>
                 <input
-                  type="email"
-                  value={email}
+                  type="email" value={email}
                   onChange={e => { setEmail(e.target.value); setFieldErrors(''); }}
                   placeholder="you@example.com"
                   autoComplete="email"
@@ -289,9 +293,7 @@ export default function RegisterScreen() {
                     🇳🇬 +234
                   </span>
                   <input
-                    type="tel"
-                    inputMode="numeric"
-                    value={phone}
+                    type="tel" inputMode="numeric" value={phone}
                     onChange={e => { setPhone(e.target.value.replace(/\D/g, '').slice(0, 11)); setFieldErrors(''); }}
                     placeholder="0803 456 7890"
                     autoComplete="tel"
@@ -314,18 +316,13 @@ export default function RegisterScreen() {
               </motion.p>
             )}
 
-            <GradientButton onClick={handleDetailsNext}>
-              Continue
-            </GradientButton>
+            <GradientButton onClick={handleDetailsNext}>Continue</GradientButton>
 
             <div className="text-center mt-5">
-              <button
-                onClick={() => setLocation('/')}
-                className="text-sm font-medium transition-colors"
-                style={{ color: '#6B7FA3' }}
+              <button onClick={() => setLocation('/')}
+                className="text-sm font-medium transition-colors" style={{ color: '#6B7FA3' }}
                 onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#0B1F4E'; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#6B7FA3'; }}
-              >
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#6B7FA3'; }}>
                 Already have an account? <span style={{ color: '#2563EB', fontWeight: 600 }}>Sign In</span>
               </button>
             </div>
@@ -349,19 +346,17 @@ export default function RegisterScreen() {
 
         {/* ── Step 3: Confirm PIN ───────────────────────────────────────── */}
         {step === 'confirm-pin' && (
-          <>
-            <motion.div
-              animate={pinError ? { x: [-10, 10, -8, 8, -5, 5, 0] } : {}}
-              transition={{ duration: 0.45 }}
-            >
-              <div className="text-center mb-7">
-                <h2 className="text-xl font-bold mb-1" style={{ color: '#0B1F4E' }}>Confirm Your PIN</h2>
-                <p className="text-sm" style={{ color: '#6B7FA3' }}>Enter your 6-digit PIN one more time</p>
-              </div>
-              <PinIndicators pin={confirmPin} isError={pinError} />
-              <Keypad onPress={handleConfirmPinKey} />
-            </motion.div>
-          </>
+          <motion.div animate={pinError ? { x: [-10, 10, -8, 8, -5, 5, 0] } : {}} transition={{ duration: 0.45 }}>
+            <div className="text-center mb-7">
+              <h2 className="text-xl font-bold mb-1" style={{ color: '#0B1F4E' }}>Confirm Your PIN</h2>
+              <p className="text-sm" style={{ color: '#6B7FA3' }}>Enter your 6-digit PIN one more time</p>
+            </div>
+            <PinIndicators pin={confirmPin} isError={pinError} />
+            <Keypad onPress={handleConfirmPinKey} />
+            {isCreating && (
+              <p className="text-xs text-center mt-2" style={{ color: '#9BA8C0' }}>Creating your account…</p>
+            )}
+          </motion.div>
         )}
 
         {/* ── Step 4: Success ───────────────────────────────────────────── */}
@@ -379,19 +374,16 @@ export default function RegisterScreen() {
             </motion.div>
             <h2 className="text-2xl font-bold mb-2" style={{ color: '#0B1F4E' }}>Welcome to GY DATA!</h2>
             <p className="text-sm mb-1" style={{ color: '#6B7FA3' }}>
-              Hi <span className="font-semibold" style={{ color: '#0B1F4E' }}>{name.split(' ')[0]}</span>, your account is ready.
+              Hi <span className="font-semibold" style={{ color: '#0B1F4E' }}>{name.trim().split(' ')[0]}</span>, your account is ready.
             </p>
             <p className="text-xs mb-8" style={{ color: '#9BA8C0' }}>
-              Sign in with the PIN you just created to get started.
+              Taking you to your dashboard…
             </p>
-            <GradientButton onClick={() => setLocation('/')}>
-              Sign In Now
-            </GradientButton>
+            <GradientButton onClick={() => setLocation('/')}>Go to Dashboard</GradientButton>
           </div>
         )}
       </motion.div>
 
-      {/* GY DATA branding at bottom */}
       <p className="z-10 mt-8 text-xs font-medium tracking-[0.18em] uppercase"
         style={{ color: 'rgba(147,197,253,0.5)' }}>
         GY DATA · endless joy

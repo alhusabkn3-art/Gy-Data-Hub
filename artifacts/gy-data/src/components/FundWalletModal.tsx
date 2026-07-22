@@ -11,6 +11,9 @@ export default function FundWalletModal({ open, onOpenChange }: { open: boolean,
   const [showSuccess, setShowSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Guard — modal should only open when logged in, but be safe
+  if (!user) return null;
+
   const handleCopy = () => {
     navigator.clipboard.writeText(user.accountNumber);
     setCopied(true);

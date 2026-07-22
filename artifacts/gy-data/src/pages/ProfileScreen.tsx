@@ -6,10 +6,13 @@ import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 
 export default function ProfileScreen() {
-  const { user, logout } = useAppContext();
+  const { user, logout, verifyPin, changePin } = useAppContext();
   const [, setLocation] = useLocation();
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
-  const [showPinModal, setShowPinModal] = useState<'login' | 'purchase' | null>(null);
+  const [showPinModal, setShowPinModal]   = useState<'login' | 'purchase' | null>(null);
+
+  // Guard — this screen only renders when logged in, but be defensive
+  if (!user) return null;
 
   const handleLogout = () => {
     setShowLogoutDialog(false);
@@ -21,6 +24,22 @@ export default function ProfileScreen() {
     navigator.clipboard.writeText(user.referralCode);
     toast.success('Referral code copied!');
   };
+
+  const kycLabel = user.kycStatus === 'verified' ? 'KYC Verified'
+    : user.kycStatus === 'pending'   ? 'KYC Pending'
+    : 'KYC Unverified';
+  const kycColor = user.kycStatus === 'verified' ? 'text-green-500'
+    : user.kycStatus === 'pending'   ? 'text-yellow-500'
+    : 'text-red-400';
+  const kycBg = user.kycStatus === 'verified' ? 'bg-green-500/10 border-green-500/30'
+    : user.kycStatus === 'pending'   ? 'bg-yellow-500/10 border-yellow-500/30'
+    : 'bg-red-500/10 border-red-400/30';
+  const kycDot = user.kycStatus === 'verified' ? 'bg-green-500'
+    : user.kycStatus === 'pending'   ? 'bg-yellow-500'
+    : 'bg-red-400';
+
+  // Avatar initials
+  const initials = user.firstName[0] + (user.lastName?.[0] ?? '');
 
   return (
     <>
@@ -44,7 +63,7 @@ export default function ProfileScreen() {
         <div className="flex flex-col items-center mb-8">
           <div className="relative mb-4">
             <div className="w-24 h-24 rounded-full bg-gradient-to-br from-primary to-[#1B3A6B] flex items-center justify-center text-3xl font-bold text-white shadow-lg border-4 border-background">
-              {user.firstName[0]}{user.name.split(' ')[1]?.[0] ?? ''}
+              {initials}
             </div>
             {user.kycStatus === 'verified' && (
               <div className="absolute bottom-0 right-0 w-8 h-8 bg-green-500 rounded-full border-4 border-background flex items-center justify-center text-white">
@@ -54,10 +73,12 @@ export default function ProfileScreen() {
           </div>
           <h2 className="text-2xl font-bold mb-1">{user.name}</h2>
           <p className="text-muted-foreground text-sm mb-1">{user.email}</p>
-          <p className="text-muted-foreground text-xs mb-3">{user.phone}</p>
-          <div className="px-4 py-1.5 bg-green-500/10 border border-green-500/30 rounded-full flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-green-500" />
-            <span className="text-xs font-semibold text-green-500">KYC Verified</span>
+          <p className="text-muted-foreground text-xs mb-3">
+            {user.phone.replace(/(\d{4})(\d{3})(\d{4})/, '$1 $2 $3')}
+          </p>
+          <div className={`px-4 py-1.5 border rounded-full flex items-center gap-2 ${kycBg}`}>
+            <span className={`w-2 h-2 rounded-full ${kycDot}`} />
+            <span className={`text-xs font-semibold ${kycColor}`}>{kycLabel}</span>
           </div>
         </div>
 
@@ -80,9 +101,9 @@ export default function ProfileScreen() {
               <MenuRow
                 icon={ShieldCheck}
                 label="KYC Verification"
-                value="Verified"
-                valueColor="text-green-500"
-                onClick={() => toast.success('Your KYC is fully verified!')}
+                value={user.kycStatus === 'verified' ? 'Verified' : user.kycStatus === 'pending' ? 'Pending' : 'Unverified'}
+                valueColor={user.kycStatus === 'verified' ? 'text-green-500' : user.kycStatus === 'pending' ? 'text-yellow-500' : 'text-red-400'}
+                onClick={() => toast.info(user.kycStatus === 'verified' ? 'Your KYC is fully verified!' : 'KYC verification coming soon!')}
               />
               <div
                 onClick={copyReferral}
@@ -106,22 +127,10 @@ export default function ProfileScreen() {
           <div>
             <h3 className="text-xs font-semibold text-muted-foreground mb-3 px-1 uppercase tracking-wider">Security</h3>
             <div className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border">
-              <MenuRow
-                icon={Lock}
-                label="Change Login PIN"
-                onClick={() => setShowPinModal('login')}
-              />
-              <MenuRow
-                icon={Lock}
-                label="Change Purchase PIN"
-                onClick={() => setShowPinModal('purchase')}
-              />
-              <MenuRow
-                icon={Fingerprint}
-                label="Biometric Login"
-                value="Off"
-                onClick={() => toast.info('Enable biometrics in Settings → Security')}
-              />
+              <MenuRow icon={Lock} label="Change Login PIN"    onClick={() => setShowPinModal('login')} />
+              <MenuRow icon={Lock} label="Change Purchase PIN" onClick={() => setShowPinModal('purchase')} />
+              <MenuRow icon={Fingerprint} label="Biometric Login" value="Off"
+                onClick={() => toast.info('Enable biometrics in Settings → Security')} />
             </div>
           </div>
 
@@ -129,22 +138,12 @@ export default function ProfileScreen() {
           <div>
             <h3 className="text-xs font-semibold text-muted-foreground mb-3 px-1 uppercase tracking-wider">Support</h3>
             <div className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border">
-              <MenuRow
-                icon={HelpCircle}
-                label="Help & Support"
-                onClick={() => toast.info('Support chat coming soon! Email: support@gydata.ng')}
-              />
-              <MenuRow
-                icon={AlertTriangle}
-                label="Report a Problem"
-                onClick={() => toast.info('Problem reporting coming soon!')}
-              />
-              <MenuRow
-                icon={Info}
-                label="About GY DATA"
-                value="v1.0.0"
-                onClick={() => toast.info('GY DATA v1.0.0 — endless joy')}
-              />
+              <MenuRow icon={HelpCircle} label="Help & Support"
+                onClick={() => toast.info('Support chat coming soon! Email: support@gydata.ng')} />
+              <MenuRow icon={AlertTriangle} label="Report a Problem"
+                onClick={() => toast.info('Problem reporting coming soon!')} />
+              <MenuRow icon={Info} label="About GY DATA" value="v1.0.0"
+                onClick={() => toast.info('GY DATA v1.0.0 — endless joy')} />
             </div>
           </div>
 
@@ -158,17 +157,13 @@ export default function ProfileScreen() {
         </div>
       </motion.div>
 
-      {/* Logout Confirmation Dialog */}
+      {/* Logout Confirmation */}
       <AnimatePresence>
         {showLogoutDialog && (
           <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="fixed inset-0 bg-black/60 z-50 backdrop-blur-sm"
-              onClick={() => setShowLogoutDialog(false)}
-            />
+              onClick={() => setShowLogoutDialog(false)} />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -179,18 +174,14 @@ export default function ProfileScreen() {
                 <LogOut className="w-7 h-7 text-destructive" />
               </div>
               <h2 className="text-xl font-bold text-center mb-2">Logout?</h2>
-              <p className="text-muted-foreground text-sm text-center mb-6">You will need to enter your PIN to log back in.</p>
+              <p className="text-muted-foreground text-sm text-center mb-6">You will need to enter your phone number and PIN to log back in.</p>
               <div className="flex gap-3">
-                <button
-                  onClick={() => setShowLogoutDialog(false)}
-                  className="flex-1 h-12 rounded-xl border-2 border-border font-semibold text-sm hover:bg-muted transition-colors"
-                >
+                <button onClick={() => setShowLogoutDialog(false)}
+                  className="flex-1 h-12 rounded-xl border-2 border-border font-semibold text-sm hover:bg-muted transition-colors">
                   Cancel
                 </button>
-                <button
-                  onClick={handleLogout}
-                  className="flex-1 h-12 rounded-xl bg-destructive text-white font-semibold text-sm hover:bg-destructive/90 transition-colors active:scale-[0.98]"
-                >
+                <button onClick={handleLogout}
+                  className="flex-1 h-12 rounded-xl bg-destructive text-white font-semibold text-sm hover:bg-destructive/90 transition-colors active:scale-[0.98]">
                   Logout
                 </button>
               </div>
@@ -204,6 +195,8 @@ export default function ProfileScreen() {
         {showPinModal && (
           <PinChangeModal
             type={showPinModal}
+            verifyPin={verifyPin}
+            changePin={changePin}
             onClose={() => setShowPinModal(null)}
           />
         )}
@@ -212,64 +205,78 @@ export default function ProfileScreen() {
   );
 }
 
-function PinChangeModal({ type, onClose }: { type: 'login' | 'purchase'; onClose: () => void }) {
-  const [step, setStep] = useState<'current' | 'new' | 'confirm'>('current');
+// ── PIN Change Modal ──────────────────────────────────────────────────────────
+function PinChangeModal({
+  type, verifyPin, changePin, onClose,
+}: {
+  type: 'login' | 'purchase';
+  verifyPin: (pin: string) => boolean;
+  changePin: (oldPin: string, newPin: string) => boolean;
+  onClose: () => void;
+}) {
+  const [step,       setStep]       = useState<'current' | 'new' | 'confirm'>('current');
   const [currentPin, setCurrentPin] = useState('');
-  const [newPin, setNewPin] = useState('');
+  const [newPin,     setNewPin]     = useState('');
   const [confirmPin, setConfirmPin] = useState('');
-  const [showPin, setShowPin] = useState(false);
+  const [showPin,    setShowPin]    = useState(false);
 
-  const label = type === 'login' ? 'Login' : 'Purchase';
+  const label     = type === 'login' ? 'Login' : 'Purchase';
   const activePin = step === 'current' ? currentPin : step === 'new' ? newPin : confirmPin;
 
   const handleKeyPress = (key: string) => {
-    const setter = step === 'current' ? setCurrentPin : step === 'new' ? setNewPin : setConfirmPin;
-    const current = step === 'current' ? currentPin : step === 'new' ? newPin : confirmPin;
-    if (key === 'backspace') {
-      setter(current.slice(0, -1));
-    } else if (current.length < 6) {
-      const next = current + key;
-      setter(next);
-      if (next.length === 6) {
-        setTimeout(() => {
-          if (step === 'current') {
-            if (next !== '123456') {
-              toast.error('Incorrect current PIN');
-              setter('');
-            } else {
-              setStep('new');
-            }
-          } else if (step === 'new') {
-            setStep('confirm');
+    const setter  = step === 'current' ? setCurrentPin : step === 'new' ? setNewPin : setConfirmPin;
+    const current = step === 'current' ? currentPin   : step === 'new' ? newPin    : confirmPin;
+    if (key === 'backspace') { setter(current.slice(0, -1)); return; }
+    if (current.length >= 6) return;
+    const next = current + key;
+    setter(next);
+    if (next.length === 6) {
+      setTimeout(() => {
+        if (step === 'current') {
+          // Verify against the real stored PIN
+          if (!verifyPin(next)) {
+            toast.error('Incorrect current PIN.');
+            setter('');
           } else {
-            if (next !== newPin) {
-              toast.error("PINs don't match. Try again.");
-              setter('');
-              setStep('new');
-              setNewPin('');
-            } else {
+            setStep('new');
+          }
+        } else if (step === 'new') {
+          setStep('confirm');
+        } else {
+          // Confirm step
+          if (next !== newPin) {
+            toast.error("PINs don't match. Try again.");
+            setter('');
+            setStep('new');
+            setNewPin('');
+          } else {
+            const ok = changePin(currentPin, newPin);
+            if (ok) {
               toast.success(`${label} PIN changed successfully!`);
               onClose();
+            } else {
+              toast.error('Failed to update PIN. Please try again.');
+              setter('');
+              setStep('current');
+              setCurrentPin('');
+              setNewPin('');
             }
           }
-        }, 300);
-      }
+        }
+      }, 300);
     }
   };
 
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'backspace'];
-
-  const stepLabel = step === 'current' ? `Enter Current ${label} PIN` : step === 'new' ? `Enter New ${label} PIN` : 'Confirm New PIN';
+  const stepLabel = step === 'current' ? `Enter Current ${label} PIN`
+    : step === 'new' ? `Enter New ${label} PIN`
+    : 'Confirm New PIN';
 
   return (
     <>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         className="fixed inset-0 bg-black/60 z-50 backdrop-blur-sm"
-        onClick={onClose}
-      />
+        onClick={onClose} />
       <motion.div
         initial={{ y: '100%' }}
         animate={{ y: 0 }}
@@ -288,8 +295,7 @@ function PinChangeModal({ type, onClose }: { type: 'login' | 'purchase'; onClose
 
         <div className="flex justify-center gap-2 mb-6">
           {[...Array(6)].map((_, i) => (
-            <div
-              key={i}
+            <div key={i}
               className={`w-10 h-10 rounded-xl flex items-center justify-center border-2 transition-all ${
                 i === activePin.length
                   ? 'border-primary bg-primary/10 shadow-[0_0_12px_rgba(37,99,235,0.3)]'
@@ -309,10 +315,7 @@ function PinChangeModal({ type, onClose }: { type: 'login' | 'purchase'; onClose
 
         <div className="grid grid-cols-3 gap-2 mb-4">
           {keys.map((key, i) => (
-            <button
-              key={i}
-              onClick={() => key && handleKeyPress(key)}
-              disabled={!key}
+            <button key={i} onClick={() => key && handleKeyPress(key)} disabled={!key}
               className={`h-12 rounded-xl flex items-center justify-center text-lg font-medium transition-all active:scale-95 ${
                 key ? 'bg-muted hover:bg-black/10 text-foreground' : 'opacity-0 cursor-default'
               }`}
@@ -327,10 +330,8 @@ function PinChangeModal({ type, onClose }: { type: 'login' | 'purchase'; onClose
           ))}
         </div>
 
-        <button
-          onClick={() => setShowPin(v => !v)}
-          className="w-full flex items-center justify-center gap-2 text-xs text-muted-foreground py-2"
-        >
+        <button onClick={() => setShowPin(v => !v)}
+          className="w-full flex items-center justify-center gap-2 text-xs text-muted-foreground py-2">
           {showPin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
           {showPin ? 'Hide PIN' : 'Show PIN'}
         </button>
@@ -343,24 +344,15 @@ function PinChangeModal({ type, onClose }: { type: 'login' | 'purchase'; onClose
   );
 }
 
+// ── Menu row ──────────────────────────────────────────────────────────────────
 function MenuRow({
-  icon: Icon,
-  label,
-  value,
-  valueColor,
-  onClick,
+  icon: Icon, label, value, valueColor, onClick,
 }: {
-  icon: React.ElementType;
-  label: string;
-  value?: string;
-  valueColor?: string;
-  onClick?: () => void;
+  icon: React.ElementType; label: string; value?: string; valueColor?: string; onClick?: () => void;
 }) {
   return (
-    <button
-      onClick={onClick}
-      className="w-full flex items-center justify-between p-4 hover:bg-black/5 active:bg-black/8 transition-colors text-left"
-    >
+    <button onClick={onClick}
+      className="w-full flex items-center justify-between p-4 hover:bg-black/5 active:bg-black/8 transition-colors text-left">
       <div className="flex items-center gap-3">
         <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
           <Icon className="w-4 h-4" />

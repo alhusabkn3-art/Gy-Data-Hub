@@ -12,6 +12,9 @@ export default function WalletScreen() {
   const [isFundWalletOpen, setIsFundWalletOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState<'all' | 'credit' | 'debit'>('all');
 
+  // Guard — defensive against null user (screen is behind auth gate)
+  if (!user) return null;
+
   const handleCopy = () => {
     navigator.clipboard.writeText(user.accountNumber);
     toast.success('Account number copied to clipboard');

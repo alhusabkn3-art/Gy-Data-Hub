@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import { ChevronLeft } from 'lucide-react';
+import { useAppContext } from '../context/AppContext';
 
 // ── Keypad ────────────────────────────────────────────────────────────────────
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'backspace'];
@@ -105,12 +106,11 @@ function GradientButton({ onClick, children, disabled }: { onClick: () => void; 
   );
 }
 
-// ── OTP countdown timer ───────────────────────────────────────────────────────
+// ── OTP countdown ─────────────────────────────────────────────────────────────
 function useCountdown(initial: number) {
   const [count, setCount] = useState(initial);
   const [running, setRunning] = useState(true);
   const ref = useRef<ReturnType<typeof setInterval> | null>(null);
-
   useEffect(() => {
     if (!running) return;
     ref.current = setInterval(() => {
@@ -121,47 +121,43 @@ function useCountdown(initial: number) {
     }, 1000);
     return () => clearInterval(ref.current!);
   }, [running]);
-
   const reset = () => { setCount(initial); setRunning(true); };
   return { count, reset, expired: count === 0 };
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Page ──────────────────────────────────────────────────────────────────────
 type Step = 'phone' | 'otp' | 'new-pin' | 'confirm-pin' | 'success';
 
-// Simulated OTP — any 6-digit code is accepted (real OTP would validate server-side)
-const SIMULATED_OTP = '000000'; // we accept any non-empty 6-digit string
-
-// ── Page ──────────────────────────────────────────────────────────────────────
 export default function ForgotPinScreen() {
+  const { resetPin, accountExists } = useAppContext();
   const [, setLocation] = useLocation();
   const [step, setStep] = useState<Step>('phone');
 
-  // Step 1
-  const [phone, setPhone] = useState('');
+  const [phone,      setPhone]      = useState('');
   const [phoneError, setPhoneError] = useState('');
-  const [isSending, setIsSending] = useState(false);
+  const [isSending,  setIsSending]  = useState(false);
 
-  // Step 2 — OTP
-  const [otp, setOtp] = useState('');
+  const [otp,      setOtp]      = useState('');
   const [otpError, setOtpError] = useState(false);
   const { count: otpTimer, reset: resetTimer, expired: otpExpired } = useCountdown(60);
 
-  // Steps 3 & 4 — PIN
-  const [newPin, setNewPin] = useState('');
+  const [newPin,     setNewPin]     = useState('');
   const [confirmPin, setConfirmPin] = useState('');
-  const [pinError, setPinError] = useState(false);
+  const [pinError,   setPinError]   = useState(false);
 
-  // ── Step 1: phone submit ───────────────────────────────────────────────────
+  // ── Step 1: phone ─────────────────────────────────────────────────────────
   const handleSendOtp = () => {
     const digits = phone.replace(/\D/g, '');
     if (!/^0[7-9][01]\d{8}$/.test(digits)) {
       setPhoneError('Enter a valid 11-digit Nigerian mobile number.');
       return;
     }
+    if (!accountExists(digits)) {
+      setPhoneError('No account found with this phone number.');
+      return;
+    }
     setPhoneError('');
     setIsSending(true);
-    // Simulate network delay
     setTimeout(() => {
       setIsSending(false);
       setStep('otp');
@@ -170,22 +166,18 @@ export default function ForgotPinScreen() {
     }, 1200);
   };
 
-  // ── Step 2: OTP keypad ─────────────────────────────────────────────────────
+  // ── Step 2: OTP ───────────────────────────────────────────────────────────
   const handleOtpKey = (key: string) => {
     if (key === 'backspace') { setOtp(p => p.slice(0, -1)); setOtpError(false); return; }
     if (otp.length >= 6) return;
     const next = otp + key;
     setOtp(next);
     if (next.length === 6) {
-      setTimeout(() => {
-        // Accept any 6-digit code in this simulated flow
-        setOtpError(false);
-        setStep('new-pin');
-      }, 200);
+      setTimeout(() => { setOtpError(false); setStep('new-pin'); }, 200);
     }
   };
 
-  // ── Step 3: new PIN ────────────────────────────────────────────────────────
+  // ── Step 3: new PIN ───────────────────────────────────────────────────────
   const handleNewPinKey = (key: string) => {
     if (key === 'backspace') { setNewPin(p => p.slice(0, -1)); return; }
     if (newPin.length >= 6) return;
@@ -194,7 +186,7 @@ export default function ForgotPinScreen() {
     if (next.length === 6) setTimeout(() => setStep('confirm-pin'), 200);
   };
 
-  // ── Step 4: confirm PIN ────────────────────────────────────────────────────
+  // ── Step 4: confirm PIN — calls resetPin() ────────────────────────────────
   const handleConfirmPinKey = (key: string) => {
     if (key === 'backspace') { setConfirmPin(p => p.slice(0, -1)); setPinError(false); return; }
     if (confirmPin.length >= 6) return;
@@ -207,13 +199,19 @@ export default function ForgotPinScreen() {
           toast.error("PINs don't match. Try again.");
           setConfirmPin('');
         } else {
-          setStep('success');
+          const ok = resetPin(phone.replace(/\D/g, ''), newPin);
+          if (!ok) {
+            toast.error('Could not update PIN. Please start again.');
+            setStep('phone');
+          } else {
+            setStep('success');
+          }
         }
       }, 200);
     }
   };
 
-  // ── Back navigation ────────────────────────────────────────────────────────
+  // ── Back nav ──────────────────────────────────────────────────────────────
   const goBack = () => {
     if (step === 'phone') { setLocation('/'); return; }
     if (step === 'otp') { setStep('phone'); setOtp(''); setOtpError(false); return; }
@@ -222,7 +220,7 @@ export default function ForgotPinScreen() {
   };
 
   const stepTitles: Record<Step, { title: string; sub: string }> = {
-    phone: { title: 'Forgot PIN?', sub: "Enter your registered phone number" },
+    phone: { title: 'Forgot PIN?', sub: 'Enter your registered phone number' },
     otp: { title: 'Verify Identity', sub: `Code sent to ${phone.replace(/(\d{4})(\d{3})(\d{4})/, '$1 $2 $3')}` },
     'new-pin': { title: 'Create New PIN', sub: 'Choose a new 6-digit PIN' },
     'confirm-pin': { title: 'Confirm New PIN', sub: 'Enter your new PIN one more time' },
@@ -248,14 +246,12 @@ export default function ForgotPinScreen() {
         <circle cx="320" cy="0" r="230" stroke="white" strokeWidth="1" />
       </svg>
 
-      {/* Header row */}
+      {/* Header */}
       <div className="w-full max-w-sm z-10 flex items-center gap-3 mb-6">
         {step !== 'success' && (
-          <button
-            onClick={goBack}
+          <button onClick={goBack}
             className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
-            style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)' }}
-          >
+            style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)' }}>
             <ChevronLeft className="w-5 h-5 text-white" />
           </button>
         )}
@@ -310,23 +306,29 @@ export default function ForgotPinScreen() {
                   🇳🇬 +234
                 </span>
                 <input
-                  type="tel"
-                  inputMode="numeric"
-                  value={phone}
+                  type="tel" inputMode="numeric" value={phone}
                   onChange={e => { setPhone(e.target.value.replace(/\D/g, '').slice(0, 11)); setPhoneError(''); }}
+                  onKeyDown={e => { if (e.key === 'Enter') handleSendOtp(); }}
                   placeholder="0803 456 7890"
                   autoComplete="tel"
                   className="w-full h-12 rounded-xl text-sm font-medium outline-none"
-                  style={{ border: `2px solid ${phoneError ? '#EF4444' : '#DDEAFF'}`, background: phoneError ? '#FEF2F2' : '#F8FAFF', color: '#0B1F4E', paddingLeft: '6rem', paddingRight: '1rem', transition: 'all 0.15s ease' }}
+                  style={{
+                    border: `2px solid ${phoneError ? '#EF4444' : '#DDEAFF'}`,
+                    background: phoneError ? '#FEF2F2' : '#F8FAFF',
+                    color: '#0B1F4E', paddingLeft: '6rem', paddingRight: '1rem', transition: 'all 0.15s ease',
+                  }}
                   onFocus={e => { e.currentTarget.style.borderColor = phoneError ? '#EF4444' : '#2563EB'; e.currentTarget.style.background = phoneError ? '#FEF2F2' : '#EFF6FF'; }}
                   onBlur={e => { e.currentTarget.style.borderColor = phoneError ? '#EF4444' : '#DDEAFF'; e.currentTarget.style.background = phoneError ? '#FEF2F2' : '#F8FAFF'; }}
                 />
               </div>
-              {phoneError && (
-                <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-xs mt-1.5 pl-1" style={{ color: '#DC2626' }}>
-                  {phoneError}
-                </motion.p>
-              )}
+              <AnimatePresence>
+                {phoneError && (
+                  <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    className="text-xs mt-1.5 pl-1" style={{ color: '#DC2626' }}>
+                    {phoneError}
+                  </motion.p>
+                )}
+              </AnimatePresence>
             </div>
 
             <GradientButton onClick={handleSendOtp} disabled={isSending || phone.length < 10}>
@@ -334,11 +336,7 @@ export default function ForgotPinScreen() {
             </GradientButton>
 
             <div className="text-center mt-5">
-              <button
-                onClick={() => setLocation('/')}
-                className="text-sm font-medium"
-                style={{ color: '#2563EB' }}
-              >
+              <button onClick={() => setLocation('/')} className="text-sm font-medium" style={{ color: '#2563EB' }}>
                 ← Back to Sign In
               </button>
             </div>
@@ -350,24 +348,16 @@ export default function ForgotPinScreen() {
           <>
             <div className="text-center mb-7">
               <h2 className="text-xl font-bold mb-1" style={{ color: '#0B1F4E' }}>Enter Code</h2>
-              <p className="text-sm" style={{ color: '#6B7FA3' }}>
-                Enter the 6-digit code sent to your phone
-              </p>
+              <p className="text-sm" style={{ color: '#6B7FA3' }}>Enter the 6-digit code sent to your phone</p>
             </div>
-            <motion.div
-              animate={otpError ? { x: [-10, 10, -8, 8, -5, 5, 0] } : {}}
-              transition={{ duration: 0.45 }}
-            >
+            <motion.div animate={otpError ? { x: [-10, 10, -8, 8, -5, 5, 0] } : {}} transition={{ duration: 0.45 }}>
               <PinIndicators pin={otp} isError={otpError} />
               <Keypad onPress={handleOtpKey} />
             </motion.div>
             <div className="text-center">
               {otpExpired ? (
-                <button
-                  onClick={() => { resetTimer(); toast.success('A new code has been sent.'); }}
-                  className="text-sm font-semibold"
-                  style={{ color: '#2563EB' }}
-                >
+                <button onClick={() => { resetTimer(); toast.success('A new code has been sent.'); }}
+                  className="text-sm font-semibold" style={{ color: '#2563EB' }}>
                   Resend Code
                 </button>
               ) : (
@@ -396,10 +386,7 @@ export default function ForgotPinScreen() {
 
         {/* ── Step 4: Confirm PIN ───────────────────────────────────────── */}
         {step === 'confirm-pin' && (
-          <motion.div
-            animate={pinError ? { x: [-10, 10, -8, 8, -5, 5, 0] } : {}}
-            transition={{ duration: 0.45 }}
-          >
+          <motion.div animate={pinError ? { x: [-10, 10, -8, 8, -5, 5, 0] } : {}} transition={{ duration: 0.45 }}>
             <div className="text-center mb-7">
               <h2 className="text-xl font-bold mb-1" style={{ color: '#0B1F4E' }}>Confirm New PIN</h2>
               <p className="text-sm" style={{ color: '#6B7FA3' }}>Enter your new 6-digit PIN again to confirm</p>
@@ -427,9 +414,7 @@ export default function ForgotPinScreen() {
             <p className="text-sm mb-8" style={{ color: '#6B7FA3' }}>
               Your PIN has been updated. Sign in with your new PIN to continue.
             </p>
-            <GradientButton onClick={() => setLocation('/')}>
-              Back to Sign In
-            </GradientButton>
+            <GradientButton onClick={() => setLocation('/')}>Back to Sign In</GradientButton>
           </div>
         )}
       </motion.div>

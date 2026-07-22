@@ -15,6 +15,9 @@ export default function HomeScreen() {
   const [isFundWalletOpen, setIsFundWalletOpen] = useState(false);
   const [isServicesOpen, setIsServicesOpen] = useState(false);
 
+  // Guard — this screen only renders behind the auth gate but be defensive
+  if (!user) return null;
+
   const hour = new Date().getHours();
   let greeting = 'Good Evening';
   if (hour < 12) greeting = 'Good Morning';

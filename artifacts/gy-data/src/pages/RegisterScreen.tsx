@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import { ChevronLeft } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { normalizeNigerianNumber } from '../components/PhoneInputWithContacts';
 
 // ── Shared sub-components ─────────────────────────────────────────────────────
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'backspace'];
@@ -131,6 +132,8 @@ export default function RegisterScreen() {
   const [pinError, setPinError] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [isCheckingPhone, setIsCheckingPhone] = useState(false);
+  const [phoneCopied, setPhoneCopied] = useState(false);
+  const phoneInputRef = useRef<HTMLInputElement>(null);
 
   const handleDetailsNext = async () => {
     const err = validateStep1(name, email, phone);
@@ -301,15 +304,72 @@ export default function RegisterScreen() {
                     🇳🇬 +234
                   </span>
                   <input
+                    ref={phoneInputRef}
                     type="tel" inputMode="numeric" value={phone}
-                    onChange={e => { setPhone(e.target.value.replace(/\D/g, '').slice(0, 11)); setFieldErrors(''); }}
+                    onChange={e => { setPhone(normalizeNigerianNumber(e.target.value)); setFieldErrors(''); }}
+                    onPaste={e => {
+                      e.preventDefault();
+                      setPhone(normalizeNigerianNumber(e.clipboardData.getData('text')));
+                      setFieldErrors('');
+                    }}
                     placeholder="0803 456 7890"
                     autoComplete="tel"
                     className="w-full h-12 rounded-xl text-sm font-medium outline-none transition-colors"
-                    style={{ border: '2px solid #DDEAFF', background: '#F8FAFF', color: '#0B1F4E', paddingLeft: '6rem', paddingRight: '1rem' }}
+                    style={{ border: '2px solid #DDEAFF', background: '#F8FAFF', color: '#0B1F4E', paddingLeft: '6rem', paddingRight: phone.length > 0 ? '5.5rem' : '4rem' }}
                     onFocus={e => { e.currentTarget.style.borderColor = '#2563EB'; e.currentTarget.style.background = '#EFF6FF'; }}
                     onBlur={e => { e.currentTarget.style.borderColor = '#DDEAFF'; e.currentTarget.style.background = '#F8FAFF'; }}
                   />
+                  {/* Paste button — visible when field is empty */}
+                  <AnimatePresence>
+                    {phone.length === 0 && (
+                      <motion.button
+                        type="button"
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                        transition={{ duration: 0.12 }}
+                        onClick={async () => {
+                          try {
+                            const text = await navigator.clipboard.readText();
+                            if (text) { setPhone(normalizeNigerianNumber(text)); setFieldErrors(''); }
+                          } catch { /* clipboard denied */ }
+                          phoneInputRef.current?.focus();
+                        }}
+                        className="absolute right-2 flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg transition-all active:scale-90"
+                        style={{ color: '#2563EB', background: 'rgba(37,99,235,0.09)' }}
+                        aria-label="Paste phone number"
+                      >
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="9" y="2" width="6" height="4" rx="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/>
+                        </svg>
+                        Paste
+                      </motion.button>
+                    )}
+                  </AnimatePresence>
+                  {/* Copy button — visible when valid number entered */}
+                  <AnimatePresence>
+                    {/^0[7-9][01]\d{8}$/.test(phone) && (
+                      <motion.button
+                        type="button"
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                        transition={{ duration: 0.12 }}
+                        onClick={async () => {
+                          try { await navigator.clipboard.writeText(phone); setPhoneCopied(true); setTimeout(() => setPhoneCopied(false), 1800); } catch { /* silent */ }
+                        }}
+                        className="absolute right-2 flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg transition-all active:scale-90"
+                        style={{ color: phoneCopied ? '#16a34a' : '#2563EB', background: phoneCopied ? 'rgba(22,163,74,0.09)' : 'rgba(37,99,235,0.09)' }}
+                        aria-label="Copy phone number"
+                      >
+                        {phoneCopied ? (
+                          <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Copied</>
+                        ) : (
+                          <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy</>
+                        )}
+                      </motion.button>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
             </div>

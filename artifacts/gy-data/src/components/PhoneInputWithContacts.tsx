@@ -1,6 +1,6 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookUser, X } from 'lucide-react';
+import { BookUser, X, Clipboard, Copy, Check } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Nigerian number normalizer
@@ -8,19 +8,19 @@ import { BookUser, X } from 'lucide-react';
 // Always returns up to 11 digits, digits-only.
 // ---------------------------------------------------------------------------
 export function normalizeNigerianNumber(raw: string): string {
-  // Strip everything except digits and leading +
+  // Strip spaces, dashes, parentheses, dots
   let s = raw.replace(/[\s\-\(\)\.]/g, '');
   if (s.startsWith('+234')) {
     s = '0' + s.slice(4);
   } else if (/^234\d{9,}$/.test(s)) {
-    // 234XXXXXXXXX (13 digits) → 0XXXXXXXXXX
+    // 2348012345678 (13 digits without +) → 08012345678
     s = '0' + s.slice(3);
   }
   // Keep digits only, cap at 11
   return s.replace(/\D/g, '').slice(0, 11);
 }
 
-// Validate: Nigerian numbers are 11 digits starting with 0
+// Validate: Nigerian numbers are 11 digits starting with 0[7-9][01]
 export function isValidNigerianNumber(num: string): boolean {
   return /^0[7-9][01]\d{8}$/.test(num);
 }
@@ -54,29 +54,51 @@ export default function PhoneInputWithContacts({
   className = '',
 }: PhoneInputWithContactsProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [copyDone, setCopyDone] = useState(false);
 
-  // Handle keyboard/paste input
+  // ── Input change (typing) ──────────────────────────────────────────────────
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value;
-    const normalized = normalizeNigerianNumber(raw);
-    onChange(normalized);
+    onChange(normalizeNigerianNumber(e.target.value));
   };
 
-  // Contact Picker API — silent fallback on unsupported browsers
+  // ── Paste intercept — normalises before React re-renders ──────────────────
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text');
+    onChange(normalizeNigerianNumber(pasted));
+  };
+
+  // ── Paste button — reads from clipboard API (mobile-friendly) ─────────────
+  const handlePasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) onChange(normalizeNigerianNumber(text));
+    } catch { /* clipboard permission denied — silent */ }
+    inputRef.current?.focus();
+  };
+
+  // ── Copy button ────────────────────────────────────────────────────────────
+  const handleCopy = async () => {
+    if (!isValid) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyDone(true);
+      setTimeout(() => setCopyDone(false), 1800);
+    } catch { /* silent */ }
+  };
+
+  // ── Contact Picker API — silent fallback on unsupported browsers ──────────
   const handlePickContact = async () => {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const nav = navigator as any;
-      if (!nav.contacts) return; // API not available — silent no-op
+      if (!nav.contacts) return;
       const results = await nav.contacts.select(['tel'], { multiple: false });
       if (results && results.length > 0 && results[0].tel?.length > 0) {
-        const raw = results[0].tel[0] as string;
-        onChange(normalizeNigerianNumber(raw));
+        onChange(normalizeNigerianNumber(results[0].tel[0] as string));
         inputRef.current?.focus();
       }
-    } catch {
-      // User dismissed the picker, or permission denied — silently do nothing
-    }
+    } catch { /* dismissed or permission denied */ }
   };
 
   const handleClear = () => {
@@ -84,8 +106,14 @@ export default function PhoneInputWithContacts({
     inputRef.current?.focus();
   };
 
-  const isValid = isValidNigerianNumber(value);
+  const isValid       = isValidNigerianNumber(value);
   const showValidation = value.length >= 10;
+  const isEmpty        = value.length === 0;
+
+  // Right padding grows when up to 3 action buttons are visible:
+  // [Copy pill ~44px] + [Clear icon 28px] + [Contacts 40px] + gaps ≈ 124px → pr-32
+  // Otherwise: [Paste pill ~48px or Clear 28px] + [Contacts 40px] + gaps ≈ 100px → pr-24
+  const inputPrClass = isValid ? 'pr-32' : 'pr-24';
 
   return (
     <div className={className}>
@@ -104,7 +132,7 @@ export default function PhoneInputWithContacts({
           <div className="w-px h-4 bg-border ml-0.5" />
         </div>
 
-        {/* Text input — padded left to clear flag, right to clear action buttons */}
+        {/* Text input */}
         <input
           ref={inputRef}
           type="tel"
@@ -113,9 +141,10 @@ export default function PhoneInputWithContacts({
           placeholder={placeholder}
           value={formatDisplay(value)}
           onChange={handleInputChange}
+          onPaste={handlePaste}
           className={`
             w-full bg-card border-2 rounded-xl h-14 text-base font-medium outline-none transition-colors
-            pl-[7.5rem] pr-24
+            pl-[7.5rem] ${inputPrClass}
             ${showValidation
               ? isValid
                 ? 'border-primary/60 focus:border-primary'
@@ -125,13 +154,65 @@ export default function PhoneInputWithContacts({
           `}
         />
 
-        {/* Right-side action buttons */}
+        {/* Right-side action buttons — laid out right-to-left:
+            [Contacts] ← always
+            [Clear]    ← when has value
+            [Copy]     ← when valid
+            [Paste]    ← when empty                                          */}
         <div className="absolute right-2 flex items-center gap-1">
-          {/* Clear button — shown when there's input */}
+
+          {/* Paste pill — shown only when field is empty */}
           <AnimatePresence>
-            {value.length > 0 && (
+            {isEmpty && (
               <motion.button
                 type="button"
+                key="paste"
+                initial={{ opacity: 0, scale: 0.8, width: 0 }}
+                animate={{ opacity: 1, scale: 1, width: 'auto' }}
+                exit={{ opacity: 0, scale: 0.8, width: 0 }}
+                transition={{ duration: 0.14 }}
+                onClick={handlePasteFromClipboard}
+                className="flex items-center gap-1 text-[11px] font-semibold text-primary bg-primary/10 hover:bg-primary/20 active:scale-90 transition-all px-2 py-1 rounded-lg whitespace-nowrap"
+                aria-label="Paste phone number"
+              >
+                <Clipboard className="w-3 h-3" />
+                Paste
+              </motion.button>
+            )}
+          </AnimatePresence>
+
+          {/* Copy pill — shown when number is valid */}
+          <AnimatePresence>
+            {isValid && (
+              <motion.button
+                type="button"
+                key="copy"
+                initial={{ opacity: 0, scale: 0.8, width: 0 }}
+                animate={{ opacity: 1, scale: 1, width: 'auto' }}
+                exit={{ opacity: 0, scale: 0.8, width: 0 }}
+                transition={{ duration: 0.14 }}
+                onClick={handleCopy}
+                className={`flex items-center gap-1 text-[11px] font-semibold transition-all px-2 py-1 rounded-lg whitespace-nowrap active:scale-90 ${
+                  copyDone
+                    ? 'text-green-600 bg-green-500/12'
+                    : 'text-primary bg-primary/10 hover:bg-primary/20'
+                }`}
+                aria-label="Copy phone number"
+              >
+                {copyDone
+                  ? <><Check className="w-3 h-3" />Copied</>
+                  : <><Copy className="w-3 h-3" />Copy</>
+                }
+              </motion.button>
+            )}
+          </AnimatePresence>
+
+          {/* Clear button — shown when there's any input */}
+          <AnimatePresence>
+            {!isEmpty && (
+              <motion.button
+                type="button"
+                key="clear"
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.8 }}
@@ -145,7 +226,7 @@ export default function PhoneInputWithContacts({
             )}
           </AnimatePresence>
 
-          {/* Contact picker button */}
+          {/* Contact picker button — always visible */}
           <button
             type="button"
             onClick={handlePickContact}

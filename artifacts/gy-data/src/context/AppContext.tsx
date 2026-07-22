@@ -122,6 +122,8 @@ interface AppContextType {
   purchaseData: (params: { network: string; phone: string; planCode: string; planName: string; planPrice: string; idempotencyKey?: string }) => Promise<{ success: boolean; pending?: boolean; requestId?: string; planName?: string; balance?: number; error?: string }>;
   setActiveTab: (tab: string) => void;
   fundWallet: (amount: number) => Promise<boolean>;
+  /** Refresh wallet balance and transaction list from the server. */
+  refreshWallet: () => Promise<void>;
   /** Mark a single notification as read. */
   markNotificationRead: (id: string) => Promise<void>;
   /** Delete a single notification. */
@@ -407,6 +409,27 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     } catch { return false; }
   };
 
+  /** Re-fetch wallet balance and full transaction list from the server.
+   *  Called after a Monnify payment is confirmed so the UI reflects the
+   *  credited balance without requiring a full page reload. */
+  const refreshWallet = async (): Promise<void> => {
+    try {
+      const [walletRes, txnsRes] = await Promise.all([
+        api('/user/wallet'),
+        api('/user/transactions'),
+      ]);
+      if (walletRes.ok) {
+        const data = await walletRes.json() as { balance: string };
+        setBalance(parseFloat(data.balance));
+      }
+      if (txnsRes.ok) {
+        const rows = await txnsRes.json() as Record<string, unknown>[];
+        setTransactions(rows.map(transformTransaction));
+      }
+      void refreshNotifications();
+    } catch { /* silent — non-fatal */ }
+  };
+
   // ── Notifications ─────────────────────────────────────────────────────────
 
   /** Sync notifications from the server into local state. Non-fatal. */
@@ -460,7 +483,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       login, logout, register, accountExists, verifyPin, changePin,
       requestPinReset, resetPin,
       toggleBalanceHidden, markAllNotificationsRead, updateSettings,
-      addTransaction, purchaseAirtime, purchaseData, setActiveTab, fundWallet,
+      addTransaction, purchaseAirtime, purchaseData, setActiveTab, fundWallet, refreshWallet,
       markNotificationRead, deleteNotification, clearAllNotifications,
     }}>
       {children}

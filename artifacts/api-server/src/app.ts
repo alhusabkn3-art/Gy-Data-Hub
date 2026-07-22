@@ -33,7 +33,13 @@ app.use(cors({
   credentials: true,  // allow cookies
 }));
 
-app.use(express.json());
+// Capture the raw request body before JSON parsing so the Monnify webhook
+// handler can verify HMAC-SHA512 signatures against the exact original bytes.
+app.use(express.json({
+  verify: (req: express.Request & { rawBody?: string }, _res, buf) => {
+    req.rawBody = buf.toString('utf8');
+  },
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // ── Session ────────────────────────────────────────────────────────────────

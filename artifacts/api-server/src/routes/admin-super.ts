@@ -12,6 +12,8 @@ import { db } from '@workspace/db';
 import { sql } from 'drizzle-orm';
 import { hashPin } from '../lib/auth.js';
 import { logger } from '../lib/logger.js';
+import { financialAuditLog } from '../lib/financial-audit.js';
+import { FINANCE_PERMISSIONS, type FinancePermission } from './admin-finance.js';
 
 const router = Router();
 
@@ -238,6 +240,15 @@ router.post('/users/:id/wallet/credit', async (req: Request, res: Response): Pro
       details: { amount: Number(amount), balanceBefore, balanceAfter, reference: ref, reason: reason!.trim() },
       ip: clientIp(req),
     });
+    void financialAuditLog({
+      adminId, adminEmail, adminRole: 'super_admin',
+      action: 'wallet_credit',
+      entityType: 'wallet', entityId: id, customerId: id, customerName: userName,
+      previousValue: { balance: balanceBefore },
+      newValue: { balance: balanceAfter, amount_credited: Number(amount), reference: ref },
+      reason: reason!.trim(),
+      ip: clientIp(req),
+    });
 
     res.json({ ok: true, reference: ref, balanceBefore, balanceAfter, amount: Number(amount) });
   } catch (err) {
@@ -289,6 +300,15 @@ router.post('/users/:id/wallet/debit', async (req: Request, res: Response): Prom
       action: 'wallet_debit',
       targetType: 'user', targetId: id, targetLabel: userName,
       details: { amount: Number(amount), balanceBefore, balanceAfter, reference: ref, reason: reason!.trim() },
+      ip: clientIp(req),
+    });
+    void financialAuditLog({
+      adminId, adminEmail, adminRole: 'super_admin',
+      action: 'wallet_debit',
+      entityType: 'wallet', entityId: id, customerId: id, customerName: userName,
+      previousValue: { balance: balanceBefore },
+      newValue: { balance: balanceAfter, amount_debited: Number(amount), reference: ref },
+      reason: reason!.trim(),
       ip: clientIp(req),
     });
 
@@ -646,6 +666,16 @@ router.post('/transactions/:id/reverse', async (req: Request, res: Response): Pr
       action: 'transaction_reversed',
       targetType: 'transaction', targetId: id, targetLabel: userName,
       details: { amount, reference: ref, reason: reason!.trim(), userId },
+      ip: clientIp(req),
+    });
+    void financialAuditLog({
+      adminId, adminEmail, adminRole: 'super_admin',
+      action: 'transaction_reversed',
+      entityType: 'transaction', entityId: id,
+      customerId: userId, customerName: userName,
+      previousValue: { transaction_id: id, wallet_balance_before: ledgerEntryId ? undefined : undefined },
+      newValue: { reversal_reference: ref, amount_refunded: amount },
+      reason: reason!.trim(),
       ip: clientIp(req),
     });
 
@@ -1906,6 +1936,16 @@ router.post('/finance/funding-requests/:id/approve', async (req: Request, res: R
     `);
 
     void auditLog({ adminId, adminEmail, action: 'approve_funding', targetId: id, targetLabel: `₦${amount.toLocaleString()} for user ${userId}`, details: { amount, balanceAfter } });
+    void financialAuditLog({
+      adminId, adminEmail, adminRole: 'super_admin',
+      action: 'approve_funding_request',
+      entityType: 'funding_request', entityId: id,
+      customerId: userId,
+      previousValue: { status: 'pending', balance: balanceBefore },
+      newValue: { status: 'approved', balance: balanceAfter, amount_credited: amount },
+      reason: 'Funding request approved by super admin',
+      ip: clientIp(req),
+    });
     res.json({ ok: true, balanceAfter });
   } catch (err) {
     logger.error({ err }, 'POST /finance/funding-requests/:id/approve failed');
@@ -1920,6 +1960,7 @@ router.post('/finance/funding-requests/:id/reject', async (req: Request, res: Re
   const { reason } = req.body as { reason?: string };
   if (!reason) { res.status(400).json({ error: 'Rejection reason is required.' }); return; }
   try {
+    const frData = await db.execute(sql`SELECT user_id, amount FROM funding_requests WHERE id=${id} AND status='pending' LIMIT 1`);
     const r = await db.execute(sql`
       UPDATE funding_requests SET status='rejected', reviewed_by=${adminId}, reviewed_at=NOW(), reject_reason=${reason}
       WHERE id=${id} AND status='pending'
@@ -1927,11 +1968,166 @@ router.post('/finance/funding-requests/:id/reject', async (req: Request, res: Re
     `);
     if (!r.rows.length) { res.status(409).json({ error: 'Request not found or already processed.' }); return; }
     void auditLog({ adminId, adminEmail, action: 'reject_funding', targetId: id, details: { reason } });
+    if (frData.rows[0]) {
+      const fr = frData.rows[0] as Record<string, unknown>;
+      void financialAuditLog({
+        adminId, adminEmail, adminRole: 'super_admin',
+        action: 'reject_funding_request',
+        entityType: 'funding_request', entityId: id,
+        customerId: String(fr['user_id']),
+        previousValue: { status: 'pending', amount: fr['amount'] },
+        newValue: { status: 'rejected' },
+        reason,
+        ip: clientIp(req),
+      });
+    }
     res.json({ ok: true });
   } catch (err) {
     logger.error({ err }, 'POST /finance/funding-requests/:id/reject failed');
     res.status(500).json({ error: 'Failed to reject funding request.' });
   }
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// FINANCE STAFF PERMISSION MANAGEMENT (super_admin only)
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── GET /admin/finance/accounts — list finance staff with their permissions ───
+router.get('/finance/accounts', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const rows = await db.execute<Record<string, unknown>>(sql`
+      SELECT id, name, email, role, status, finance_permissions, last_login_at, created_at
+      FROM admin_accounts
+      WHERE role = 'finance'
+      ORDER BY name ASC
+    `);
+    res.json({ accounts: rows });
+  } catch (err) {
+    logger.error({ err }, 'GET /finance/accounts failed');
+    res.status(500).json({ error: 'Failed to load finance accounts.' });
+  }
+});
+
+// ── GET /admin/finance/accounts/:id/permissions ───────────────────────────────
+router.get('/finance/accounts/:id/permissions', async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params as { id: string };
+  try {
+    const [account] = await db.execute<{
+      id: string; name: string; email: string; role: string; finance_permissions: string[] | null;
+    }>(sql`
+      SELECT id, name, email, role, finance_permissions
+      FROM admin_accounts WHERE id = ${id}::uuid LIMIT 1
+    `);
+    if (!account) { res.status(404).json({ error: 'Account not found.' }); return; }
+    res.json({
+      id: account.id,
+      name: account.name,
+      email: account.email,
+      role: account.role,
+      permissions: account.finance_permissions ?? [],
+      available_permissions: FINANCE_PERMISSIONS,
+    });
+  } catch (err) {
+    logger.error({ err }, 'GET /finance/accounts/:id/permissions failed');
+    res.status(500).json({ error: 'Failed to load permissions.' });
+  }
+});
+
+// ── PATCH /admin/finance/accounts/:id/permissions — grant/revoke permissions ──
+// Body: { permissions: string[] }   — full replacement of the permissions array.
+// Body: { grant: string[] }         — add specific permissions.
+// Body: { revoke: string[] }        — remove specific permissions.
+router.patch('/finance/accounts/:id/permissions', async (req: Request, res: Response): Promise<void> => {
+  const adminId    = req.session.adminId!;
+  const adminEmail = await getAdminEmail(adminId);
+  const { id }     = req.params as { id: string };
+  const { permissions, grant, revoke } = req.body as {
+    permissions?: string[];
+    grant?: string[];
+    revoke?: string[];
+  };
+
+  try {
+    const [account] = await db.execute<{
+      id: string; name: string; role: string; finance_permissions: string[] | null;
+    }>(sql`SELECT id, name, role, finance_permissions FROM admin_accounts WHERE id = ${id}::uuid LIMIT 1`);
+
+    if (!account) { res.status(404).json({ error: 'Account not found.' }); return; }
+    if (account.role !== 'finance') {
+      res.status(400).json({ error: 'Finance permissions can only be set on accounts with the finance role.' });
+      return;
+    }
+
+    const validPerms = new Set<string>(FINANCE_PERMISSIONS);
+    let current: string[] = Array.isArray(account.finance_permissions) ? account.finance_permissions : [];
+
+    if (Array.isArray(permissions)) {
+      // Full replacement
+      const invalid = permissions.filter((p) => !validPerms.has(p as FinancePermission));
+      if (invalid.length) {
+        res.status(400).json({ error: `Invalid permissions: ${invalid.join(', ')}`, valid: FINANCE_PERMISSIONS });
+        return;
+      }
+      current = [...new Set(permissions)];
+    } else {
+      // Incremental: grant + revoke
+      if (Array.isArray(grant)) {
+        const invalid = grant.filter((p) => !validPerms.has(p as FinancePermission));
+        if (invalid.length) {
+          res.status(400).json({ error: `Invalid permissions to grant: ${invalid.join(', ')}`, valid: FINANCE_PERMISSIONS });
+          return;
+        }
+        current = [...new Set([...current, ...grant])];
+      }
+      if (Array.isArray(revoke)) {
+        const revokeSet = new Set(revoke);
+        current = current.filter((p) => !revokeSet.has(p));
+      }
+    }
+
+    await db.execute(sql`
+      UPDATE admin_accounts
+      SET finance_permissions = ${JSON.stringify(current)}::jsonb, updated_at = NOW()
+      WHERE id = ${id}::uuid
+    `);
+
+    void auditLog({
+      adminId, adminEmail,
+      action: 'update_finance_permissions',
+      targetType: 'admin_account', targetId: id, targetLabel: account.name,
+      details: { previous: account.finance_permissions ?? [], new: current },
+      ip: clientIp(req),
+    });
+    void financialAuditLog({
+      adminId, adminEmail, adminRole: 'super_admin',
+      action: 'update_finance_permissions',
+      entityType: 'admin_account', entityId: id,
+      previousValue: { permissions: account.finance_permissions ?? [] },
+      newValue: { permissions: current },
+      reason: `Super admin updated finance permissions for ${account.name}`,
+      ip: clientIp(req),
+    });
+
+    res.json({ ok: true, id, name: account.name, permissions: current });
+  } catch (err) {
+    logger.error({ err }, 'PATCH /finance/accounts/:id/permissions failed');
+    res.status(500).json({ error: 'Failed to update permissions.' });
+  }
+});
+
+// ── DELETE guard — transactions are immutable records ─────────────────────────
+// Completed financial transactions must never be deleted. Use reversals instead.
+router.delete('/transactions/:id', (_req: Request, res: Response): void => {
+  res.status(405).json({
+    error: 'Transaction deletion is not permitted.',
+    message: 'Financial transactions are immutable audit records. Use POST /transactions/:id/reverse to issue a refund.',
+  });
+});
+router.delete('/finance/transactions/:id', (_req: Request, res: Response): void => {
+  res.status(405).json({
+    error: 'Transaction deletion is not permitted.',
+    message: 'Financial transactions are immutable audit records. Use POST /transactions/:id/reverse to issue a refund.',
+  });
 });
 
 // ═════════════════════════════════════════════════════════════════════════════

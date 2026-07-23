@@ -12,6 +12,140 @@ import { normalizeNigerianNumber } from '../components/PhoneInputWithContacts';
 // mobile/desktop pointer tracking.
 const ADMIN_HOLD_MS = 2000;
 
+// ── Create Account long-press → Super Admin ───────────────────────────────────
+// Quick tap  → onTap()  (normal registration, unchanged)
+// Hold 2 000 ms → onSuperAdmin()  (silent, no label change)
+// Release before 2 s → cancels; only feedback is a thin underline growing
+// left-to-right beneath the text.
+const SUPER_ADMIN_HOLD_MS = 2000;
+
+function CreateAccountButton({
+  onTap,
+  onSuperAdmin,
+}: {
+  onTap: () => void;
+  onSuperAdmin: () => void;
+}) {
+  const btnRef         = useRef<HTMLButtonElement>(null);
+  const timerRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rafRef         = useRef<number | null>(null);
+  const startRef       = useRef<number>(0);
+  const didUnlockRef   = useRef(false);
+  const onTapRef       = useRef(onTap);
+  const onSuperRef     = useRef(onSuperAdmin);
+  const [progress, setProgress] = useState(0); // 0..1 drives underline width
+
+  useEffect(() => { onTapRef.current = onTap; },        [onTap]);
+  useEffect(() => { onSuperRef.current = onSuperAdmin; }, [onSuperAdmin]);
+
+  useEffect(() => {
+    const el = btnRef.current;
+    if (!el) return;
+
+    function stopRaf() {
+      if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    }
+
+    function startHold() {
+      if (timerRef.current) return;           // already counting
+      didUnlockRef.current = false;
+      startRef.current = performance.now();
+      setProgress(0);
+
+      // Animate underline width
+      function tick() {
+        const p = Math.min((performance.now() - startRef.current) / SUPER_ADMIN_HOLD_MS, 1);
+        setProgress(p);
+        if (p < 1) rafRef.current = requestAnimationFrame(tick);
+      }
+      rafRef.current = requestAnimationFrame(tick);
+
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null;
+        stopRaf();
+        setProgress(0);
+        didUnlockRef.current = true;
+        onSuperRef.current();
+      }, SUPER_ADMIN_HOLD_MS);
+    }
+
+    function cancelHold() {
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+      stopRaf();
+      setProgress(0);
+    }
+
+    const onDown   = (e: PointerEvent) => { e.preventDefault(); startHold(); };
+    const onUp     = () => cancelHold();
+    const onCancel = () => cancelHold();
+    const onLeave  = () => cancelHold();
+    const noCtx    = (e: Event) => e.preventDefault();
+
+    el.addEventListener('pointerdown',   onDown,   { passive: false });
+    el.addEventListener('pointerup',     onUp);
+    el.addEventListener('pointercancel', onCancel);
+    el.addEventListener('pointerleave',  onLeave);
+    el.addEventListener('contextmenu',   noCtx);
+
+    return () => {
+      cancelHold();
+      el.removeEventListener('pointerdown',   onDown);
+      el.removeEventListener('pointerup',     onUp);
+      el.removeEventListener('pointercancel', onCancel);
+      el.removeEventListener('pointerleave',  onLeave);
+      el.removeEventListener('contextmenu',   noCtx);
+    };
+  }, []);
+
+  // onClick fires after pointerup — if the hold completed we swallow it.
+  const handleClick = () => {
+    if (didUnlockRef.current) { didUnlockRef.current = false; return; }
+    onTapRef.current();
+  };
+
+  const pressing = progress > 0;
+
+  return (
+    <button
+      ref={btnRef}
+      type="button"
+      onClick={handleClick}
+      className="font-semibold relative"
+      style={{
+        color:            pressing ? '#1D4ED8' : '#2563EB',
+        touchAction:      'none',
+        userSelect:       'none',
+        WebkitUserSelect: 'none',
+        transition:       'color 0.15s ease',
+        outline:          'none',
+      }}
+      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#1D4ED8'; }}
+      onMouseLeave={e => {
+        if (!pressing) (e.currentTarget as HTMLButtonElement).style.color = '#2563EB';
+      }}
+    >
+      Create Account
+      {/* Thin underline that expands left-to-right during the hold.
+          Completely unremarkable — could be mistaken for a hover effect. */}
+      <span
+        aria-hidden="true"
+        style={{
+          position:     'absolute',
+          bottom:       -1,
+          left:         0,
+          height:       2,
+          width:        `${progress * 100}%`,
+          background:   'linear-gradient(90deg, #2563EB, #1D4ED8)',
+          borderRadius: 1,
+          opacity:      pressing ? 0.7 : 0,
+          transition:   pressing ? 'none' : 'opacity 0.2s ease',
+          pointerEvents: 'none',
+        }}
+      />
+    </button>
+  );
+}
+
 function HiddenAdminTrigger({ onUnlock }: { onUnlock: () => void }) {
   const btnRef        = useRef<HTMLButtonElement>(null);
   const timerRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -541,16 +675,10 @@ export default function LoginScreen() {
           >
             Forgot PIN?
           </button>
-          <button
-            type="button"
-            onClick={() => setLocation('/register')}
-            className="font-semibold transition-colors"
-            style={{ color: '#2563EB' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#1D4ED8'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#2563EB'; }}
-          >
-            Create Account
-          </button>
+          <CreateAccountButton
+            onTap={() => setLocation('/register')}
+            onSuperAdmin={() => setLocation('/super-admin-login')}
+          />
         </div>
       </motion.div>
 

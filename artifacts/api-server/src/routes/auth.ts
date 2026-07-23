@@ -156,8 +156,8 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
 
   // Username validation
   const normalizedUsername = username.toLowerCase().trim();
-  if (!/^[a-z]{4,15}$/.test(normalizedUsername)) {
-    res.status(400).json({ error: 'username must be 4–15 letters only (A–Z), no numbers or symbols.' });
+  if (!/^[a-z0-9]{4,15}$/.test(normalizedUsername)) {
+    res.status(400).json({ error: 'username must be 4–15 characters (letters and numbers only, no symbols).' });
     return;
   }
 

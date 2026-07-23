@@ -1532,9 +1532,9 @@ router.patch('/pricing/bulk', async (req: Request, res: Response): Promise<void>
   for (const rule of rules) {
     try {
       // Fetch old values for audit
-      const [old] = await db.execute<{ selling_price: string; cost_price: string; enabled: boolean; service_type: string; plan_name: string; provider: string }>(
+      const old = (await db.execute<{ selling_price: string; cost_price: string; enabled: boolean; service_type: string; plan_name: string; provider: string }>(
         sql`SELECT selling_price, cost_price, enabled, service_type, plan_name, provider FROM pricing_rules WHERE id = ${rule.id} LIMIT 1`
-      );
+      )).rows[0];
       await db.execute(sql`
         UPDATE pricing_rules SET
           selling_price = COALESCE(${rule.sellingPrice !== undefined ? rule.sellingPrice : null}, selling_price),
@@ -1579,11 +1579,11 @@ router.patch('/pricing/:id', async (req: Request, res: Response): Promise<void> 
   const { sellingPrice, costPrice, markupPercent, enabled, planName, reason } = req.body as Record<string,unknown>;
   try {
     // Fetch old values for audit
-    const [old] = await db.execute<{ selling_price: string; cost_price: string; enabled: boolean; service_type: string; plan_name: string; provider: string }>(
+    const old = (await db.execute<{ selling_price: string; cost_price: string; enabled: boolean; service_type: string; plan_name: string; provider: string }>(
       sql`SELECT selling_price, cost_price, enabled, service_type, plan_name, provider FROM pricing_rules WHERE id = ${id} LIMIT 1`
-    );
+    )).rows[0];
     const adminNameRow = await db.execute<{name:string}>(sql`SELECT name FROM admin_accounts WHERE id=${adminId}::uuid LIMIT 1`);
-    const adminName = (adminNameRow as unknown as {name:string}[])[0]?.name ?? adminEmail;
+    const adminName = adminNameRow.rows[0]?.name ?? adminEmail;
     await db.execute(sql`
       UPDATE pricing_rules SET
         selling_price = COALESCE(${sellingPrice !== undefined ? Number(sellingPrice) : null}, selling_price),
@@ -1636,9 +1636,9 @@ router.delete('/pricing/:id', async (req: Request, res: Response): Promise<void>
   const adminEmail = await getAdminEmail(adminId);
   const { id } = req.params as { id: string };
   try {
-    const [old] = await db.execute<{ selling_price: string; cost_price: string; enabled: boolean; service_type: string; plan_name: string; provider: string }>(
+    const old = (await db.execute<{ selling_price: string; cost_price: string; enabled: boolean; service_type: string; plan_name: string; provider: string }>(
       sql`SELECT selling_price, cost_price, enabled, service_type, plan_name, provider FROM pricing_rules WHERE id = ${id} LIMIT 1`
-    );
+    )).rows[0];
     await db.execute(sql`DELETE FROM pricing_rules WHERE id=${id}`);
     void auditLog({ adminId, adminEmail, action: 'delete_pricing_rule', targetId: id });
     if (old) {

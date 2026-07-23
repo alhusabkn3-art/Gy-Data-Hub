@@ -43,7 +43,7 @@ router.get('/conversations', async (req: Request, res: Response): Promise<void> 
     const mine    = req.query['mine'] === 'true';
     const adminId = req.session.adminId!;
 
-    const rows = await db.execute<Record<string, unknown>>(sql`
+    const rows = (await db.execute<Record<string, unknown>>(sql`
       SELECT
         c.*,
         a.name AS assigned_staff_name,
@@ -56,15 +56,15 @@ router.get('/conversations', async (req: Request, res: Response): Promise<void> 
         ${mine    ? sql`AND c.assigned_staff_id = ${adminId}::uuid` : sql``}
       ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
       LIMIT ${limit} OFFSET ${offset}
-    `);
+    `)).rows;
 
-    const [countRow] = await db.execute<{ total: string }>(sql`
+    const countRow = (await db.execute<{ total: string }>(sql`
       SELECT COUNT(*)::text AS total FROM conversations c
       WHERE 1=1
         ${status  ? sql`AND c.status = ${status}` : sql``}
         ${channel ? sql`AND c.channel = ${channel}` : sql``}
         ${mine    ? sql`AND c.assigned_staff_id = ${adminId}::uuid` : sql``}
-    `);
+    `)).rows[0];
 
     res.json({
       conversations: rows,
@@ -87,20 +87,20 @@ router.get('/conversations/:id', async (req: Request, res: Response): Promise<vo
   try {
     const { id } = req.params;
 
-    const [conv] = await db.execute<Record<string, unknown>>(sql`
+    const conv = (await db.execute<Record<string, unknown>>(sql`
       SELECT c.*, a.name AS assigned_staff_name
       FROM conversations c
       LEFT JOIN admin_accounts a ON a.id = c.assigned_staff_id
       WHERE c.id = ${id}::uuid
-    `);
+    `)).rows[0];
 
     if (!conv) { res.status(404).json({ error: 'Conversation not found.' }); return; }
 
-    const messages = await db.execute<Record<string, unknown>>(sql`
+    const messages = (await db.execute<Record<string, unknown>>(sql`
       SELECT * FROM messages
       WHERE conversation_id = ${id}::uuid
       ORDER BY created_at ASC
-    `);
+    `)).rows;
 
     // Mark as read (reset unread count)
     await db.execute(sql`
@@ -180,21 +180,21 @@ router.post('/conversations/:id/messages', async (req: Request, res: Response): 
       return;
     }
 
-    const [conv] = await db.execute<{ id: string; channel: string; customer_phone: string; whatsapp_wa_id: string }>(sql`
+    const conv = (await db.execute<{ id: string; channel: string; customer_phone: string; whatsapp_wa_id: string }>(sql`
       SELECT id, channel, customer_phone, whatsapp_wa_id FROM conversations WHERE id = ${id}::uuid
-    `);
+    `)).rows[0];
     if (!conv) { res.status(404).json({ error: 'Conversation not found.' }); return; }
 
     // Get sender name
-    const [admin] = await db.execute<{ name: string }>(sql`
+    const admin = (await db.execute<{ name: string }>(sql`
       SELECT name FROM admin_accounts WHERE id = ${adminId}::uuid
-    `);
+    `)).rows[0];
 
-    const [newMsg] = await db.execute<Record<string, unknown>>(sql`
+    const newMsg = (await db.execute<Record<string, unknown>>(sql`
       INSERT INTO messages (conversation_id, content, sender_type, sender_id, sender_name, channel)
       VALUES (${id}::uuid, ${content.trim()}, 'admin', ${adminId}::uuid, ${admin?.name ?? 'Support Agent'}, ${conv.channel})
       RETURNING *
-    `);
+    `)).rows[0];
 
     await db.execute(sql`
       UPDATE conversations
@@ -243,7 +243,7 @@ router.post('/conversations/:id/messages', async (req: Request, res: Response): 
 
 router.get('/stats', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const [stats] = await db.execute<Record<string, string>>(sql`
+    const stats = (await db.execute<Record<string, string>>(sql`
       SELECT
         COUNT(*)::text AS total,
         COUNT(CASE WHEN status = 'open' THEN 1 END)::text AS open_count,
@@ -254,7 +254,7 @@ router.get('/stats', async (_req: Request, res: Response): Promise<void> => {
         COUNT(CASE WHEN channel = 'in_app' THEN 1 END)::text AS in_app_count,
         SUM(unread_count)::text AS total_unread
       FROM conversations
-    `);
+    `)).rows[0];
     res.json(stats ?? {});
   } catch (err) {
     logger.error({ err }, 'GET /support-inbox/stats failed');

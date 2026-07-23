@@ -22,7 +22,7 @@ router.get('/conversation', async (req: Request, res: Response): Promise<void> =
   try {
     const userId = req.session.userId!;
 
-    const [conv] = await db.execute<Record<string, unknown>>(sql`
+    const conv = (await db.execute<Record<string, unknown>>(sql`
       SELECT c.*, a.name AS assigned_staff_name
       FROM conversations c
       LEFT JOIN admin_accounts a ON a.id = c.assigned_staff_id
@@ -31,18 +31,18 @@ router.get('/conversation', async (req: Request, res: Response): Promise<void> =
         AND c.status NOT IN ('closed')
       ORDER BY c.created_at DESC
       LIMIT 1
-    `);
+    `)).rows[0];
 
     if (!conv) {
       res.json({ conversation: null, messages: [] });
       return;
     }
 
-    const messages = await db.execute<Record<string, unknown>>(sql`
+    const messages = (await db.execute<Record<string, unknown>>(sql`
       SELECT * FROM messages
       WHERE conversation_id = ${conv['id']}::uuid
       ORDER BY created_at ASC
-    `);
+    `)).rows;
 
     res.json({ conversation: conv, messages });
   } catch (err) {
@@ -60,29 +60,29 @@ router.post('/conversation', async (req: Request, res: Response): Promise<void> 
     const { subject } = req.body as { subject?: string };
 
     // Fetch user info
-    const [user] = await db.execute<{ name: string; phone: string }>(sql`
+    const user = (await db.execute<{ name: string; phone: string }>(sql`
       SELECT name, phone FROM users WHERE id = ${userId}::uuid
-    `);
+    `)).rows[0];
     if (!user) { res.status(404).json({ error: 'User not found.' }); return; }
 
     // Check for an active conversation
-    const [existing] = await db.execute<{ id: string }>(sql`
+    const existing = (await db.execute<{ id: string }>(sql`
       SELECT id FROM conversations
       WHERE customer_id = ${userId}::uuid AND channel = 'in_app' AND status NOT IN ('closed')
       LIMIT 1
-    `);
+    `)).rows[0];
 
     if (existing) {
       res.json({ conversationId: existing.id, existing: true });
       return;
     }
 
-    const [conv] = await db.execute<{ id: string }>(sql`
+    const conv = (await db.execute<{ id: string }>(sql`
       INSERT INTO conversations
         (channel, status, customer_id, customer_name, customer_phone, ai_handled, subject)
       VALUES ('in_app', 'open', ${userId}::uuid, ${user.name}, ${user.phone}, true, ${subject ?? 'Customer Support'})
       RETURNING id
-    `);
+    `)).rows[0];
 
     // Emit to admins so inbox updates live
     try {
@@ -115,25 +115,25 @@ router.post('/conversation/message', async (req: Request, res: Response): Promis
     }
 
     // Get active conversation
-    const [conv] = await db.execute<{ id: string; ai_handled: boolean; status: string }>(sql`
+    const conv = (await db.execute<{ id: string; ai_handled: boolean; status: string }>(sql`
       SELECT id, ai_handled, status FROM conversations
       WHERE customer_id = ${userId}::uuid AND channel = 'in_app' AND status NOT IN ('closed')
       LIMIT 1
-    `);
+    `)).rows[0];
 
     if (!conv) {
       res.status(404).json({ error: 'No active conversation found. Start one first.' });
       return;
     }
 
-    const [user] = await db.execute<{ name: string }>(sql`SELECT name FROM users WHERE id = ${userId}::uuid`);
+    const user = (await db.execute<{ name: string }>(sql`SELECT name FROM users WHERE id = ${userId}::uuid`)).rows[0];
 
     // Insert customer message
-    const [customerMsg] = await db.execute<Record<string, unknown>>(sql`
+    const customerMsg = (await db.execute<Record<string, unknown>>(sql`
       INSERT INTO messages (conversation_id, content, sender_type, sender_id, sender_name, channel)
       VALUES (${conv.id}::uuid, ${content.trim()}, 'user', ${userId}::uuid, ${user?.name ?? 'Customer'}, 'in_app')
       RETURNING *
-    `);
+    `)).rows[0];
 
     await db.execute(sql`
       UPDATE conversations
@@ -156,11 +156,11 @@ router.post('/conversation/message', async (req: Request, res: Response): Promis
 
     // Generate AI reply when ai_handled is true
     if (conv.ai_handled) {
-      const history = await db.execute<{ content: string; sender_type: string }>(sql`
+      const history = (await db.execute<{ content: string; sender_type: string }>(sql`
         SELECT content, sender_type FROM messages
         WHERE conversation_id = ${conv.id}::uuid
         ORDER BY created_at DESC LIMIT 10
-      `);
+      `)).rows;
 
       const aiHistory = history.reverse().map((m) => ({
         role: m.sender_type === 'user' ? 'user' as const : 'assistant' as const,
@@ -172,11 +172,11 @@ router.post('/conversation/message', async (req: Request, res: Response): Promis
       escalated = escalation_needed;
 
       // Store AI message
-      const [aiMsg] = await db.execute<Record<string, unknown>>(sql`
+      const aiMsg = (await db.execute<Record<string, unknown>>(sql`
         INSERT INTO messages (conversation_id, content, sender_type, sender_name, channel)
         VALUES (${conv.id}::uuid, ${reply}, 'ai', 'GY DATA Support', 'in_app')
         RETURNING *
-      `);
+      `)).rows[0];
 
       await db.execute(sql`
         UPDATE conversations SET last_message = ${reply}, last_message_at = NOW(), updated_at = NOW()
@@ -225,19 +225,19 @@ router.get('/conversation/messages', async (req: Request, res: Response): Promis
     const userId = req.session.userId!;
     const after  = req.query['after'] as string | undefined; // ISO timestamp for polling
 
-    const [conv] = await db.execute<{ id: string }>(sql`
+    const conv = (await db.execute<{ id: string }>(sql`
       SELECT id FROM conversations
       WHERE customer_id = ${userId}::uuid AND channel = 'in_app' AND status NOT IN ('closed')
       LIMIT 1
-    `);
+    `)).rows[0];
     if (!conv) { res.json({ messages: [] }); return; }
 
-    const messages = await db.execute<Record<string, unknown>>(sql`
+    const messages = (await db.execute<Record<string, unknown>>(sql`
       SELECT * FROM messages
       WHERE conversation_id = ${conv.id}::uuid
         ${after ? sql`AND created_at > ${after}::timestamptz` : sql``}
       ORDER BY created_at ASC
-    `);
+    `)).rows;
 
     res.json({ messages, conversationId: conv.id });
   } catch (err) {

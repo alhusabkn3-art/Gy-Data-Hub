@@ -20,13 +20,19 @@ router.use("/auth",           authRouter);
 router.use("/user",           userRouter);
 router.use("/purchase",       purchaseRouter);
 router.use("/clubkonnect",    clubkonnectRouter);
-router.use("/admin",          adminRouter);
-router.use("/admin",          adminSuperRouter);
-router.use("/admin",          adminCCRouter);
-router.use("/admin",          adminFinanceRouter);
-router.use("/admin",          supportInboxRouter);
-router.use("/payment",        paymentRouter);
-router.use("/whatsapp",       whatsappRouter);
-router.use("/support",        supportChatRouter);
+router.use("/admin",               adminRouter);
+// CC, Finance, and Inbox routers MUST come before adminSuperRouter.
+// adminSuperRouter has a global requireSuperAdmin middleware that would
+// intercept and block requests for non-super-admin staff roles if mounted first.
+router.use("/admin",               adminCCRouter);
+// supportInboxRouter MUST come before adminFinanceRouter:
+// adminFinanceRouter has a global requireFinanceOrSuperAdmin middleware that
+// would block customer_care staff from reaching support-inbox routes.
+router.use("/admin/support-inbox", supportInboxRouter);
+router.use("/admin",               adminFinanceRouter);
+router.use("/admin",               adminSuperRouter);
+router.use("/payment",             paymentRouter);
+router.use("/whatsapp",            whatsappRouter);
+router.use("/support",             supportChatRouter);
 
 export default router;

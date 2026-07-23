@@ -719,7 +719,10 @@ router.post('/admins', requireSuperAdmin, async (req: Request, res: Response): P
       .values({
         name:      name.trim(),
         email:     email.trim().toLowerCase(),
-        role:      (role === 'admin' ? 'admin' : 'admin') as 'admin',
+        // Accept all valid non-super-admin roles; default to 'admin' if unrecognised
+        role: (['admin', 'customer_care', 'finance', 'supervisor', 'technical_support'].includes(role ?? '')
+          ? role as 'admin' | 'customer_care' | 'finance' | 'supervisor' | 'technical_support'
+          : 'admin'),
         pinHash,
         status:    'active',
         createdBy: req.session.adminId!,

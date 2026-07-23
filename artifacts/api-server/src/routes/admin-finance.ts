@@ -89,9 +89,9 @@ function requireFinancePermission(permission: FinancePermission) {
     }
     // Finance staff: check granted permissions
     try {
-      const [account] = await db.execute<{ finance_permissions: string[] | null }>(
+      const account = (await db.execute<{ finance_permissions: string[] | null }>(
         sql`SELECT finance_permissions FROM admin_accounts WHERE id = ${req.session.adminId}::uuid LIMIT 1`
-      );
+      )).rows[0];
       const perms: string[] = Array.isArray(account?.finance_permissions) ? account.finance_permissions : [];
       if (!perms.includes(permission)) {
         res.status(403).json({
@@ -148,9 +148,9 @@ router.get('/finance/my-permissions', async (req: Request, res: Response): Promi
     return;
   }
   try {
-    const [account] = await db.execute<{ finance_permissions: string[] | null }>(
+    const account = (await db.execute<{ finance_permissions: string[] | null }>(
       sql`SELECT finance_permissions FROM admin_accounts WHERE id = ${req.session.adminId!}::uuid LIMIT 1`
-    );
+    )).rows[0];
     res.json({
       role: req.session.adminRole,
       permissions: account?.finance_permissions ?? [],
@@ -165,7 +165,7 @@ router.get('/finance/my-permissions', async (req: Request, res: Response): Promi
 // ── GET /admin/finance/overview ──────────────────────────────────────────
 router.get('/finance/overview', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const [revenue] = await db.execute<{
+    const revenue = (await db.execute<{
       total_revenue: string; today_revenue: string; this_month_revenue: string;
       total_transactions: string; successful_transactions: string;
     }>(sql`
@@ -176,17 +176,17 @@ router.get('/finance/overview', async (_req: Request, res: Response): Promise<vo
         COUNT(*)::text AS total_transactions,
         COUNT(CASE WHEN status = 'success' THEN 1 END)::text AS successful_transactions
       FROM transactions WHERE status IN ('success', 'failed')
-    `);
+    `)).rows[0];
 
-    const [walletSummary] = await db.execute<{
+    const walletSummary = (await db.execute<{
       total_wallet_balance: string; total_wallets: string; funded_wallets: string;
     }>(sql`
       SELECT COALESCE(SUM(balance), 0)::text AS total_wallet_balance,
         COUNT(*)::text AS total_wallets, COUNT(CASE WHEN balance > 0 THEN 1 END)::text AS funded_wallets
       FROM wallets
-    `);
+    `)).rows[0];
 
-    const [funding] = await db.execute<{
+    const funding = (await db.execute<{
       pending_count: string; pending_amount: string; approved_today: string; approved_amount_today: string;
     }>(sql`
       SELECT
@@ -195,21 +195,21 @@ router.get('/finance/overview', async (_req: Request, res: Response): Promise<vo
         COUNT(CASE WHEN status = 'approved' AND updated_at >= CURRENT_DATE THEN 1 END)::text AS approved_today,
         COALESCE(SUM(CASE WHEN status = 'approved' AND updated_at >= CURRENT_DATE THEN amount ELSE 0 END), 0)::text AS approved_amount_today
       FROM funding_requests
-    `);
+    `)).rows[0];
 
-    const [costData] = await db.execute<{ total_cost: string; gross_profit: string }>(sql`
+    const costData = (await db.execute<{ total_cost: string; gross_profit: string }>(sql`
       SELECT COALESCE(SUM(cost_price), 0)::text AS total_cost,
         COALESCE(SUM(amount) - SUM(COALESCE(cost_price, amount)), 0)::text AS gross_profit
       FROM transactions WHERE status = 'success'
-    `);
+    `)).rows[0];
 
-    const weeklyRows = await db.execute<{ day: string; revenue: string; cost: string }>(sql`
+    const weeklyRows = (await db.execute<{ day: string; revenue: string; cost: string }>(sql`
       SELECT TO_CHAR(DATE_TRUNC('day', created_at), 'YYYY-MM-DD') AS day,
         COALESCE(SUM(amount), 0)::text AS revenue,
         COALESCE(SUM(COALESCE(cost_price, 0)), 0)::text AS cost
       FROM transactions WHERE status = 'success' AND created_at >= NOW() - INTERVAL '7 days'
       GROUP BY DATE_TRUNC('day', created_at) ORDER BY day ASC
-    `);
+    `)).rows;
 
     res.json({
       revenue: revenue ?? {},
@@ -235,7 +235,7 @@ router.get('/finance/pricing-audit', async (req: Request, res: Response): Promis
     const from    = req.query['from'] as string | undefined;
     const to      = req.query['to'] as string | undefined;
 
-    const rows = await db.execute<Record<string, unknown>>(sql`
+    const rows = (await db.execute<Record<string, unknown>>(sql`
       SELECT pal.*, pr.service_type AS current_service_type,
         pr.provider AS current_provider, pr.plan_name AS current_plan_name
       FROM pricing_audit_logs pal
@@ -246,16 +246,16 @@ router.get('/finance/pricing-audit', async (req: Request, res: Response): Promis
         ${from     ? sql`AND pal.created_at >= ${from}::timestamptz` : sql``}
         ${to       ? sql`AND pal.created_at <= ${to}::timestamptz + interval '1 day'` : sql``}
       ORDER BY pal.created_at DESC LIMIT ${limit} OFFSET ${offset}
-    `);
+    `)).rows;
 
-    const [countRow] = await db.execute<{ total: string }>(sql`
+    const countRow = (await db.execute<{ total: string }>(sql`
       SELECT COUNT(*)::text AS total FROM pricing_audit_logs
       WHERE 1=1
         ${service  ? sql`AND service_type = ${service}` : sql``}
         ${adminId  ? sql`AND admin_id = ${adminId}::uuid` : sql``}
         ${from     ? sql`AND created_at >= ${from}::timestamptz` : sql``}
         ${to       ? sql`AND created_at <= ${to}::timestamptz + interval '1 day'` : sql``}
-    `);
+    `)).rows[0];
 
     res.json({
       logs: rows,
@@ -279,22 +279,22 @@ router.get('/finance/financial-audit', async (req: Request, res: Response): Prom
     const from    = req.query['from'] as string | undefined;
     const to      = req.query['to'] as string | undefined;
 
-    const rows = await db.execute<Record<string, unknown>>(sql`
+    const rows = (await db.execute<Record<string, unknown>>(sql`
       SELECT * FROM financial_audit_logs WHERE 1=1
         ${action   ? sql`AND action = ${action}` : sql``}
         ${adminId  ? sql`AND admin_id = ${adminId}::uuid` : sql``}
         ${from     ? sql`AND created_at >= ${from}::timestamptz` : sql``}
         ${to       ? sql`AND created_at <= ${to}::timestamptz + interval '1 day'` : sql``}
       ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}
-    `);
+    `)).rows;
 
-    const [countRow] = await db.execute<{ total: string }>(sql`
+    const countRow = (await db.execute<{ total: string }>(sql`
       SELECT COUNT(*)::text AS total FROM financial_audit_logs WHERE 1=1
         ${action   ? sql`AND action = ${action}` : sql``}
         ${adminId  ? sql`AND admin_id = ${adminId}::uuid` : sql``}
         ${from     ? sql`AND created_at >= ${from}::timestamptz` : sql``}
         ${to       ? sql`AND created_at <= ${to}::timestamptz + interval '1 day'` : sql``}
-    `);
+    `)).rows[0];
 
     res.json({
       logs: rows,
@@ -318,7 +318,7 @@ router.get('/finance/transactions', async (req: Request, res: Response): Promise
     const status = req.query['status'] as string | undefined;
     const phone  = req.query['phone'] as string | undefined;
 
-    const rows = await db.execute<Record<string, unknown>>(sql`
+    const rows = (await db.execute<Record<string, unknown>>(sql`
       SELECT t.*, u.name AS customer_name, u.phone AS customer_phone
       FROM transactions t LEFT JOIN users u ON u.id = t.user_id
       WHERE 1=1
@@ -328,9 +328,9 @@ router.get('/finance/transactions', async (req: Request, res: Response): Promise
         ${status ? sql`AND t.status = ${status}` : sql``}
         ${phone  ? sql`AND u.phone ILIKE ${'%' + phone + '%'}` : sql``}
       ORDER BY t.created_at DESC LIMIT ${limit} OFFSET ${offset}
-    `);
+    `)).rows;
 
-    const [countRow] = await db.execute<{ total: string; total_amount: string; total_cost: string }>(sql`
+    const countRow = (await db.execute<{ total: string; total_amount: string; total_cost: string }>(sql`
       SELECT COUNT(*)::text AS total,
         COALESCE(SUM(amount), 0)::text AS total_amount,
         COALESCE(SUM(COALESCE(cost_price, 0)), 0)::text AS total_cost
@@ -341,7 +341,7 @@ router.get('/finance/transactions', async (req: Request, res: Response): Promise
         ${type   ? sql`AND t.type = ${type}` : sql``}
         ${status ? sql`AND t.status = ${status}` : sql``}
         ${phone  ? sql`AND u.phone ILIKE ${'%' + phone + '%'}` : sql``}
-    `);
+    `)).rows[0];
 
     res.json({
       transactions: rows,
@@ -368,7 +368,7 @@ router.get('/finance/funding-requests', async (req: Request, res: Response): Pro
     const from   = req.query['from'] as string | undefined;
     const to     = req.query['to'] as string | undefined;
 
-    const rows = await db.execute<Record<string, unknown>>(sql`
+    const rows = (await db.execute<Record<string, unknown>>(sql`
       SELECT fr.*, u.name AS customer_name, u.phone AS customer_phone, a.name AS reviewed_by_name
       FROM funding_requests fr
       LEFT JOIN users u ON u.id = fr.user_id
@@ -378,14 +378,14 @@ router.get('/finance/funding-requests', async (req: Request, res: Response): Pro
         ${from   ? sql`AND fr.created_at >= ${from}::timestamptz` : sql``}
         ${to     ? sql`AND fr.created_at <= ${to}::timestamptz + interval '1 day'` : sql``}
       ORDER BY fr.created_at DESC LIMIT ${limit} OFFSET ${offset}
-    `);
+    `)).rows;
 
-    const [countRow] = await db.execute<{ total: string }>(sql`
+    const countRow = (await db.execute<{ total: string }>(sql`
       SELECT COUNT(*)::text AS total FROM funding_requests fr WHERE 1=1
         ${status ? sql`AND fr.status = ${status}` : sql``}
         ${from   ? sql`AND fr.created_at >= ${from}::timestamptz` : sql``}
         ${to     ? sql`AND fr.created_at <= ${to}::timestamptz + interval '1 day'` : sql``}
-    `);
+    `)).rows[0];
 
     res.json({
       requests: rows,
@@ -406,7 +406,7 @@ router.get('/finance/reversals', async (req: Request, res: Response): Promise<vo
     const from   = req.query['from'] as string | undefined;
     const to     = req.query['to'] as string | undefined;
 
-    const rows = await db.execute<Record<string, unknown>>(sql`
+    const rows = (await db.execute<Record<string, unknown>>(sql`
       SELECT tr.*, u.name AS customer_name, u.phone AS customer_phone,
         a.name AS performed_by_name, t.amount AS original_amount, t.type AS transaction_type
       FROM transaction_reversals tr
@@ -417,13 +417,13 @@ router.get('/finance/reversals', async (req: Request, res: Response): Promise<vo
         ${from ? sql`AND tr.created_at >= ${from}::timestamptz` : sql``}
         ${to   ? sql`AND tr.created_at <= ${to}::timestamptz + interval '1 day'` : sql``}
       ORDER BY tr.created_at DESC LIMIT ${limit} OFFSET ${offset}
-    `);
+    `)).rows;
 
-    const [countRow] = await db.execute<{ total: string }>(sql`
+    const countRow = (await db.execute<{ total: string }>(sql`
       SELECT COUNT(*)::text AS total FROM transaction_reversals tr WHERE 1=1
         ${from ? sql`AND tr.created_at >= ${from}::timestamptz` : sql``}
         ${to   ? sql`AND tr.created_at <= ${to}::timestamptz + interval '1 day'` : sql``}
-    `);
+    `)).rows[0];
 
     res.json({
       reversals: rows,
@@ -465,9 +465,9 @@ router.post('/finance/funding-requests/:id/approve',
     const { note }  = req.body as { note?: string };
 
     try {
-      const [fr] = await db.execute<Record<string, unknown>>(
+      const fr = (await db.execute<Record<string, unknown>>(
         sql`SELECT * FROM funding_requests WHERE id = ${id}::uuid LIMIT 1`
-      );
+      )).rows[0];
       if (!fr) { res.status(404).json({ error: 'Funding request not found.' }); return; }
       if (String(fr['status']) !== 'pending') {
         res.status(409).json({ error: 'Only pending requests can be approved.' }); return;
@@ -478,16 +478,16 @@ router.post('/finance/funding-requests/:id/approve',
       const reference = String(fr['reference']);
 
       // Fetch customer info for audit
-      const [customer] = await db.execute<{ name: string }>(
+      const customer = (await db.execute<{ name: string }>(
         sql`SELECT name FROM users WHERE id = ${userId}::uuid LIMIT 1`
-      );
+      )).rows[0];
 
       // Credit wallet + ledger + update request — all in one transaction
       let balanceBefore = 0, balanceAfter = 0;
       await db.transaction(async (tx) => {
-        const [wallet] = await tx.execute<{ id: string; balance: string }>(
+        const wallet = (await tx.execute<{ id: string; balance: string }>(
           sql`SELECT id, balance FROM wallets WHERE user_id = ${userId}::uuid FOR UPDATE`
-        );
+        )).rows[0];
         if (!wallet) throw new Error('Wallet not found');
         balanceBefore = Number(wallet.balance);
         balanceAfter  = balanceBefore + amount;
@@ -545,9 +545,9 @@ router.post('/finance/funding-requests/:id/reject',
     }
 
     try {
-      const [fr] = await db.execute<{ user_id: string; amount: string }>(
+      const fr = (await db.execute<{ user_id: string; amount: string }>(
         sql`SELECT user_id, amount FROM funding_requests WHERE id = ${id}::uuid AND status = 'pending' LIMIT 1`
-      );
+      )).rows[0];
       if (!fr) { res.status(409).json({ error: 'Request not found or already processed.' }); return; }
 
       await db.execute(sql`
@@ -556,9 +556,9 @@ router.post('/finance/funding-requests/:id/reject',
         WHERE id = ${id}::uuid
       `);
 
-      const [customer] = await db.execute<{ name: string }>(
+      const customer = (await db.execute<{ name: string }>(
         sql`SELECT name FROM users WHERE id = ${fr.user_id}::uuid LIMIT 1`
-      );
+      )).rows[0];
 
       void financialAuditLog({
         adminId, adminRole,
@@ -614,16 +614,16 @@ router.post('/finance/users/:id/wallet/adjust',
 
     try {
       // Fetch customer name for audit
-      const [customer] = await db.execute<{ name: string }>(
+      const customer = (await db.execute<{ name: string }>(
         sql`SELECT name FROM users WHERE id = ${id}::uuid LIMIT 1`
-      );
+      )).rows[0];
       if (!customer) { res.status(404).json({ error: 'User not found.' }); return; }
 
       let balanceBefore = 0, balanceAfter = 0;
       await db.transaction(async (tx) => {
-        const [wallet] = await tx.execute<{ balance: string }>(
+        const wallet = (await tx.execute<{ balance: string }>(
           sql`SELECT balance FROM wallets WHERE user_id = ${id}::uuid FOR UPDATE`
-        );
+        )).rows[0];
         if (!wallet) throw new Error('Wallet not found');
         balanceBefore = Number(wallet.balance);
         balanceAfter  = type === 'credit'
@@ -684,34 +684,34 @@ router.post('/finance/transactions/:id/reverse',
     }
 
     try {
-      const [txn] = await db.execute<Record<string, unknown>>(
+      const txn = (await db.execute<Record<string, unknown>>(
         sql`SELECT * FROM transactions WHERE id = ${id}::uuid LIMIT 1`
-      );
+      )).rows[0];
       if (!txn) { res.status(404).json({ error: 'Transaction not found.' }); return; }
 
       if (String(txn['status']) !== 'success') {
         res.status(400).json({ error: 'Only successful transactions can be reversed.' }); return;
       }
 
-      const [existing] = await db.execute<{ id: string }>(
+      const existing = (await db.execute<{ id: string }>(
         sql`SELECT id FROM transaction_reversals WHERE original_transaction_id = ${id}::uuid LIMIT 1`
-      );
+      )).rows[0];
       if (existing) { res.status(409).json({ error: 'This transaction has already been reversed.' }); return; }
 
       const userId = String(txn['user_id']);
       const amount = Number(txn['amount']);
       const ref    = makeRef('FREV');
 
-      const [customer] = await db.execute<{ name: string }>(
+      const customer = (await db.execute<{ name: string }>(
         sql`SELECT name FROM users WHERE id = ${userId}::uuid LIMIT 1`
-      );
+      )).rows[0];
 
       let balanceBefore = 0, balanceAfter = 0, ledgerEntryId = '';
 
       await db.transaction(async (tx) => {
-        const [wallet] = await tx.execute<{ balance: string }>(
+        const wallet = (await tx.execute<{ balance: string }>(
           sql`SELECT balance FROM wallets WHERE user_id = ${userId}::uuid FOR UPDATE`
-        );
+        )).rows[0];
         if (!wallet) throw new Error('Wallet not found');
         balanceBefore = Number(wallet.balance);
         balanceAfter  = balanceBefore + amount;
@@ -721,14 +721,14 @@ router.post('/finance/transactions/:id/reverse',
           WHERE user_id = ${userId}::uuid
         `);
 
-        const [ledger] = await tx.execute<{ id: string }>(sql`
+        const ledger = (await tx.execute<{ id: string }>(sql`
           INSERT INTO wallet_ledger
             (user_id, type, amount, balance_before, balance_after, reference, related_transaction_id, performed_by, reason)
           VALUES
             (${userId}::uuid, 'reversal', ${amount}, ${balanceBefore}, ${balanceAfter},
              ${ref}, ${id}::uuid, ${adminId}::uuid, ${reason!.trim()})
           RETURNING id
-        `);
+        `)).rows[0];
         ledgerEntryId = ledger!.id;
 
         await tx.execute(sql`
@@ -766,5 +766,55 @@ router.post('/finance/transactions/:id/reverse',
     }
   }
 );
+
+// ── GET /admin/finance/wallet-ledger ──────────────────────────────────────
+// Read-only: paginated wallet ledger (all users). Finance + super_admin.
+router.get('/finance/wallet-ledger', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const page   = Math.max(1, parseInt(String(req.query['page'] ?? '1')));
+    const limit  = Math.min(200, Math.max(1, parseInt(String(req.query['limit'] ?? '50'))));
+    const offset = (page - 1) * limit;
+    const userId = req.query['user_id'] as string | undefined;
+    const type   = req.query['type'] as string | undefined;
+    const from   = req.query['from'] as string | undefined;
+    const to     = req.query['to'] as string | undefined;
+
+    const rows = (await db.execute<Record<string, unknown>>(sql`
+      SELECT wl.*, u.name AS customer_name, u.phone AS customer_phone
+      FROM wallet_ledger wl
+      LEFT JOIN users u ON u.id = wl.user_id
+      WHERE 1=1
+        ${userId ? sql`AND wl.user_id = ${userId}::uuid` : sql``}
+        ${type   ? sql`AND wl.type = ${type}` : sql``}
+        ${from   ? sql`AND wl.created_at >= ${from}::timestamptz` : sql``}
+        ${to     ? sql`AND wl.created_at <= ${to}::timestamptz + interval '1 day'` : sql``}
+      ORDER BY wl.created_at DESC LIMIT ${limit} OFFSET ${offset}
+    `)).rows;
+
+    const countRow = (await db.execute<{ total: string; total_amount: string }>(sql`
+      SELECT COUNT(*)::text AS total,
+        COALESCE(SUM(amount), 0)::text AS total_amount
+      FROM wallet_ledger wl
+      WHERE 1=1
+        ${userId ? sql`AND wl.user_id = ${userId}::uuid` : sql``}
+        ${type   ? sql`AND wl.type = ${type}` : sql``}
+        ${from   ? sql`AND wl.created_at >= ${from}::timestamptz` : sql``}
+        ${to     ? sql`AND wl.created_at <= ${to}::timestamptz + interval '1 day'` : sql``}
+    `)).rows[0];
+
+    res.json({
+      entries: rows,
+      pagination: {
+        page, limit,
+        total: parseInt(countRow?.total ?? '0'),
+        totalPages: Math.ceil(parseInt(countRow?.total ?? '0') / limit),
+      },
+      summary: { total_amount: countRow?.total_amount ?? '0' },
+    });
+  } catch (err) {
+    logger.error({ err }, 'GET /finance/wallet-ledger failed');
+    res.status(500).json({ error: 'Failed to load wallet ledger.' });
+  }
+});
 
 export default router;

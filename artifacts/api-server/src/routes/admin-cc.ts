@@ -40,15 +40,24 @@ const RESET_OTP_EXPIRY_MS = 60 * 60 * 1000;    // 1 h for customer to use
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 
+// Roles that have access to CC routes (finance staff do NOT get CC access)
+const CC_ALLOWED_ROLES = new Set(['super_admin', 'admin', 'customer_care', 'supervisor', 'technical_support']);
+
 function requireCCSession(req: Request, res: Response, next: NextFunction): void {
   if (!req.session.isAdmin) {
     res.status(401).json({ error: 'Admin authentication required.' });
     return;
   }
-  next(); // all admin roles allowed
+  if (!CC_ALLOWED_ROLES.has(req.session.adminRole ?? '')) {
+    res.status(403).json({ error: 'Customer Care access required.' });
+    return;
+  }
+  next();
 }
 
-router.use(requireCCSession);
+// Apply CC auth only to /cc/* paths so finance/other routers don't get intercepted
+// when adminCCRouter is mounted at /admin (shared base path).
+router.use('/cc', requireCCSession);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

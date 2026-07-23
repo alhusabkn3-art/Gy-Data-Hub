@@ -14,16 +14,20 @@
  *      Monnify delivers the webhook more than once.
  *   4. Webhook signatures are verified via HMAC-SHA512 (Monnify secret key)
  *      before any payload is processed.
+ *   5. Every wallet balance change writes a wallet_ledger row for complete
+ *      audit trail and reconciliation.
  */
 import { Router, type Request, type Response } from 'express';
 import { eq, and } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import { db } from '@workspace/db';
+import { sql } from 'drizzle-orm';
 import { walletsTable, transactionsTable, usersTable } from '@workspace/db/schema';
 import { requireAuth } from './user.js';
 import { logger } from '../lib/logger.js';
 import { createNotification } from '../lib/notifications.js';
 import * as monnify from '../lib/monnify.js';
+import { getIo } from '../lib/socket.js';
 
 const router = Router();
 
@@ -39,24 +43,27 @@ router.post('/monnify/initialize', requireAuth, async (req: Request, res: Respon
     return;
   }
 
+  if (numericAmount > 5_000_000) {
+    res.status(400).json({ error: 'Maximum single funding amount is ₦5,000,000.' });
+    return;
+  }
+
   const userId = req.session.userId!;
 
-  // Fetch user (need name + email for Monnify)
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
   if (!user) { res.status(404).json({ error: 'User not found.' }); return; }
 
-  // Generate a cryptographically random, unique payment reference
-  const randomHex     = crypto.randomBytes(4).toString('hex').toUpperCase();
-  const paymentRef    = `GY-PAY-${Date.now()}-${randomHex}`;
+  // Cryptographically random payment reference
+  const randomHex   = crypto.randomBytes(4).toString('hex').toUpperCase();
+  const paymentRef  = `GY-PAY-${Date.now()}-${randomHex}`;
 
-  // Determine redirect URL (where Monnify sends the user after checkout)
-  const devDomain  = process.env['REPLIT_DEV_DOMAIN'];
+  // Redirect URL — where Monnify sends the user after checkout
+  const devDomain   = process.env['REPLIT_DEV_DOMAIN'];
   const redirectUrl = devDomain
     ? `https://${devDomain}/`
     : `${req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http'}://${req.get('host') ?? 'localhost'}/`;
 
   // ── Step 1: Create pending transaction in DB ──────────────────────────────
-  // Done BEFORE calling Monnify so no payment can ever be orphaned.
   let txnId: string;
   try {
     const [txn] = await db.insert(transactionsTable).values({
@@ -69,7 +76,7 @@ router.post('/monnify/initialize', requireAuth, async (req: Request, res: Respon
       reference:     paymentRef,
       description:   `Wallet funding via Monnify`,
       paymentMethod: 'Monnify',
-      metadata:      {
+      metadata: {
         expectedAmount: numericAmount,
         initiatedAt:    new Date().toISOString(),
       },
@@ -96,17 +103,14 @@ router.post('/monnify/initialize', requireAuth, async (req: Request, res: Respon
     await db.update(transactionsTable)
       .set({
         metadata: {
-          expectedAmount:           numericAmount,
-          initiatedAt:              new Date().toISOString(),
-          monnifyTransactionRef:    result.transactionReference,
+          expectedAmount:        numericAmount,
+          initiatedAt:           new Date().toISOString(),
+          monnifyTransactionRef: result.transactionReference,
         },
       })
       .where(eq(transactionsTable.id, txnId));
 
-    logger.info(
-      { userId, paymentRef, txnId, amount: numericAmount },
-      'Monnify payment initialized',
-    );
+    logger.info({ userId, paymentRef, txnId, amount: numericAmount }, 'Monnify payment initialized');
 
     res.json({
       ok:            true,
@@ -115,7 +119,6 @@ router.post('/monnify/initialize', requireAuth, async (req: Request, res: Respon
       transactionId: txnId,
     });
   } catch (err) {
-    // Mark transaction failed so it doesn't linger as pending
     await db.update(transactionsTable)
       .set({ status: 'failed', metadata: { error: 'Monnify initialization failed' } })
       .where(eq(transactionsTable.id, txnId));
@@ -126,38 +129,33 @@ router.post('/monnify/initialize', requireAuth, async (req: Request, res: Respon
 });
 
 // ── GET /api/payment/monnify/status/:reference ────────────────────────────────
-// Requires user session. Frontend polls this every few seconds after opening
-// the Monnify checkout. Returns current payment status + balance on success.
+// Requires user session. Frontend polls this after opening the Monnify checkout.
 router.get('/monnify/status/:reference', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { reference } = req.params as { reference: string };
   const userId = req.session.userId!;
 
-  // Must belong to this user
   const [txn] = await db
     .select()
     .from(transactionsTable)
     .where(
       and(
         eq(transactionsTable.reference, reference),
-        eq(transactionsTable.userId,    userId),
+        eq(transactionsTable.userId, userId),
       ),
     );
 
   if (!txn) { res.status(404).json({ error: 'Transaction not found.' }); return; }
 
-  // Already finalized — return immediately without hitting Monnify
   if (txn.status === 'success' || txn.status === 'failed') {
     const [wallet] = await db.select().from(walletsTable).where(eq(walletsTable.userId, userId));
     res.json({ status: txn.status, reference, balance: wallet?.balance ?? '0' });
     return;
   }
 
-  // ── Still pending — check with Monnify ────────────────────────────────────
-  const meta        = txn.metadata as { monnifyTransactionRef?: string; expectedAmount?: number } | null;
-  const monnifyRef  = meta?.monnifyTransactionRef;
+  const meta       = txn.metadata as { monnifyTransactionRef?: string; expectedAmount?: number } | null;
+  const monnifyRef = meta?.monnifyTransactionRef;
 
   if (!monnifyRef) {
-    // Shouldn't happen — return pending and let the client keep polling
     res.json({ status: 'pending', reference });
     return;
   }
@@ -169,26 +167,24 @@ router.get('/monnify/status/:reference', requireAuth, async (req: Request, res: 
     const amountOk       = Math.abs(verification.amountPaid - expectedAmount) < 0.01;
 
     if (isPaid && amountOk) {
-      const { newBalance } = await creditWallet(userId, txn.id, expectedAmount, reference);
+      const { newBalance } = await creditWallet(userId, txn.id, expectedAmount, reference, monnifyRef);
       res.json({ status: 'success', reference, balance: newBalance });
       return;
     }
 
-    const terminalFail = ['FAILED', 'EXPIRED', 'CANCELLED', 'REVERSED'].includes(
-      verification.paymentStatus,
-    );
+    const terminalFail = ['FAILED', 'EXPIRED', 'CANCELLED', 'REVERSED'].includes(verification.paymentStatus);
     if (terminalFail) {
-      await db.update(transactionsTable)
-        .set({ status: 'failed' })
-        .where(eq(transactionsTable.id, txn.id));
+      await db.execute(sql`
+        UPDATE transactions
+        SET status = 'failed', updated_at = NOW()
+        WHERE id = ${txn.id}::uuid
+      `);
       res.json({ status: 'failed', reference });
       return;
     }
 
-    // PENDING / OVERPAID (amount mismatch) — keep polling
     res.json({ status: 'pending', reference, paymentStatus: verification.paymentStatus });
   } catch (err) {
-    // Don't fail the poll on transient Monnify errors — return current DB status
     logger.error({ err, reference }, 'Monnify status check error');
     res.json({ status: txn.status, reference });
   }
@@ -196,11 +192,8 @@ router.get('/monnify/status/:reference', requireAuth, async (req: Request, res: 
 
 // ── POST /api/payment/monnify/webhook ─────────────────────────────────────────
 // Public — Monnify calls this when a payment completes.
-// Configure this URL in the Monnify dashboard:
+// Webhook URL to configure in Monnify dashboard:
 //   https://<your-domain>/api/payment/monnify/webhook
-//
-// Signature verification happens BEFORE any payload is processed.
-// Response is always 200 quickly; heavy processing runs after res.json().
 router.post('/monnify/webhook', async (req: Request, res: Response): Promise<void> => {
   const signature = (req.headers['monnify-signature'] ?? '') as string;
   const rawBody   = (req as Request & { rawBody?: string }).rawBody ?? JSON.stringify(req.body);
@@ -220,10 +213,9 @@ router.post('/monnify/webhook', async (req: Request, res: Response): Promise<voi
   // Acknowledge immediately — Monnify retries if it doesn't get 200 quickly
   res.status(200).json({ ok: true });
 
-  // ── Process webhook asynchronously ────────────────────────────────────────
   const payload = req.body as {
-    paymentReference?:     string; // OUR reference
-    transactionReference?: string; // Monnify's reference
+    paymentReference?:     string;
+    transactionReference?: string;
     amountPaid?:           number;
     paymentStatus?:        string;
   };
@@ -246,25 +238,27 @@ router.post('/monnify/webhook', async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    // Idempotency — already processed
     if (txn.status !== 'pending') {
-      logger.info({ paymentReference, status: txn.status }, 'Monnify webhook: already processed');
+      logger.info({ paymentReference, status: txn.status }, 'Monnify webhook: already processed — skipping');
       return;
     }
 
     if (paymentStatus !== 'PAID') {
-      await db.update(transactionsTable)
-        .set({ status: 'failed', metadata: { ...((txn.metadata as object) ?? {}), webhookStatus: paymentStatus } })
-        .where(eq(transactionsTable.id, txn.id));
-      logger.info({ paymentReference, paymentStatus }, 'Monnify webhook: non-PAID status — marked failed');
+      await db.execute(sql`
+        UPDATE transactions
+        SET status = 'failed', updated_at = NOW(),
+            metadata = metadata || ${JSON.stringify({ webhookStatus: paymentStatus })}::jsonb
+        WHERE id = ${txn.id}::uuid
+      `);
+      logger.info({ paymentReference, paymentStatus }, 'Monnify webhook: non-PAID — marked failed');
       return;
     }
 
     // Server-side double-verification before crediting any wallet
-    const meta       = txn.metadata as { monnifyTransactionRef?: string; expectedAmount?: number } | null;
+    const meta       = txn.metadata as { monnifyTransactionRef?: string } | null;
     const monnifyRef = meta?.monnifyTransactionRef ?? payload.transactionReference;
     if (!monnifyRef) {
-      logger.error({ paymentReference }, 'Monnify webhook: no monnifyTransactionRef available for verification');
+      logger.error({ paymentReference }, 'Monnify webhook: no monnifyTransactionRef for verification');
       return;
     }
 
@@ -287,27 +281,28 @@ router.post('/monnify/webhook', async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    await creditWallet(txn.userId, txn.id, expectedAmount, paymentReference);
-    logger.info(
-      { paymentReference, userId: txn.userId, amount: expectedAmount },
-      'Monnify webhook: wallet credited',
-    );
+    await creditWallet(txn.userId, txn.id, expectedAmount, paymentReference, monnifyRef);
+    logger.info({ paymentReference, userId: txn.userId, amount: expectedAmount }, 'Monnify webhook: wallet credited');
   } catch (err) {
     logger.error({ err, paymentReference }, 'Monnify webhook processing error');
   }
 });
 
 // ── Shared wallet credit helper ───────────────────────────────────────────────
+//
 // Atomic: SELECT FOR UPDATE prevents concurrent credits on the same wallet.
-// Re-checks transaction status inside the DB transaction — safe to call from
-// both the polling endpoint and the webhook handler without risk of double-credit.
+// Re-checks transaction status inside the DB transaction — idempotency guard.
+// Every successful credit writes a wallet_ledger row for the audit trail.
+//
 async function creditWallet(
   userId:    string,
   txnId:     string,
   amount:    number,
   reference: string,
+  providerRef?: string,
 ): Promise<{ newBalance: string }> {
   const result = await db.transaction(async (tx) => {
+    // Lock wallet row — prevents concurrent over-credit
     const [wallet] = await tx
       .select()
       .from(walletsTable)
@@ -316,42 +311,71 @@ async function creditWallet(
 
     if (!wallet) throw Object.assign(new Error('Wallet not found'), { code: 'NOT_FOUND' });
 
-    // Re-read status inside the transaction — idempotency guard
     const [txnRow] = await tx
-      .select({ status: transactionsTable.status, balance: walletsTable.balance })
+      .select({ status: transactionsTable.status })
       .from(transactionsTable)
       .where(eq(transactionsTable.id, txnId));
 
+    // Idempotency guard — already credited in a concurrent request
     if (txnRow?.status === 'success') {
-      // Already credited in a concurrent request — return current balance
       return { newBalance: wallet.balance };
     }
 
-    const newBalance = (parseFloat(wallet.balance) + amount).toFixed(2);
+    const balanceBefore = wallet.balance;
+    const newBalance    = (parseFloat(balanceBefore) + amount).toFixed(2);
 
+    // Credit wallet
     await tx.update(walletsTable)
       .set({ balance: newBalance, updatedAt: new Date() })
       .where(eq(walletsTable.userId, userId));
 
-    await tx.update(transactionsTable)
-      .set({
-        status:   'success',
-        metadata: {
-          verifiedAt: new Date().toISOString(),
-          credited:   true,
-        },
-      })
-      .where(eq(transactionsTable.id, txnId));
+    // Mark transaction success
+    await tx.execute(sql`
+      UPDATE transactions
+      SET status = 'success',
+          updated_at = NOW(),
+          provider_reference = ${providerRef ?? null},
+          metadata = metadata || ${JSON.stringify({
+            verifiedAt:     new Date().toISOString(),
+            credited:       true,
+            monnifyVerified: true,
+          })}::jsonb
+      WHERE id = ${txnId}::uuid
+    `);
+
+    // ── Wallet ledger entry — audit trail for this credit ─────────────────
+    // reference must be unique: append '-credit' suffix
+    await tx.execute(sql`
+      INSERT INTO wallet_ledger
+        (user_id, type, amount, balance_before, balance_after,
+         reference, related_transaction_id, reason)
+      VALUES
+        (${userId}::uuid, 'wallet_fund', ${amount.toFixed(2)},
+         ${balanceBefore}, ${newBalance},
+         ${reference + '-credit'}, ${txnId}::uuid,
+         'Wallet funded via Monnify payment')
+      ON CONFLICT (reference) DO NOTHING
+    `);
 
     return { newBalance };
   });
 
-  // Fire notification after commit — failure here never rolls back the credit
+  // Real-time notification via Socket.io
+  try {
+    getIo().to(`user:${userId}`).emit('wallet:funded', {
+      amount,
+      balance: result.newBalance,
+      txnId,
+      reference,
+    });
+  } catch { /* non-fatal — socket may not be ready */ }
+
+  // In-app notification
   try {
     await createNotification(userId, {
       type:  'transaction',
-      title: 'Wallet Funded',
-      body:  `₦${amount.toLocaleString()} has been added to your GY DATA wallet.`,
+      title: 'Wallet Funded ✅',
+      body:  `₦${amount.toLocaleString('en-NG', { minimumFractionDigits: 2 })} has been added to your GY DATA wallet.`,
       refId: txnId,
     });
   } catch { /* non-fatal */ }

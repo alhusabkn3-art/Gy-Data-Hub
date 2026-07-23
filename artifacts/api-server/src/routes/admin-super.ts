@@ -2274,5 +2274,327 @@ router.post('/notifications/staff', async (req: Request, res: Response): Promise
   }
 });
 
+// ═════════════════════════════════════════════════════════════════════════════
+// PROVIDER TRANSACTION REPORTS
+// Real revenue, cost, and profit calculated from actual transaction data.
+// cost_price = what we paid ClubKonnect.
+// amount     = what the customer paid us (selling price).
+// profit     = amount - cost_price.
+// ═════════════════════════════════════════════════════════════════════════════
+
+router.get('/reports/profit', async (req: Request, res: Response): Promise<void> => {
+  const adminId = req.session.adminId!;
+  const role    = req.session.adminRole;
+  if (!['super_admin', 'admin', 'finance'].includes(role ?? '')) {
+    res.status(403).json({ error: 'Access denied.' });
+    return;
+  }
+
+  const { from, to, type } = req.query as { from?: string; to?: string; type?: string };
+  const startDate = from ? new Date(from) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const endDate   = to   ? new Date(to)   : new Date();
+
+  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+    res.status(400).json({ error: 'Invalid date range. Use ISO format (YYYY-MM-DD).' });
+    return;
+  }
+
+  try {
+    const typeFilter = type && ['data', 'airtime'].includes(type) ? type : null;
+
+    // ── Overall summary ─────────────────────────────────────────────────────
+    // node-postgres adapter: db.execute() returns pg.QueryResult — use .rows
+    const summaryResult = await db.execute<{
+      total_revenue: string; total_cost: string; total_profit: string;
+      total_transactions: string; success_count: string; failed_count: string; pending_count: string;
+    }>(sql`
+      SELECT
+        COALESCE(SUM(amount), 0)::text                                        AS total_revenue,
+        COALESCE(SUM(COALESCE(cost_price, amount)), 0)::text                  AS total_cost,
+        COALESCE(SUM(amount - COALESCE(cost_price, amount)), 0)::text         AS total_profit,
+        COUNT(*)::text                                                         AS total_transactions,
+        COUNT(*) FILTER (WHERE status = 'success')::text                      AS success_count,
+        COUNT(*) FILTER (WHERE status = 'failed')::text                       AS failed_count,
+        COUNT(*) FILTER (WHERE status = 'pending')::text                      AS pending_count
+      FROM transactions
+      WHERE type::text = ANY(CASE WHEN ${typeFilter}::text IS NULL THEN ARRAY['data','airtime'] ELSE ARRAY[${typeFilter}] END)
+        AND created_at >= ${startDate.toISOString()}
+        AND created_at <= ${endDate.toISOString()}
+    `);
+    const summary = summaryResult.rows[0];
+
+    // ── Daily breakdown ─────────────────────────────────────────────────────
+    const dailyResult = await db.execute<{
+      date: string; type: string; provider: string;
+      count: string; revenue: string; cost: string; profit: string;
+    }>(sql`
+      SELECT
+        DATE(created_at)::text                                    AS date,
+        type,
+        provider,
+        COUNT(*)::text                                            AS count,
+        COALESCE(SUM(amount) FILTER (WHERE status='success'), 0)::text                            AS revenue,
+        COALESCE(SUM(COALESCE(cost_price, amount)) FILTER (WHERE status='success'), 0)::text      AS cost,
+        COALESCE(SUM(amount - COALESCE(cost_price, amount)) FILTER (WHERE status='success'), 0)::text AS profit
+      FROM transactions
+      WHERE type::text = ANY(CASE WHEN ${typeFilter}::text IS NULL THEN ARRAY['data','airtime'] ELSE ARRAY[${typeFilter}] END)
+        AND created_at >= ${startDate.toISOString()}
+        AND created_at <= ${endDate.toISOString()}
+      GROUP BY DATE(created_at), type, provider
+      ORDER BY DATE(created_at) DESC, type, provider
+    `);
+
+    // ── By network/provider ─────────────────────────────────────────────────
+    const byNetworkResult = await db.execute<{
+      provider: string; type: string;
+      count: string; revenue: string; cost: string; profit: string; avg_profit: string;
+    }>(sql`
+      SELECT
+        provider,
+        type,
+        COUNT(*) FILTER (WHERE status='success')::text                         AS count,
+        COALESCE(SUM(amount) FILTER (WHERE status='success'), 0)::text         AS revenue,
+        COALESCE(SUM(COALESCE(cost_price, amount)) FILTER (WHERE status='success'), 0)::text AS cost,
+        COALESCE(SUM(amount - COALESCE(cost_price, amount)) FILTER (WHERE status='success'), 0)::text AS profit,
+        COALESCE(AVG(amount - COALESCE(cost_price, amount)) FILTER (WHERE status='success'), 0)::text AS avg_profit
+      FROM transactions
+      WHERE type::text = ANY(CASE WHEN ${typeFilter}::text IS NULL THEN ARRAY['data','airtime'] ELSE ARRAY[${typeFilter}] END)
+        AND created_at >= ${startDate.toISOString()}
+        AND created_at <= ${endDate.toISOString()}
+      GROUP BY provider, type
+      ORDER BY revenue DESC
+    `);
+
+    // ── Top plans by profit ─────────────────────────────────────────────────
+    const topPlansResult = await db.execute<{
+      description: string; provider: string;
+      count: string; revenue: string; cost: string; profit: string;
+    }>(sql`
+      SELECT
+        description,
+        provider,
+        COUNT(*)::text         AS count,
+        SUM(amount)::text      AS revenue,
+        SUM(COALESCE(cost_price, amount))::text AS cost,
+        SUM(amount - COALESCE(cost_price, amount))::text AS profit
+      FROM transactions
+      WHERE type = 'data'
+        AND status = 'success'
+        AND created_at >= ${startDate.toISOString()}
+        AND created_at <= ${endDate.toISOString()}
+      GROUP BY description, provider
+      ORDER BY profit DESC
+      LIMIT 20
+    `);
+
+    void auditLog({
+      adminId,
+      adminEmail: await getAdminEmail(adminId),
+      action: 'view_profit_report',
+      details: { from: startDate.toISOString(), to: endDate.toISOString(), type: typeFilter },
+    });
+
+    res.json({
+      period: { from: startDate.toISOString(), to: endDate.toISOString(), type: typeFilter ?? 'all' },
+      summary: {
+        totalRevenue:      Number(summary?.total_revenue   ?? 0),
+        totalCost:         Number(summary?.total_cost      ?? 0),
+        totalProfit:       Number(summary?.total_profit    ?? 0),
+        totalTransactions: Number(summary?.total_transactions ?? 0),
+        successCount:      Number(summary?.success_count   ?? 0),
+        failedCount:       Number(summary?.failed_count    ?? 0),
+        pendingCount:      Number(summary?.pending_count   ?? 0),
+        profitMargin:      summary?.total_revenue && Number(summary.total_revenue) > 0
+          ? ((Number(summary.total_profit) / Number(summary.total_revenue)) * 100).toFixed(2) + '%'
+          : '0%',
+      },
+      daily:     dailyResult.rows.map(r => ({
+        date:     r.date,
+        type:     r.type,
+        provider: r.provider,
+        count:    Number(r.count),
+        revenue:  Number(r.revenue),
+        cost:     Number(r.cost),
+        profit:   Number(r.profit),
+      })),
+      byNetwork: byNetworkResult.rows.map(r => ({
+        provider:  r.provider,
+        type:      r.type,
+        count:     Number(r.count),
+        revenue:   Number(r.revenue),
+        cost:      Number(r.cost),
+        profit:    Number(r.profit),
+        avgProfit: Number(r.avg_profit),
+      })),
+      topPlans: topPlansResult.rows.map(r => ({
+        description: r.description,
+        provider:    r.provider,
+        count:       Number(r.count),
+        revenue:     Number(r.revenue),
+        cost:        Number(r.cost),
+        profit:      Number(r.profit),
+      })),
+    });
+  } catch (err) {
+    logger.error({ err }, 'GET /reports/profit failed');
+    res.status(500).json({ error: 'Failed to generate profit report.' });
+  }
+});
+
+// ── GET /api/admin/reports/provider-transactions ──────────────────────────────
+// Full list of provider transactions with status, provider reference, and
+// profit details. Useful for reconciliation and support.
+router.get('/reports/provider-transactions', async (req: Request, res: Response): Promise<void> => {
+  const role = req.session.adminRole;
+  if (!['super_admin', 'admin', 'finance'].includes(role ?? '')) {
+    res.status(403).json({ error: 'Access denied.' });
+    return;
+  }
+
+  const { page = '1', limit = '50', status, type, userId: filterUserId } = req.query as Record<string, string>;
+  const pageNum  = Math.max(1, parseInt(page));
+  const limitNum = Math.min(200, Math.max(1, parseInt(limit)));
+  const offset   = (pageNum - 1) * limitNum;
+
+  const statusFilter  = status   && ['success', 'failed', 'pending'].includes(status) ? status : null;
+  const typeFilter    = type     && ['data', 'airtime'].includes(type) ? type : null;
+  const userFilter    = filterUserId ?? null;
+
+  try {
+    const rawRows = await db.execute<{
+      id: string; user_id: string; phone: string; type: string;
+      service: string; provider: string; amount: string; cost_price: string;
+      status: string; reference: string; provider_reference: string;
+      description: string; created_at: string; updated_at: string;
+    }>(sql`
+      SELECT
+        t.id, t.user_id, u.phone,
+        t.type, t.service, t.provider,
+        t.amount, t.cost_price,
+        t.status, t.reference, t.provider_reference,
+        t.description,
+        t.created_at::text, t.updated_at::text
+      FROM transactions t
+      JOIN users u ON u.id = t.user_id
+      WHERE t.type::text = ANY(CASE WHEN ${typeFilter}::text IS NULL THEN ARRAY['data','airtime'] ELSE ARRAY[${typeFilter}] END)
+        AND (${statusFilter}::text IS NULL OR t.status = ${statusFilter})
+        AND (${userFilter}::uuid IS NULL OR t.user_id = ${userFilter}::uuid)
+      ORDER BY t.created_at DESC
+      LIMIT ${limitNum} OFFSET ${offset}
+    `);
+
+    const countResult = await db.execute<{ total: string }>(sql`
+      SELECT COUNT(*)::text AS total
+      FROM transactions t
+      WHERE t.type::text = ANY(CASE WHEN ${typeFilter}::text IS NULL THEN ARRAY['data','airtime'] ELSE ARRAY[${typeFilter}] END)
+        AND (${statusFilter}::text IS NULL OR t.status = ${statusFilter})
+        AND (${userFilter}::uuid IS NULL OR t.user_id = ${userFilter}::uuid)
+    `);
+    const countRow = countResult.rows[0];
+
+    const rows = rawRows.rows.map(r => ({
+      id:                r.id,
+      userId:            r.user_id,
+      phone:             r.phone,
+      type:              r.type,
+      service:           r.service,
+      provider:          r.provider,
+      amount:            Number(r.amount),
+      costPrice:         r.cost_price ? Number(r.cost_price) : null,
+      profit:            r.cost_price ? Number(r.amount) - Number(r.cost_price) : null,
+      status:            r.status,
+      reference:         r.reference,
+      providerReference: r.provider_reference,
+      description:       r.description,
+      createdAt:         r.created_at,
+      updatedAt:         r.updated_at,
+    }));
+
+    res.json({
+      transactions: rows,
+      pagination: {
+        total:   Number(countRow?.total ?? 0),
+        page:    pageNum,
+        limit:   limitNum,
+        pages:   Math.ceil(Number(countRow?.total ?? 0) / limitNum),
+      },
+    });
+  } catch (err) {
+    logger.error({ err }, 'GET /reports/provider-transactions failed');
+    res.status(500).json({ error: 'Failed to load provider transactions.' });
+  }
+});
+
+// ── GET /api/admin/reports/wallet-ledger ──────────────────────────────────────
+// Full wallet ledger audit trail — every balance change on the platform.
+router.get('/reports/wallet-ledger', async (req: Request, res: Response): Promise<void> => {
+  const role = req.session.adminRole;
+  if (!['super_admin', 'admin', 'finance'].includes(role ?? '')) {
+    res.status(403).json({ error: 'Access denied.' });
+    return;
+  }
+
+  const { page = '1', limit = '50', type: ledgerType, userId: filterUserId } = req.query as Record<string, string>;
+  const pageNum  = Math.max(1, parseInt(page));
+  const limitNum = Math.min(200, Math.max(1, parseInt(limit)));
+  const offset   = (pageNum - 1) * limitNum;
+  const typeFilter = ledgerType || null;
+  const userFilter = filterUserId || null;
+
+  try {
+    const rawRows = await db.execute<{
+      id: string; user_id: string; phone: string; type: string;
+      amount: string; balance_before: string; balance_after: string;
+      reference: string; related_transaction_id: string;
+      reason: string; created_at: string;
+    }>(sql`
+      SELECT
+        wl.id, wl.user_id, u.phone,
+        wl.type, wl.amount,
+        wl.balance_before, wl.balance_after,
+        wl.reference, wl.related_transaction_id,
+        wl.reason, wl.created_at::text
+      FROM wallet_ledger wl
+      JOIN users u ON u.id = wl.user_id
+      WHERE (${typeFilter}::text IS NULL OR wl.type = ${typeFilter})
+        AND (${userFilter}::uuid IS NULL OR wl.user_id = ${userFilter}::uuid)
+      ORDER BY wl.created_at DESC
+      LIMIT ${limitNum} OFFSET ${offset}
+    `);
+
+    const ledgerCountResult = await db.execute<{ total: string }>(sql`
+      SELECT COUNT(*)::text AS total FROM wallet_ledger wl
+      WHERE (${typeFilter}::text IS NULL OR wl.type = ${typeFilter})
+        AND (${userFilter}::uuid IS NULL OR wl.user_id = ${userFilter}::uuid)
+    `);
+    const countRow = ledgerCountResult.rows[0];
+
+    res.json({
+      ledger: rawRows.rows.map(r => ({
+        id:                    r.id,
+        userId:                r.user_id,
+        phone:                 r.phone,
+        type:                  r.type,
+        amount:                Number(r.amount),
+        balanceBefore:         Number(r.balance_before),
+        balanceAfter:          Number(r.balance_after),
+        reference:             r.reference,
+        relatedTransactionId:  r.related_transaction_id,
+        reason:                r.reason,
+        createdAt:             r.created_at,
+      })),
+      pagination: {
+        total: Number(countRow?.total ?? 0),
+        page:  pageNum,
+        limit: limitNum,
+        pages: Math.ceil(Number(countRow?.total ?? 0) / limitNum),
+      },
+    });
+  } catch (err) {
+    logger.error({ err }, 'GET /reports/wallet-ledger failed');
+    res.status(500).json({ error: 'Failed to load wallet ledger.' });
+  }
+});
+
 export default router;
 

@@ -1,23 +1,30 @@
 /**
  * /api/purchase — Authenticated, server-orchestrated purchase endpoints.
  *
- * Each endpoint performs the full purchase lifecycle in the correct order:
- *   1. Auth check (requireAuth middleware applied to entire router)
- *   2. Input validation
- *   3. DB transaction with SELECT … FOR UPDATE:
- *        – lock wallet row to prevent concurrent over-spend
- *        – check sufficient balance (→ 402 if not)
- *        – debit wallet
- *        – insert transaction record with status 'pending'
- *   4. External vendor call (ClubKonnect) — outside DB transaction
- *   5. Compensation:
- *        – vendor success → update transaction → 'success'
- *        – vendor failure → credit wallet back, update transaction → 'failed'
- *   6. Return structured result (success, balance, transaction, vendor details)
+ * Purchase lifecycle (both airtime and data):
+ *   1. requireAuth — session must be valid.
+ *   2. Input validation + price validation (fail-closed against pricing_rules).
+ *   3. Idempotency check — duplicate Idempotency-Key returns existing result.
+ *   4. DB transaction with SELECT … FOR UPDATE:
+ *        – Lock wallet row (prevents concurrent over-spend)
+ *        – Check sufficient balance
+ *        – Debit wallet atomically
+ *        – Insert transaction record (status = 'pending')
+ *        – Write wallet_ledger 'debit' entry
+ *   5. Call ClubKonnect vendor API (outside DB transaction).
+ *   6. Outcome:
+ *        – 'success'  → mark transaction success, store provider_reference
+ *        – 'pending'  → leave transaction pending (DO NOT refund), store
+ *                       provider OrderID for later polling
+ *        – 'failed'   → DB transaction: credit wallet back + write 'reversal'
+ *                       ledger entry + mark transaction failed
  *
- * The frontend MUST show success UI only when this endpoint returns success:true.
- * The ClubKonnect routes remain available for read-only ops (balance, data-plans)
- * but their mutating endpoints are now protected by requireAuth as well.
+ * Security:
+ *   - Credentials never sent to frontend.
+ *   - Price validated server-side; client-submitted price is rejected on mismatch.
+ *   - Wallet debit and ledger entry are always atomic.
+ *   - Duplicate requests detected by reference UNIQUE constraint +
+ *     handleIdempotency() which re-uses the Idempotency-Key header.
  */
 import { Router, type Request, type Response } from 'express';
 import { eq, and } from 'drizzle-orm';
@@ -25,21 +32,15 @@ import { sql } from 'drizzle-orm';
 import { db } from '@workspace/db';
 import { walletsTable, transactionsTable } from '@workspace/db/schema';
 import * as ck from '../lib/clubkonnect.js';
+import { normalizeCKStatus } from '../lib/clubkonnect.js';
 import { requireAuth } from './user.js';
 import { logger } from '../lib/logger.js';
 import { createNotification } from '../lib/notifications.js';
+import { getIo } from '../lib/socket.js';
+
+const router = Router();
 
 // ── Idempotency helper ────────────────────────────────────────────────────────
-//
-// Reads an existing transaction by (userId, idempotencyKey).
-// Returns the appropriate early response if a matching record exists:
-//   success  → return the original success payload (no second debit)
-//   pending  → return pending status (still processing or stale in-flight)
-//   failed   → return 422 so the client knows to issue a fresh request
-//
-// Returns `true` when a response was sent and the caller should return early.
-// Returns `false` when no matching record was found (proceed normally).
-//
 async function handleIdempotency(
   res: Response,
   userId: string,
@@ -56,22 +57,15 @@ async function handleIdempotency(
       ),
     );
 
-  if (!existing) return false; // no match — caller proceeds normally
+  if (!existing) return false;
 
-  logger.info(
-    { userId, idempotencyKey, status: existing.status },
-    'Idempotent request — returning existing transaction',
-  );
+  logger.info({ userId, idempotencyKey, status: existing.status }, 'Idempotent request — existing transaction found');
 
   if (existing.status === 'success') {
-    const [wallet] = await db
-      .select()
-      .from(walletsTable)
-      .where(eq(walletsTable.userId, userId));
-
+    const [wallet] = await db.select().from(walletsTable).where(eq(walletsTable.userId, userId));
     res.json({
       success:    true,
-      idempotent: true,           // lets the client know this was a dedup
+      idempotent: true,
       requestId:  idempotencyKey,
       txnId:      existing.id,
       balance:    wallet?.balance ?? '0',
@@ -81,33 +75,29 @@ async function handleIdempotency(
   }
 
   if (existing.status === 'pending') {
-    // Transaction is still in-flight (or stuck). Don't create a duplicate.
     res.status(200).json({
-      success:  false,
-      pending:  true,
+      success:   false,
+      pending:   true,
       requestId: idempotencyKey,
-      txnId:    existing.id,
-      error:    'Transaction is still being processed. Please check your transaction history.',
+      txnId:     existing.id,
+      error:     'Transaction is still being processed. Please check your transaction history.',
     });
     return true;
   }
 
-  // failed — wallet was already compensated. Signal client to use a new key.
+  // failed — signal client to issue a fresh request with a new key
   res.status(422).json({
-    success:  false,
-    error:    'previous_attempt_failed',
+    success:   false,
+    error:     'previous_attempt_failed',
     requestId: idempotencyKey,
   });
   return true;
 }
 
-const router = Router();
-
 // ── GET /api/purchase/pricing — Public: active pricing rules for frontend ─────
-// No auth required — the frontend uses these to display current plan prices.
 router.get('/pricing', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const rows = await db.execute(sql`
+    const result = await db.execute(sql`
       SELECT
         service_type, provider, network, plan_id, plan_name,
         selling_price, enabled
@@ -115,7 +105,7 @@ router.get('/pricing', async (_req: Request, res: Response): Promise<void> => {
       WHERE enabled = true
       ORDER BY service_type, provider, network, plan_name
     `);
-    res.json({ pricing: rows.rows });
+    res.json({ pricing: result.rows });
   } catch (err) {
     logger.error({ err }, 'GET /purchase/pricing failed');
     res.status(500).json({ error: 'Failed to load pricing.' });
@@ -125,17 +115,20 @@ router.get('/pricing', async (_req: Request, res: Response): Promise<void> => {
 router.use(requireAuth);
 
 // ── Price validation helper ────────────────────────────────────────────────────
-// Looks up the active selling price for a data plan by planCode + network.
-// Returns { valid: true, sellingPrice, costPrice } or { valid: false, error }.
-async function validateDataPrice(planCode: string, network: string, submittedPrice: number): Promise<
-  | { valid: true; sellingPrice: number; costPrice: number }
+async function validateDataPrice(
+  planCode: string,
+  network: string,
+  submittedPrice: number,
+): Promise<
+  | { valid: true;  sellingPrice: number; costPrice: number }
   | { valid: false; error: string; expectedPrice?: number }
 > {
   try {
-    const [rule] = await db.execute<{
+    // node-postgres adapter returns pg.QueryResult — access rows via .rows[0]
+    const priceResult = await db.execute<{
       selling_price: string;
-      cost_price: string;
-      enabled: boolean;
+      cost_price:    string;
+      enabled:       boolean;
     }>(sql`
       SELECT selling_price, cost_price, enabled
       FROM pricing_rules
@@ -144,10 +137,12 @@ async function validateDataPrice(planCode: string, network: string, submittedPri
         AND service_type = 'data'
       LIMIT 1
     `);
+    const rule = priceResult.rows[0];
 
     if (!rule) {
-      // No pricing rule configured — allow purchase (unmanaged plan)
-      return { valid: true, sellingPrice: submittedPrice, costPrice: submittedPrice };
+      // No pricing rule configured — block (fail-closed when no rule exists)
+      logger.warn({ planCode, network }, 'No pricing rule found for plan — blocking purchase');
+      return { valid: false, error: 'This data plan is not currently configured. Please contact support.' };
     }
 
     if (!rule.enabled) {
@@ -157,24 +152,144 @@ async function validateDataPrice(planCode: string, network: string, submittedPri
     const sellingPrice = Number(rule.selling_price);
     const costPrice    = Number(rule.cost_price);
 
-    // Allow ±₦1 tolerance to account for floating-point rounding on the client.
+    // Allow ±₦1 tolerance to account for floating-point rounding on the client
     if (Math.abs(sellingPrice - submittedPrice) > 1) {
       return { valid: false, error: 'price_mismatch', expectedPrice: sellingPrice };
     }
 
     return { valid: true, sellingPrice, costPrice };
   } catch (err) {
-    // FAIL CLOSED — if we cannot verify the price, block the purchase.
-    // Never silently allow a purchase at an unverified price.
+    // FAIL CLOSED — DB error = block purchase (never allow at unverified price)
     logger.error({ err, planCode }, 'Price validation DB lookup failed — blocking purchase (fail-closed)');
-    return { valid: false, error: 'Price verification is temporarily unavailable. Please try again in a moment.' };
+    return { valid: false, error: 'Price verification is temporarily unavailable. Please try again.' };
   }
 }
 
+// ── Wallet debit + ledger helper ──────────────────────────────────────────────
+//
+// Runs inside a DB transaction (tx). Locks the wallet row, checks balance,
+// debits, inserts the transaction record, and writes a wallet_ledger 'debit' entry.
+// All four operations are atomic.
+//
+async function debitWalletAndRecord(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  opts: {
+    userId:      string;
+    amount:      number;
+    requestId:   string;
+    type:        'airtime' | 'data';
+    service:     string;
+    provider:    string;
+    description: string;
+    costPrice:   number;
+  },
+): Promise<{ txnId: string; newBalance: string; balanceBefore: string }> {
+  const [wallet] = await tx
+    .select()
+    .from(walletsTable)
+    .where(eq(walletsTable.userId, opts.userId))
+    .for('update');
+
+  if (!wallet) throw Object.assign(new Error('Wallet not found'), { code: 'NOT_FOUND' });
+
+  const balanceBefore = wallet.balance;
+  const current       = parseFloat(balanceBefore);
+
+  if (current < opts.amount) {
+    throw Object.assign(new Error('Insufficient funds'), { code: 'INSUFFICIENT_FUNDS' });
+  }
+
+  const newBalance = (current - opts.amount).toFixed(2);
+
+  await tx.update(walletsTable)
+    .set({ balance: newBalance, updatedAt: new Date() })
+    .where(eq(walletsTable.userId, opts.userId));
+
+  // Raw SQL insert so we can include cost_price and all required columns.
+  // node-postgres adapter returns pg.QueryResult — use .rows[0] to get the row.
+  const txnInsertResult = await tx.execute<{ id: string }>(sql`
+    INSERT INTO transactions
+      (user_id, type, service, provider, amount, cost_price,
+       status, description, payment_method, reference, updated_at)
+    VALUES
+      (${opts.userId}::uuid, ${opts.type}::txn_type, ${opts.service}, ${opts.provider},
+       ${opts.amount.toFixed(2)}, ${opts.costPrice.toFixed(2)},
+       'pending'::txn_status, ${opts.description}, 'Wallet', ${opts.requestId}, NOW())
+    RETURNING id
+  `);
+
+  const txnId = txnInsertResult.rows[0].id;
+
+  // Wallet ledger — debit entry (atomic with wallet debit)
+  await tx.execute(sql`
+    INSERT INTO wallet_ledger
+      (user_id, type, amount, balance_before, balance_after,
+       reference, related_transaction_id, reason)
+    VALUES
+      (${opts.userId}::uuid, 'debit', ${opts.amount.toFixed(2)},
+       ${balanceBefore}, ${newBalance},
+       ${opts.requestId + '-debit'}, ${txnId}::uuid,
+       ${`${opts.service} purchase via wallet`})
+    ON CONFLICT (reference) DO NOTHING
+  `);
+
+  return { txnId, newBalance, balanceBefore };
+}
+
+// ── Wallet refund + ledger helper ─────────────────────────────────────────────
+//
+// Runs inside its own DB transaction. Credits the wallet back after a failed
+// vendor call, writes a 'reversal' ledger entry, marks the transaction failed.
+//
+async function refundWalletAndMarkFailed(opts: {
+  userId:    string;
+  txnId:     string;
+  amount:    number;
+  requestId: string;
+}): Promise<string> {
+  const { newBalance } = await db.transaction(async (tx) => {
+    // Drizzle ORM .select() correctly returns an array with node-postgres adapter
+    const [wallet] = await tx
+      .select()
+      .from(walletsTable)
+      .where(eq(walletsTable.userId, opts.userId))
+      .for('update');
+
+    if (!wallet) throw new Error('Wallet not found during refund');
+
+    const balanceBefore = wallet.balance;
+    const restored      = (parseFloat(balanceBefore) + opts.amount).toFixed(2);
+
+    await tx.update(walletsTable)
+      .set({ balance: restored, updatedAt: new Date() })
+      .where(eq(walletsTable.userId, opts.userId));
+
+    await tx.execute(sql`
+      UPDATE transactions
+      SET status = 'failed', updated_at = NOW()
+      WHERE id = ${opts.txnId}::uuid
+    `);
+
+    // Wallet ledger — reversal entry
+    await tx.execute(sql`
+      INSERT INTO wallet_ledger
+        (user_id, type, amount, balance_before, balance_after,
+         reference, related_transaction_id, reason)
+      VALUES
+        (${opts.userId}::uuid, 'reversal', ${opts.amount.toFixed(2)},
+         ${balanceBefore}, ${restored},
+         ${opts.requestId + '-reversal'}, ${opts.txnId}::uuid,
+         'Vendor delivery failed — automatic wallet refund')
+      ON CONFLICT (reference) DO NOTHING
+    `);
+
+    return { newBalance: restored };
+  });
+
+  return newBalance;
+}
+
 // ── POST /api/purchase/airtime ────────────────────────────────────────────────
-// Body: { network, phone, amount }
-// Header: Idempotency-Key (optional) — if provided, duplicate requests return the
-//   existing transaction instead of charging the wallet a second time.
 router.post('/airtime', async (req: Request, res: Response): Promise<void> => {
   const { network, phone, amount } = req.body as {
     network?: string; phone?: string; amount?: number;
@@ -184,160 +299,184 @@ router.post('/airtime', async (req: Request, res: Response): Promise<void> => {
     res.status(400).json({ error: 'network, phone, and amount are required.' });
     return;
   }
+
   const numericAmount = Number(amount);
-  if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-    res.status(400).json({ error: 'amount must be a positive number.' });
+  if (!Number.isFinite(numericAmount) || numericAmount < 50) {
+    res.status(400).json({ error: 'Minimum airtime amount is ₦50.' });
+    return;
+  }
+  if (numericAmount > 50_000) {
+    res.status(400).json({ error: 'Maximum single airtime purchase is ₦50,000.' });
     return;
   }
 
-  const userId          = req.session.userId!;
-  const idempotencyKey  = (req.headers['idempotency-key'] ?? '') as string;
+  // Phone number: 10–11 digit Nigerian number
+  const cleanPhone = phone.replace(/\D/g, '');
+  if (cleanPhone.length < 10 || cleanPhone.length > 11) {
+    res.status(400).json({ error: 'Please enter a valid Nigerian phone number.' });
+    return;
+  }
 
-  // ── Idempotency check: return existing result for duplicate requests ───────
+  // Validate network
+  try { ck.getNetworkCode(network); } catch {
+    res.status(400).json({ error: 'Invalid network. Use: mtn, glo, airtel, or 9mobile.' });
+    return;
+  }
+
+  const userId         = req.session.userId!;
+  const idempotencyKey = (req.headers['idempotency-key'] ?? '') as string;
+
   if (idempotencyKey) {
     try {
-      const handled = await handleIdempotency(res, userId, idempotencyKey, { network, phone, amount: numericAmount });
+      const handled = await handleIdempotency(res, userId, idempotencyKey, { network, phone: cleanPhone, amount: numericAmount });
       if (handled) return;
     } catch (err) {
-      logger.error({ err, idempotencyKey }, 'Idempotency check failed — proceeding with fresh request');
+      logger.error({ err, idempotencyKey }, 'Idempotency check failed — proceeding');
     }
   }
 
-  // Use the provided key as the reference so retries can be correlated.
-  // Fall back to a fresh reference when no key is provided (backward-compatible).
   const requestId = idempotencyKey || `GY-AIR-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 
-  // ── Step 1: Atomic wallet debit + pending transaction ────────────────────
+  // ── Step 1: Atomic wallet debit + pending transaction + ledger ────────────
   let txnId: string;
   let newBalance: string;
 
   try {
-    const result = await db.transaction(async (tx) => {
-      const [wallet] = await tx
-        .select()
-        .from(walletsTable)
-        .where(eq(walletsTable.userId, userId))
-        .for('update');
-
-      if (!wallet) throw Object.assign(new Error('Wallet not found'), { code: 'NOT_FOUND' });
-
-      const current = parseFloat(wallet.balance);
-      if (current < numericAmount) {
-        throw Object.assign(new Error('Insufficient funds'), { code: 'INSUFFICIENT_FUNDS' });
-      }
-
-      const nb = (current - numericAmount).toFixed(2);
-      await tx.update(walletsTable)
-        .set({ balance: nb, updatedAt: new Date() })
-        .where(eq(walletsTable.userId, userId));
-
-      const [txn] = await tx.insert(transactionsTable).values({
+    const result = await db.transaction(async (tx) =>
+      debitWalletAndRecord(tx, {
         userId,
-        type:          'airtime',
-        service:       'Airtime',
-        provider:      network.toUpperCase(),
-        amount:        numericAmount.toFixed(2),
-        status:        'pending',
-        description:   `${network.toUpperCase()} Airtime`,
-        paymentMethod: 'Wallet',
-        reference:     requestId,
-      }).returning();
-
-      return { txnId: txn!.id, newBalance: nb };
-    });
-
-    txnId     = result.txnId;
+        amount:      numericAmount,
+        requestId,
+        type:        'airtime',
+        service:     'Airtime',
+        provider:    network.toUpperCase(),
+        description: `${network.toUpperCase()} Airtime → ${cleanPhone}`,
+        costPrice:   numericAmount, // No airtime markup — cost = selling price
+      }),
+    );
+    txnId      = result.txnId;
     newBalance = result.newBalance;
   } catch (err: unknown) {
     const e = err as { code?: string };
-    if (e.code === 'NOT_FOUND')          { res.status(404).json({ error: 'Wallet not found.' }); return; }
-    if (e.code === 'INSUFFICIENT_FUNDS') { res.status(402).json({ error: 'insufficient_funds' }); return; }
-    logger.error({ err }, 'purchase/airtime debit transaction failed');
+    if (e.code === 'NOT_FOUND')         { res.status(404).json({ error: 'Wallet not found.' }); return; }
+    if (e.code === 'INSUFFICIENT_FUNDS'){ res.status(402).json({ error: 'insufficient_funds' }); return; }
+    logger.error({ err }, 'purchase/airtime debit failed');
     res.status(500).json({ error: 'Failed to process purchase.' });
     return;
   }
 
-  // ── Step 2: Call vendor ───────────────────────────────────────────────────
-  let vendorSuccess = false;
-  let vendorResult: Record<string, unknown> = {};
+  // ── Step 2: Call ClubKonnect ──────────────────────────────────────────────
+  let vendorResult: ck.CKPurchaseResult = { status: 'unsuccessful' };
 
   try {
-    const result = await ck.purchaseAirtime({ network, phone, amount: numericAmount, requestId });
-    vendorSuccess = result.status?.toLowerCase() === 'successful';
-    vendorResult  = result as unknown as Record<string, unknown>;
+    vendorResult = await ck.purchaseAirtime({ network, phone: cleanPhone, amount: numericAmount, requestId });
   } catch (err: unknown) {
-    logger.error({ err, requestId }, 'ClubKonnect airtime call failed');
-    vendorSuccess = false;
+    logger.error({ err, requestId }, 'ClubKonnect airtime call threw exception');
+    // Leave vendorResult as 'unsuccessful' — triggers refund below
   }
 
-  // ── Step 3: Compensate or confirm ─────────────────────────────────────────
-  if (vendorSuccess) {
-    await db.update(transactionsTable)
-      .set({ status: 'success' })
-      .where(eq(transactionsTable.id, txnId));
+  const normalizedStatus = normalizeCKStatus(vendorResult.status);
+  const providerRef      = vendorResult.OrderID ?? vendorResult.ident ?? null;
 
-    logger.info({ userId, requestId, amount: numericAmount }, 'Airtime purchase succeeded');
+  logger.info({ userId, requestId, normalizedStatus, vendorStatus: vendorResult.status, providerRef }, 'Airtime vendor response');
+
+  // ── Step 3: Handle vendor outcome ─────────────────────────────────────────
+  if (normalizedStatus === 'success') {
+    // Mark success + store provider reference
+    await db.execute(sql`
+      UPDATE transactions
+      SET status = 'success',
+          updated_at = NOW(),
+          provider_reference = ${providerRef},
+          metadata = jsonb_build_object(
+            'vendorStatus', ${vendorResult.status},
+            'providerRef',  ${providerRef},
+            'completedAt',  NOW()::text
+          )
+      WHERE id = ${txnId}::uuid
+    `);
+
+    // Real-time balance update via Socket.io
+    try { getIo().to(`user:${userId}`).emit('wallet:updated', { balance: newBalance }); } catch { /* non-fatal */ }
 
     await createNotification(userId, {
       type:  'transaction',
-      title: 'Airtime Sent',
-      body:  `₦${numericAmount.toLocaleString()} of ${network.toUpperCase()} airtime was delivered to ${phone}.`,
+      title: 'Airtime Sent ✅',
+      body:  `₦${numericAmount.toLocaleString('en-NG')} of ${network.toUpperCase()} airtime was delivered to ${cleanPhone}.`,
       refId: txnId,
     });
 
     res.json({
-      success:   true,
+      success:      true,
       requestId,
-      balance:   newBalance,
+      balance:      newBalance,
       txnId,
       network,
-      phone,
-      amount:    numericAmount,
-      vendorStatus: vendorResult['status'],
+      phone:        cleanPhone,
+      amount:       numericAmount,
+      providerRef,
+      vendorStatus: vendorResult.status,
     });
+
+  } else if (normalizedStatus === 'pending') {
+    // Vendor is still processing — DO NOT refund. Wallet stays debited.
+    // The stuck-transaction recovery job will poll CK status later.
+    await db.execute(sql`
+      UPDATE transactions
+      SET provider_reference = ${providerRef},
+          updated_at = NOW(),
+          metadata = jsonb_build_object(
+            'vendorStatus',     ${vendorResult.status},
+            'providerRef',      ${providerRef},
+            'pendingMarkedAt',  NOW()::text,
+            'requiresPolling',  true
+          )
+      WHERE id = ${txnId}::uuid
+    `);
+
+    logger.info({ userId, requestId, providerRef }, 'Airtime purchase pending — awaiting vendor confirmation');
+
+    res.json({
+      success:     false,
+      pending:     true,
+      requestId,
+      txnId,
+      balance:     newBalance,
+      providerRef,
+      vendorStatus: vendorResult.status,
+      message:     'Your airtime purchase is being processed. Your wallet will be refunded automatically if delivery fails.',
+    });
+
   } else {
-    // Credit wallet back and mark transaction failed
-    await db.transaction(async (tx) => {
-      const [wallet] = await tx
-        .select()
-        .from(walletsTable)
-        .where(eq(walletsTable.userId, userId))
-        .for('update');
+    // Vendor returned failure — refund wallet
+    try {
+      const refundedBalance = await refundWalletAndMarkFailed({ userId, txnId, amount: numericAmount, requestId });
+      newBalance = refundedBalance;
+    } catch (refundErr) {
+      logger.error({ refundErr, txnId }, 'CRITICAL: airtime refund failed — manual intervention required');
+    }
 
-      if (wallet) {
-        const restored = (parseFloat(wallet.balance) + numericAmount).toFixed(2);
-        await tx.update(walletsTable)
-          .set({ balance: restored, updatedAt: new Date() })
-          .where(eq(walletsTable.userId, userId));
-        newBalance = restored;
-      }
-
-      await tx.update(transactionsTable)
-        .set({ status: 'failed' })
-        .where(eq(transactionsTable.id, txnId));
-    });
-
-    logger.warn({ userId, requestId }, 'Airtime purchase failed — wallet reversed');
+    logger.warn({ userId, requestId, vendorStatus: vendorResult.status }, 'Airtime purchase failed — wallet reversed');
 
     await createNotification(userId, {
       type:  'transaction',
       title: 'Airtime Purchase Failed',
-      body:  `₦${numericAmount.toLocaleString()} of ${network.toUpperCase()} airtime could not be delivered. Your wallet has been refunded.`,
+      body:  `₦${numericAmount.toLocaleString('en-NG')} of ${network.toUpperCase()} airtime could not be delivered to ${cleanPhone}. Your wallet has been refunded.`,
       refId: txnId,
     });
 
     res.status(422).json({
-      success:   false,
+      success:      false,
       requestId,
-      balance:   newBalance,
-      error:     `Vendor returned: ${vendorResult['status'] ?? 'failed'}`,
+      balance:      newBalance,
+      txnId,
+      vendorStatus: vendorResult.status,
+      error:        `Vendor returned: ${vendorResult.status || 'failed'}`,
     });
   }
 });
 
 // ── POST /api/purchase/data ───────────────────────────────────────────────────
-// Body: { network, phone, planCode, planName, planPrice }
-// Header: Idempotency-Key (optional) — see /airtime for semantics.
 router.post('/data', async (req: Request, res: Response): Promise<void> => {
   const { network, phone, planCode, planName, planPrice } = req.body as {
     network?: string; phone?: string; planCode?: string; planName?: string; planPrice?: string;
@@ -347,9 +486,22 @@ router.post('/data', async (req: Request, res: Response): Promise<void> => {
     res.status(400).json({ error: 'network, phone, planCode, and planPrice are required.' });
     return;
   }
+
   const numericAmount = parseFloat(planPrice);
   if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
     res.status(400).json({ error: 'planPrice must be a positive number.' });
+    return;
+  }
+
+  // Validate network
+  try { ck.getNetworkCode(network); } catch {
+    res.status(400).json({ error: 'Invalid network. Use: mtn, glo, airtel, or 9mobile.' });
+    return;
+  }
+
+  const cleanPhone = phone.replace(/\D/g, '');
+  if (cleanPhone.length < 10 || cleanPhone.length > 11) {
+    res.status(400).json({ error: 'Please enter a valid Nigerian phone number.' });
     return;
   }
 
@@ -357,12 +509,12 @@ router.post('/data', async (req: Request, res: Response): Promise<void> => {
   const idempotencyKey = (req.headers['idempotency-key'] ?? '') as string;
 
   // ── Price validation against admin-configured pricing rules ──────────────
-  const priceCheck = await validateDataPrice(planCode!, network!, numericAmount);
+  const priceCheck = await validateDataPrice(planCode, network, numericAmount);
   if (!priceCheck.valid) {
     if (priceCheck.error === 'price_mismatch') {
       res.status(409).json({
-        error: 'price_mismatch',
-        message: `Plan price has changed. Expected ₦${priceCheck.expectedPrice?.toLocaleString()}.`,
+        error:         'price_mismatch',
+        message:       `Plan price has changed. Expected ₦${priceCheck.expectedPrice?.toLocaleString('en-NG')}.`,
         expectedPrice: priceCheck.expectedPrice,
       });
     } else {
@@ -370,150 +522,209 @@ router.post('/data', async (req: Request, res: Response): Promise<void> => {
     }
     return;
   }
+
   const confirmedAmount = priceCheck.sellingPrice;
   const costPrice       = priceCheck.costPrice;
+  const profit          = confirmedAmount - costPrice;
 
-  // ── Idempotency check: return existing result for duplicate requests ───────
   if (idempotencyKey) {
     try {
-      const handled = await handleIdempotency(res, userId, idempotencyKey, { network, phone, amount: confirmedAmount, planName: planName ?? planCode });
+      const handled = await handleIdempotency(res, userId, idempotencyKey, {
+        network, phone: cleanPhone, amount: confirmedAmount, planName: planName ?? planCode,
+      });
       if (handled) return;
     } catch (err) {
-      logger.error({ err, idempotencyKey }, 'Idempotency check failed — proceeding with fresh request');
+      logger.error({ err, idempotencyKey }, 'Idempotency check failed — proceeding');
     }
   }
 
   const requestId = idempotencyKey || `GY-DAT-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 
-  // ── Step 1: Atomic wallet debit + pending transaction ────────────────────
+  // ── Step 1: Atomic wallet debit + pending transaction + ledger ────────────
   let txnId: string;
   let newBalance: string;
 
   try {
-    const result = await db.transaction(async (tx) => {
-      const [wallet] = await tx
-        .select()
-        .from(walletsTable)
-        .where(eq(walletsTable.userId, userId))
-        .for('update');
-
-      if (!wallet) throw Object.assign(new Error('Wallet not found'), { code: 'NOT_FOUND' });
-
-      const current = parseFloat(wallet.balance);
-      if (current < confirmedAmount) {
-        throw Object.assign(new Error('Insufficient funds'), { code: 'INSUFFICIENT_FUNDS' });
-      }
-
-      const nb = (current - confirmedAmount).toFixed(2);
-      await tx.update(walletsTable)
-        .set({ balance: nb, updatedAt: new Date() })
-        .where(eq(walletsTable.userId, userId));
-
-      // Insert transaction with cost_price for profitability tracking
-      const [txn] = await tx.execute(sql`
-        INSERT INTO transactions
-          (user_id, type, service, provider, amount, cost_price, status, description, payment_method, reference)
-        VALUES
-          (${userId}::uuid, 'data', 'Data', ${network!.toUpperCase()},
-           ${confirmedAmount.toFixed(2)}, ${costPrice.toFixed(2)},
-           'pending', ${`${network!.toUpperCase()} ${planName ?? planCode}`},
-           'Wallet', ${requestId})
-        RETURNING id
-      `);
-
-      return { txnId: (txn as unknown as { id: string }).id, newBalance: nb };
-    });
-
+    const result = await db.transaction(async (tx) =>
+      debitWalletAndRecord(tx, {
+        userId,
+        amount:      confirmedAmount,
+        requestId,
+        type:        'data',
+        service:     'Data',
+        provider:    network.toUpperCase(),
+        description: `${network.toUpperCase()} ${planName ?? planCode} → ${cleanPhone}`,
+        costPrice,
+      }),
+    );
     txnId      = result.txnId;
     newBalance = result.newBalance;
   } catch (err: unknown) {
     const e = err as { code?: string };
-    if (e.code === 'NOT_FOUND')          { res.status(404).json({ error: 'Wallet not found.' }); return; }
-    if (e.code === 'INSUFFICIENT_FUNDS') { res.status(402).json({ error: 'insufficient_funds' }); return; }
-    logger.error({ err }, 'purchase/data debit transaction failed');
+    if (e.code === 'NOT_FOUND')         { res.status(404).json({ error: 'Wallet not found.' }); return; }
+    if (e.code === 'INSUFFICIENT_FUNDS'){ res.status(402).json({ error: 'insufficient_funds' }); return; }
+    logger.error({ err }, 'purchase/data debit failed');
     res.status(500).json({ error: 'Failed to process purchase.' });
     return;
   }
 
-  // ── Step 2: Call vendor ───────────────────────────────────────────────────
-  let vendorSuccess = false;
-  let resolvedPlanName = planName ?? planCode;
-  let vendorResult: Record<string, unknown> = {};
+  // ── Step 2: Call ClubKonnect ──────────────────────────────────────────────
+  let vendorResult: ck.CKPurchaseResult = { status: 'unsuccessful' };
 
   try {
-    const result = await ck.purchaseData({ network, phone, planCode, requestId });
-    vendorSuccess      = result.status?.toLowerCase() === 'successful';
-    resolvedPlanName   = result.DataPlanName ?? planName ?? planCode;
-    vendorResult       = result as unknown as Record<string, unknown>;
+    vendorResult = await ck.purchaseData({ network, phone: cleanPhone, planCode, requestId });
   } catch (err: unknown) {
-    logger.error({ err, requestId }, 'ClubKonnect data call failed');
-    vendorSuccess = false;
+    logger.error({ err, requestId }, 'ClubKonnect data call threw exception');
   }
 
-  // ── Step 3: Compensate or confirm ─────────────────────────────────────────
-  if (vendorSuccess) {
-    await db.update(transactionsTable)
-      .set({ status: 'success', description: `${network.toUpperCase()} ${resolvedPlanName}` })
-      .where(eq(transactionsTable.id, txnId));
+  const normalizedStatus = normalizeCKStatus(vendorResult.status);
+  const providerRef      = vendorResult.OrderID ?? vendorResult.ident ?? null;
+  const resolvedPlanName = vendorResult.DataPlanName ?? planName ?? planCode;
 
-    logger.info({ userId, requestId, amount: confirmedAmount, planCode }, 'Data purchase succeeded');
+  logger.info({
+    userId, requestId, normalizedStatus, vendorStatus: vendorResult.status,
+    providerRef, planCode, costPrice, sellingPrice: confirmedAmount, profit,
+  }, 'Data vendor response');
+
+  // ── Step 3: Handle vendor outcome ─────────────────────────────────────────
+  if (normalizedStatus === 'success') {
+    await db.execute(sql`
+      UPDATE transactions
+      SET status = 'success',
+          updated_at = NOW(),
+          description = ${`${network.toUpperCase()} ${resolvedPlanName}`},
+          provider_reference = ${providerRef},
+          metadata = jsonb_build_object(
+            'vendorStatus', ${vendorResult.status},
+            'providerRef',  ${providerRef},
+            'planCode',     ${planCode},
+            'planName',     ${resolvedPlanName},
+            'costPrice',    ${costPrice},
+            'sellingPrice', ${confirmedAmount},
+            'profit',       ${profit},
+            'completedAt',  NOW()::text
+          )
+      WHERE id = ${txnId}::uuid
+    `);
+
+    try { getIo().to(`user:${userId}`).emit('wallet:updated', { balance: newBalance }); } catch { /* non-fatal */ }
 
     await createNotification(userId, {
       type:  'transaction',
-      title: 'Data Purchase Successful',
-      body:  `${resolvedPlanName} was delivered to ${phone}.`,
+      title: 'Data Purchase Successful ✅',
+      body:  `${resolvedPlanName} has been delivered to ${cleanPhone}.`,
       refId: txnId,
     });
 
     res.json({
-      success:   true,
+      success:      true,
       requestId,
-      balance:   newBalance,
+      balance:      newBalance,
       txnId,
       network,
-      phone,
-      amount:    confirmedAmount,
-      planName:  resolvedPlanName,
-      vendorStatus: vendorResult['status'],
+      phone:        cleanPhone,
+      amount:       confirmedAmount,
+      planName:     resolvedPlanName,
+      providerRef,
+      vendorStatus: vendorResult.status,
     });
+
+  } else if (normalizedStatus === 'pending') {
+    // Vendor acknowledged but hasn't delivered yet — DO NOT refund
+    await db.execute(sql`
+      UPDATE transactions
+      SET provider_reference = ${providerRef},
+          updated_at = NOW(),
+          metadata = jsonb_build_object(
+            'vendorStatus',    ${vendorResult.status},
+            'providerRef',     ${providerRef},
+            'planCode',        ${planCode},
+            'planName',        ${resolvedPlanName},
+            'costPrice',       ${costPrice},
+            'sellingPrice',    ${confirmedAmount},
+            'pendingMarkedAt', NOW()::text,
+            'requiresPolling', true
+          )
+      WHERE id = ${txnId}::uuid
+    `);
+
+    logger.info({ userId, requestId, providerRef }, 'Data purchase pending — awaiting vendor confirmation');
+
+    res.json({
+      success:      false,
+      pending:      true,
+      requestId,
+      txnId,
+      balance:      newBalance,
+      planName:     resolvedPlanName,
+      providerRef,
+      vendorStatus: vendorResult.status,
+      message:      'Your data purchase is being processed. Your wallet will be refunded automatically if delivery fails.',
+    });
+
   } else {
-    // Credit wallet back and mark transaction failed
-    await db.transaction(async (tx) => {
-      const [wallet] = await tx
-        .select()
-        .from(walletsTable)
-        .where(eq(walletsTable.userId, userId))
-        .for('update');
+    // Vendor failure — refund wallet
+    try {
+      const refundedBalance = await refundWalletAndMarkFailed({ userId, txnId, amount: confirmedAmount, requestId });
+      newBalance = refundedBalance;
+    } catch (refundErr) {
+      logger.error({ refundErr, txnId }, 'CRITICAL: data refund failed — manual intervention required');
+    }
 
-      if (wallet) {
-        const restored = (parseFloat(wallet.balance) + confirmedAmount).toFixed(2);
-        await tx.update(walletsTable)
-          .set({ balance: restored, updatedAt: new Date() })
-          .where(eq(walletsTable.userId, userId));
-        newBalance = restored;
-      }
-
-      await tx.update(transactionsTable)
-        .set({ status: 'failed' })
-        .where(eq(transactionsTable.id, txnId));
-    });
-
-    logger.warn({ userId, requestId }, 'Data purchase failed — wallet reversed');
+    logger.warn({ userId, requestId, vendorStatus: vendorResult.status }, 'Data purchase failed — wallet reversed');
 
     await createNotification(userId, {
       type:  'transaction',
       title: 'Data Purchase Failed',
-      body:  `${resolvedPlanName ?? planCode} could not be delivered to ${phone}. Your wallet has been refunded.`,
+      body:  `${resolvedPlanName ?? planCode} could not be delivered to ${cleanPhone}. Your wallet has been refunded.`,
       refId: txnId,
     });
 
     res.status(422).json({
-      success:   false,
+      success:      false,
       requestId,
-      balance:   newBalance,
-      error:     `Vendor returned: ${vendorResult['status'] ?? 'failed'}`,
+      balance:      newBalance,
+      txnId,
+      vendorStatus: vendorResult.status,
+      error:        `Vendor returned: ${vendorResult.status || 'failed'}`,
     });
   }
+});
+
+// ── GET /api/purchase/status/:requestId — Check status of a pending purchase ──
+// Allows frontend to poll for the outcome of a 'pending' vendor response.
+router.get('/status/:requestId', async (req: Request, res: Response): Promise<void> => {
+  const { requestId } = req.params as { requestId: string };
+  const userId        = req.session.userId!;
+
+  const [txn] = await db
+    .select()
+    .from(transactionsTable)
+    .where(
+      and(
+        eq(transactionsTable.reference, requestId),
+        eq(transactionsTable.userId, userId),
+      ),
+    );
+
+  if (!txn) {
+    res.status(404).json({ error: 'Transaction not found.' });
+    return;
+  }
+
+  const [wallet] = await db.select().from(walletsTable).where(eq(walletsTable.userId, userId));
+
+  res.json({
+    status:       txn.status,
+    requestId,
+    txnId:        txn.id,
+    type:         txn.type,
+    amount:       txn.amount,
+    description:  txn.description,
+    providerRef:  (txn as unknown as { provider_reference?: string }).provider_reference ?? null,
+    balance:      wallet?.balance ?? '0',
+    createdAt:    txn.createdAt,
+  });
 });
 
 export default router;

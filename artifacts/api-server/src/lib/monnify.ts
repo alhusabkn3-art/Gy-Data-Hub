@@ -4,20 +4,20 @@
  * Sandbox base URL: https://sandbox.monnify.com
  * Production base URL: https://api.monnify.com (set MONNIFY_BASE_URL in prod)
  *
- * Credentials are read from environment variables at call time — never bundled
- * into frontend code or logged.
+ * Security model:
+ *   - All credentials read from env vars at call time, never bundled or logged.
+ *   - Token cache deduplicates concurrent refresh requests via a mutex Promise.
+ *   - All fetch calls use AbortController timeouts (15 s for auth, 30 s for others).
+ *   - Webhook signatures verified with HMAC-SHA512 + constant-time comparison.
  */
 import crypto from 'node:crypto';
+import { logger } from './logger.js';
 
-const BASE_URL = process.env['MONNIFY_BASE_URL'] ?? 'https://sandbox.monnify.com';
+const BASE_URL   = process.env['MONNIFY_BASE_URL'] ?? 'https://sandbox.monnify.com';
+const TIMEOUT_AUTH = 15_000; // ms — token fetch
+const TIMEOUT_API  = 30_000; // ms — initialize/verify
 
-// ── Token cache ───────────────────────────────────────────────────────────────
-// Monnify tokens expire in 3600 seconds. We re-fetch 60s before expiry.
-interface TokenCache {
-  accessToken: string;
-  expiresAt:   number; // ms timestamp
-}
-let tokenCache: TokenCache | null = null;
+// ── Credentials ───────────────────────────────────────────────────────────────
 
 function creds() {
   const apiKey       = process.env['MONNIFY_API_KEY'];
@@ -29,23 +29,45 @@ function creds() {
   return { apiKey, secretKey, contractCode };
 }
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
+// ── Timeout-aware fetch ───────────────────────────────────────────────────────
 
-export async function getAccessToken(): Promise<string> {
-  if (tokenCache && tokenCache.expiresAt > Date.now() + 60_000) {
-    return tokenCache.accessToken;
-  }
+function fetchTimeout(url: string, options: RequestInit, ms: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort();
+  }, ms);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
 
+// ── Token cache + mutex ───────────────────────────────────────────────────────
+//
+// A mutex Promise deduplicates concurrent token refresh requests.
+// Without it, N simultaneous requests on a cold/expired cache would all race
+// to fetch a new token, wasting quota and potentially hitting Monnify rate limits.
+
+interface TokenCache {
+  accessToken: string;
+  expiresAt:   number; // ms timestamp
+}
+
+let tokenCache:          TokenCache | null = null;
+let tokenRefreshInFlight: Promise<string>  | null = null;
+
+async function doTokenFetch(): Promise<string> {
   const { apiKey, secretKey } = creds();
   const credential = Buffer.from(`${apiKey}:${secretKey}`).toString('base64');
 
-  const res = await fetch(`${BASE_URL}/api/v1/auth/login`, {
-    method:  'POST',
-    headers: {
-      Authorization:  `Basic ${credential}`,
-      'Content-Type': 'application/json',
+  const res = await fetchTimeout(
+    `${BASE_URL}/api/v1/auth/login`,
+    {
+      method:  'POST',
+      headers: {
+        Authorization:  `Basic ${credential}`,
+        'Content-Type': 'application/json',
+      },
     },
-  });
+    TIMEOUT_AUTH,
+  );
 
   if (!res.ok) {
     const body = await res.text();
@@ -66,7 +88,29 @@ export async function getAccessToken(): Promise<string> {
     expiresAt:   Date.now() + data.responseBody.expiresIn * 1_000,
   };
 
+  logger.debug('Monnify access token refreshed');
   return tokenCache.accessToken;
+}
+
+/**
+ * Get a valid Monnify access token. Uses cache when possible.
+ * Concurrent calls share a single in-flight refresh request (mutex pattern).
+ */
+export async function getAccessToken(): Promise<string> {
+  if (tokenCache && tokenCache.expiresAt > Date.now() + 60_000) {
+    return tokenCache.accessToken;
+  }
+
+  // Deduplicate: if a refresh is already in flight, wait for it instead of starting another
+  if (tokenRefreshInFlight) {
+    logger.debug('Monnify token refresh already in flight — waiting for existing request');
+    return tokenRefreshInFlight;
+  }
+
+  tokenRefreshInFlight = doTokenFetch().finally(() => {
+    tokenRefreshInFlight = null;
+  });
+  return tokenRefreshInFlight;
 }
 
 // ── Initialize transaction ────────────────────────────────────────────────────
@@ -93,24 +137,28 @@ export async function initializeTransaction(
   const { contractCode } = creds();
   const token = await getAccessToken();
 
-  const res = await fetch(`${BASE_URL}/api/v1/merchant/transactions/init-transaction`, {
-    method:  'POST',
-    headers: {
-      Authorization:  `Bearer ${token}`,
-      'Content-Type': 'application/json',
+  const res = await fetchTimeout(
+    `${BASE_URL}/api/v1/merchant/transactions/init-transaction`,
+    {
+      method:  'POST',
+      headers: {
+        Authorization:  `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        amount:             params.amount,
+        currencyCode:       'NGN',
+        customerName:       params.customerName,
+        customerEmail:      params.customerEmail,
+        paymentReference:   params.paymentReference,
+        paymentDescription: params.paymentDescription,
+        contractCode,
+        redirectUrl:        params.redirectUrl,
+        paymentMethods:     ['CARD', 'ACCOUNT_TRANSFER'],
+      }),
     },
-    body: JSON.stringify({
-      amount:             params.amount,
-      currencyCode:       'NGN',
-      customerName:       params.customerName,
-      customerEmail:      params.customerEmail,
-      paymentReference:   params.paymentReference,
-      paymentDescription: params.paymentDescription,
-      contractCode,
-      redirectUrl:        params.redirectUrl,
-      paymentMethods:     ['CARD', 'ACCOUNT_TRANSFER'],
-    }),
-  });
+    TIMEOUT_API,
+  );
 
   if (!res.ok) {
     const body = await res.text();
@@ -122,7 +170,7 @@ export async function initializeTransaction(
     responseBody: {
       transactionReference: string;
       checkoutUrl?:         string;
-      paymentUrl?:          string; // Monnify uses both names across versions
+      paymentUrl?:          string;
     };
   };
 
@@ -147,6 +195,8 @@ export interface VerifyTransactionResult {
   totalPayable:         number;
   paymentReference:     string; // OUR reference
   transactionReference: string; // Monnify's reference
+  completedOn?:         string; // ISO timestamp of payment completion
+  channelType?:         string; // e.g. 'CARD' | 'ACCOUNT_TRANSFER'
 }
 
 /**
@@ -160,9 +210,11 @@ export async function verifyTransaction(
   const token   = await getAccessToken();
   const encoded = encodeURIComponent(monnifyTransactionReference);
 
-  const res = await fetch(`${BASE_URL}/api/v2/transactions/${encoded}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const res = await fetchTimeout(
+    `${BASE_URL}/api/v2/transactions/${encoded}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+    TIMEOUT_API,
+  );
 
   if (!res.ok) {
     const body = await res.text();

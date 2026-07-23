@@ -1,16 +1,35 @@
+/**
+ * /api/clubkonnect — Read-only ClubKonnect utility routes.
+ *
+ * These routes give admins and the frontend read-only access to ClubKonnect
+ * data (balance, plans, status queries).
+ *
+ * Mutating routes (POST /airtime, POST /data) have been REMOVED.
+ * All customer purchases must go through /api/purchase/* which:
+ *   - Requires an authenticated user session
+ *   - Validates price against admin-configured pricing_rules
+ *   - Atomically debits the wallet
+ *   - Writes a wallet_ledger audit entry
+ *   - Handles CK "pending" status correctly
+ *
+ * Emergency direct-vendor calls (bypassing wallet): if ever needed for
+ * reconciliation or testing, contact a super admin to use the admin
+ * ClubKonnect balance / status check routes below, then issue corrections
+ * via the admin wallet-adjustment flow.
+ */
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import * as ck from '../lib/clubkonnect.js';
-import { requireAuth } from './user.js';
+import { normalizeCKStatus } from '../lib/clubkonnect.js';
 import { logger } from '../lib/logger.js';
 
 const router = Router();
 
-/** Middleware — reject requests when credentials are missing */
+/** Reject requests when credentials are not configured */
 function requireCredentials(_req: Request, res: Response, next: NextFunction): void {
   if (!process.env['CLUBKONNECT_USER_ID'] || !process.env['CLUBKONNECT_API_KEY']) {
     res.status(503).json({
-      error: 'Clubkonnect credentials not configured.',
-      hint: 'Add CLUBKONNECT_USER_ID and CLUBKONNECT_API_KEY as Replit Secrets.',
+      error: 'ClubKonnect credentials not configured.',
+      hint:  'Add CLUBKONNECT_USER_ID and CLUBKONNECT_API_KEY as Replit Secrets.',
     });
     return;
   }
@@ -19,19 +38,27 @@ function requireCredentials(_req: Request, res: Response, next: NextFunction): v
 
 router.use(requireCredentials);
 
-// ── GET /api/clubkonnect/balance ────────────────────────────────────────────
-router.get('/balance', async (_req: Request, res: Response): Promise<void> => {
+// ── GET /api/clubkonnect/balance ───────────────────────────────────────────────
+// Used by admin dashboard to check ClubKonnect vendor wallet balance.
+// Admin session required — prevents leaking business-sensitive balance info.
+router.get('/balance', async (req: Request, res: Response): Promise<void> => {
+  if (!req.session.isAdmin) {
+    res.status(401).json({ error: 'Admin session required.' });
+    return;
+  }
   try {
     const data = await ck.getBalance();
     res.json({ success: true, balance: data.balance ?? data.APIBalance });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.error({ err }, 'Clubkonnect balance check failed');
+    logger.error({ err }, 'ClubKonnect balance check failed');
     res.status(502).json({ error: message });
   }
 });
 
-// ── GET /api/clubkonnect/data-plans?network=mtn ────────────────────────────
+// ── GET /api/clubkonnect/data-plans?network=mtn ────────────────────────────────
+// Used by the frontend to display available data plans when the user selects a network.
+// No auth required — plan listings are public information.
 router.get('/data-plans', async (req: Request, res: Response): Promise<void> => {
   const network = req.query['network'];
   if (!network || typeof network !== 'string') {
@@ -43,96 +70,38 @@ router.get('/data-plans', async (req: Request, res: Response): Promise<void> => 
     res.json({ success: true, network, plans });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.error({ err, network }, 'Clubkonnect data-plans fetch failed');
+    logger.error({ err, network }, 'ClubKonnect data-plans fetch failed');
     res.status(502).json({ error: message });
   }
 });
 
-// ── POST /api/clubkonnect/airtime ──────────────────────────────────────────
-// Requires authentication — mutates vendor state and must be scoped to a user.
-// Prefer /api/purchase/airtime for frontend use (it also handles wallet debit).
-router.post('/airtime', requireAuth, async (req: Request, res: Response): Promise<void> => {
-  const { network, phone, amount } = req.body as { network?: string; phone?: string; amount?: number };
-
-  if (!network || !phone || amount === undefined) {
-    res.status(400).json({ error: 'Body must include: network, phone, amount.' });
-    return;
-  }
-
-  const requestId = `GY-AIR-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-
-  try {
-    const result = await ck.purchaseAirtime({ network, phone, amount: Number(amount), requestId });
-    const success = result.status?.toLowerCase() === 'successful';
-
-    logger.info({ requestId, network, phone, amount, status: result.status }, 'Airtime purchase completed');
-
-    res.status(success ? 200 : 422).json({
-      success,
-      requestId,
-      status: result.status,
-      ident: result.ident,
-      amount: result.Amount,
-      network: result.MobileNetwork,
-      phone: result.MobileNumber,
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.error({ err, requestId }, 'Clubkonnect airtime purchase failed');
-    res.status(502).json({ error: message, requestId });
-  }
-});
-
-// ── POST /api/clubkonnect/data ─────────────────────────────────────────────
-// Requires authentication — mutates vendor state and must be scoped to a user.
-// Prefer /api/purchase/data for frontend use (it also handles wallet debit).
-router.post('/data', requireAuth, async (req: Request, res: Response): Promise<void> => {
-  const { network, phone, planCode, planName, planPrice } = req.body as {
-    network?: string; phone?: string; planCode?: string; planName?: string; planPrice?: string;
-  };
-
-  if (!network || !phone || !planCode) {
-    res.status(400).json({ error: 'Body must include: network, phone, planCode.' });
-    return;
-  }
-
-  const requestId = `GY-DAT-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-
-  try {
-    const result = await ck.purchaseData({ network, phone, planCode, requestId });
-    const success = result.status?.toLowerCase() === 'successful';
-
-    logger.info({ requestId, network, phone, planCode, status: result.status }, 'Data purchase completed');
-
-    res.status(success ? 200 : 422).json({
-      success,
-      requestId,
-      status: result.status,
-      ident: result.ident,
-      planName: result.DataPlanName ?? planName,
-      price: result.Price ?? planPrice,
-      phone: result.MobileNumber ?? phone,
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.error({ err, requestId }, 'Clubkonnect data purchase failed');
-    res.status(502).json({ error: message, requestId });
-  }
-});
-
-// ── GET /api/clubkonnect/status?requestId=xxx ──────────────────────────────
+// ── GET /api/clubkonnect/status?requestId=xxx ──────────────────────────────────
+// Check the status of a specific ClubKonnect order by RequestID.
+// Admin session required — used for support and reconciliation.
 router.get('/status', async (req: Request, res: Response): Promise<void> => {
+  if (!req.session.isAdmin) {
+    res.status(401).json({ error: 'Admin session required.' });
+    return;
+  }
   const requestId = req.query['requestId'];
   if (!requestId || typeof requestId !== 'string') {
     res.status(400).json({ error: 'Query param "requestId" is required.' });
     return;
   }
   try {
-    const result = await ck.getTransactionStatus(requestId);
-    res.json({ success: true, requestId, result });
+    const result     = await ck.getTransactionStatus(requestId);
+    const normalized = normalizeCKStatus(result.status);
+    res.json({
+      success:          true,
+      requestId,
+      normalized,
+      vendorStatus:     result.status,
+      providerRef:      result.OrderID ?? result.ident,
+      rawResult:        result,
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.error({ err, requestId }, 'Clubkonnect status check failed');
+    logger.error({ err, requestId }, 'ClubKonnect status check failed');
     res.status(502).json({ error: message });
   }
 });

@@ -9,7 +9,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { eq, and, sql } from 'drizzle-orm';
 import { db } from '@workspace/db';
 import {
-  usersTable, walletsTable, transactionsTable, notificationsTable,
+  usersTable, walletsTable, transactionsTable, notificationsTable, userPreferencesTable,
 } from '@workspace/db/schema';
 import { hashPin, verifyPin } from '../lib/auth.js';
 import { logger } from '../lib/logger.js';
@@ -267,6 +267,44 @@ router.post('/transactions', async (req: Request, res: Response): Promise<void> 
     if (e.code === 'INSUFFICIENT_FUNDS') { res.status(402).json({ error: 'insufficient_funds' }); return; }
     logger.error({ err }, 'transaction spend failed');
     res.status(500).json({ error: 'Failed to record transaction.' });
+  }
+});
+
+// ── GET /api/user/preferences ─────────────────────────────────────────────────
+router.get('/preferences', async (req: Request, res: Response): Promise<void> => {
+  const userId = req.session.userId!;
+  const [row] = await db.select().from(userPreferencesTable).where(eq(userPreferencesTable.userId, userId));
+  res.json(row?.preferences ?? {});
+});
+
+// ── PUT /api/user/preferences ─────────────────────────────────────────────────
+// Merges the supplied partial preferences over the stored preferences.
+router.put('/preferences', async (req: Request, res: Response): Promise<void> => {
+  const userId = req.session.userId!;
+  const incoming = req.body as Record<string, unknown>;
+
+  if (!incoming || typeof incoming !== 'object') {
+    res.status(400).json({ error: 'Request body must be a JSON object.' });
+    return;
+  }
+
+  // Upsert: merge incoming over existing stored value
+  const [existing] = await db.select().from(userPreferencesTable).where(eq(userPreferencesTable.userId, userId));
+
+  if (existing) {
+    const merged = { ...(existing.preferences as Record<string, unknown>), ...incoming };
+    const [updated] = await db
+      .update(userPreferencesTable)
+      .set({ preferences: merged, updatedAt: new Date() })
+      .where(eq(userPreferencesTable.userId, userId))
+      .returning({ preferences: userPreferencesTable.preferences });
+    res.json(updated?.preferences ?? merged);
+  } else {
+    const [inserted] = await db
+      .insert(userPreferencesTable)
+      .values({ userId, preferences: incoming })
+      .returning({ preferences: userPreferencesTable.preferences });
+    res.json(inserted?.preferences ?? incoming);
   }
 });
 

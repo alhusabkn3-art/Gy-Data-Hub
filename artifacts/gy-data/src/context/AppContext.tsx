@@ -158,11 +158,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           balance: string;
           transactions: Record<string, unknown>[];
           notifications: Record<string, unknown>[];
+          preferences?: Partial<AppSettings>;
         };
         setUser(data.user);
         setBalance(parseFloat(data.balance));
         setTransactions(data.transactions.map(transformTransaction));
         setNotifications(data.notifications.map(transformNotification));
+        if (data.preferences && Object.keys(data.preferences).length > 0) {
+          setSettings(prev => ({ ...prev, ...data.preferences }));
+        }
         setIsLoggedIn(true);
       })
       .catch(() => { /* network error — stay logged out */ })
@@ -186,11 +190,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         balance: string;
         transactions: Record<string, unknown>[];
         notifications: Record<string, unknown>[];
+        preferences?: Partial<AppSettings>;
       };
       setUser(data.user);
       setBalance(parseFloat(data.balance));
       setTransactions(data.transactions.map(transformTransaction));
       setNotifications(data.notifications.map(transformNotification));
+      if (data.preferences && Object.keys(data.preferences).length > 0) {
+        setSettings(prev => ({ ...prev, ...data.preferences }));
+      }
       setIsLoggedIn(true);
       setActiveTab('home');
       return 'success';
@@ -208,6 +216,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setBalance(0);
     setTransactions([]);
     setNotifications([]);
+    setSettings(defaultSettings);
     setActiveTab('home');
   };
 
@@ -226,11 +235,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         balance: string;
         transactions: Record<string, unknown>[];
         notifications: Record<string, unknown>[];
+        preferences?: Partial<AppSettings>;
       };
       setUser(data.user);
       setBalance(parseFloat(data.balance));
       setTransactions(data.transactions.map(transformTransaction));
       setNotifications(data.notifications.map(transformNotification));
+      if (data.preferences && Object.keys(data.preferences).length > 0) {
+        setSettings(prev => ({ ...prev, ...data.preferences }));
+      }
       setIsLoggedIn(true);
       setActiveTab('home');
       return 'success';
@@ -473,8 +486,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // ── Settings ──────────────────────────────────────────────────────────────
   const toggleBalanceHidden = () => setBalanceHidden(p => !p);
-  const updateSettings = (newSettings: Partial<AppSettings>) =>
+
+  const updateSettings = (newSettings: Partial<AppSettings>) => {
     setSettings(prev => ({ ...prev, ...newSettings }));
+    // Persist to server non-blocking — failure is silent (non-fatal)
+    void api('/user/preferences', {
+      method: 'PUT',
+      body: JSON.stringify(newSettings),
+    });
+  };
 
   return (
     <AppContext.Provider value={{

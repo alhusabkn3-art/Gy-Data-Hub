@@ -18,7 +18,7 @@ import crypto from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { db } from '@workspace/db';
 import {
-  usersTable, walletsTable, transactionsTable, notificationsTable,
+  usersTable, walletsTable, transactionsTable, notificationsTable, userPreferencesTable,
 } from '@workspace/db/schema';
 import { hashPin, verifyPin } from '../lib/auth.js';
 import { logger } from '../lib/logger.js';
@@ -61,7 +61,8 @@ async function loadFullSession(userId: string) {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
   if (!user) return null;
 
-  const [wallet] = await db.select().from(walletsTable).where(eq(walletsTable.userId, userId));
+  const [wallet]  = await db.select().from(walletsTable).where(eq(walletsTable.userId, userId));
+  const [prefRow] = await db.select().from(userPreferencesTable).where(eq(userPreferencesTable.userId, userId));
 
   const transactions = await db
     .select()
@@ -82,6 +83,7 @@ async function loadFullSession(userId: string) {
     balance:       wallet?.balance ?? '0',
     transactions,
     notifications,
+    preferences:   (prefRow?.preferences ?? {}) as Record<string, unknown>,
   };
 }
 

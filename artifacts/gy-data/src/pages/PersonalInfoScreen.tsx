@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { ChevronLeft, User, Phone, Mail, CreditCard, Building2, Hash } from 'lucide-react';
+import { ChevronLeft, User, Phone, Mail, CreditCard, Building2, Hash, AtSign } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { useAppContext } from '../context/AppContext';
 
@@ -11,12 +11,13 @@ export default function PersonalInfoScreen() {
   if (!user) return null;
 
   const fields = [
-    { icon: User,      label: 'Full Name',       value: user.name },
-    { icon: Phone,     label: 'Phone Number',     value: user.phone.replace(/(\d{4})(\d{3})(\d{4})/, '+234 $1 $2 $3').replace('+2340', '+234 0') },
-    { icon: Mail,      label: 'Email Address',    value: user.email },
-    { icon: CreditCard,label: 'Account Number',   value: user.accountNumber },
-    { icon: Building2, label: 'Bank / Wallet',    value: user.bankName },
-    { icon: Hash,      label: 'Referral Code',    value: user.referralCode },
+    { icon: AtSign,    label: 'Username',         value: '@' + user.username },
+    { icon: User,      label: 'Full Name',         value: user.name },
+    { icon: Phone,     label: 'Phone Number',      value: user.phone.replace(/(\d{4})(\d{3})(\d{4})/, '+234 $1 $2 $3').replace('+2340', '+234 0') },
+    { icon: Mail,      label: 'Email Address',     value: user.email },
+    { icon: CreditCard,label: 'Account Number',    value: user.accountNumber },
+    { icon: Building2, label: 'Bank / Wallet',     value: user.bankName },
+    { icon: Hash,      label: 'Referral Code',     value: user.referralCode },
   ];
 
   return (

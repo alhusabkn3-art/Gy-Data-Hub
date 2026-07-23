@@ -36,7 +36,7 @@ export default function HomeScreen() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold">{greeting}, {user.firstName} 👋</h1>
+          <h1 className="text-xl font-bold">{greeting}, @{user.username} 👋</h1>
           <p className="text-sm text-muted-foreground">Welcome back</p>
         </div>
         <div className="flex items-center gap-3">

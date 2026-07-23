@@ -101,9 +101,13 @@ interface AppContextType {
   login: (phone: string, pin: string) => Promise<'success' | 'no_account' | 'wrong_pin'>;
   logout: () => Promise<void>;
   /** Register and auto-login. */
-  register: (name: string, phone: string, email: string, pin: string) => Promise<'success' | 'phone_taken' | 'error'>;
+  register: (name: string, phone: string, email: string, pin: string, username: string) => Promise<'success' | 'phone_taken' | 'username_taken' | 'error'>;
   /** Check if phone has an account (server-side). */
   accountExists: (phone: string) => Promise<boolean>;
+  /** Check if a username is available. Returns 'invalid' for bad format without hitting the server. */
+  checkUsernameAvailable: (username: string) => Promise<'available' | 'taken' | 'invalid' | 'error'>;
+  /** Change the current user's username. Enforces 30-day cooldown server-side. */
+  changeUsername: (username: string) => Promise<{ ok: boolean; error?: string; nextChangeAt?: string }>;
   /** Verify the current user's PIN without changing it. */
   verifyPin: (pin: string) => Promise<boolean>;
   /** Change PIN: verifies oldPin first. */
@@ -221,14 +225,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const register = async (
-    name: string, phone: string, email: string, pin: string,
-  ): Promise<'success' | 'phone_taken' | 'error'> => {
+    name: string, phone: string, email: string, pin: string, username: string,
+  ): Promise<'success' | 'phone_taken' | 'username_taken' | 'error'> => {
     try {
       const res = await api('/auth/register', {
         method: 'POST',
-        body: JSON.stringify({ name, phone, email, loginPin: pin }),
+        body: JSON.stringify({ name, phone, email, loginPin: pin, username }),
       });
-      if (res.status === 409) return 'phone_taken';
+      if (res.status === 409) {
+        const body = await res.json() as { error: string };
+        return body.error === 'username_taken' ? 'username_taken' : 'phone_taken';
+      }
       if (!res.ok) return 'error';
       const data = await res.json() as {
         user: User;
@@ -259,6 +266,30 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const data = await res.json() as { exists: boolean };
       return data.exists;
     } catch { return false; }
+  };
+
+  const checkUsernameAvailable = async (username: string): Promise<'available' | 'taken' | 'invalid' | 'error'> => {
+    const normalized = username.toLowerCase().trim();
+    if (!/^[a-z0-9_]{3,20}$/.test(normalized)) return 'invalid';
+    try {
+      const res = await api(`/auth/check-username?username=${encodeURIComponent(normalized)}`);
+      if (!res.ok) return 'error';
+      const data = await res.json() as { available: boolean };
+      return data.available ? 'available' : 'taken';
+    } catch { return 'error'; }
+  };
+
+  const changeUsername = async (username: string): Promise<{ ok: boolean; error?: string; nextChangeAt?: string }> => {
+    try {
+      const res = await api('/user/username', { method: 'PATCH', body: JSON.stringify({ username }) });
+      if (res.ok) {
+        const data = await res.json() as { username: string; usernameChangedAt: string };
+        setUser(prev => prev ? { ...prev, username: data.username, usernameChangedAt: data.usernameChangedAt } : prev);
+        return { ok: true };
+      }
+      const body = await res.json() as { error?: string; nextChangeAt?: string };
+      return { ok: false, error: body.error, nextChangeAt: body.nextChangeAt };
+    } catch { return { ok: false, error: 'network_error' }; }
   };
 
   const verifyPin = async (pin: string): Promise<boolean> => {
@@ -500,7 +531,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     <AppContext.Provider value={{
       isLoggedIn, isLoading, user, balance, balanceHidden, transactions,
       notifications, unreadCount, settings, activeTab,
-      login, logout, register, accountExists, verifyPin, changePin,
+      login, logout, register, accountExists, checkUsernameAvailable, changeUsername, verifyPin, changePin,
       requestPinReset, resetPin,
       toggleBalanceHidden, markAllNotificationsRead, updateSettings,
       addTransaction, purchaseAirtime, purchaseData, setActiveTab, fundWallet, refreshWallet,

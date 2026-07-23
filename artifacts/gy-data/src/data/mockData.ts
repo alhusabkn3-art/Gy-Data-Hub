@@ -7,13 +7,15 @@ export interface User {
   name: string;
   firstName: string;
   lastName: string;
+  username: string;              // unique handle e.g. "john_doe" — displayed throughout app
   email: string;
-  phone: string;        // 11-digit Nigerian format e.g. "08031234567"
+  phone: string;                 // 11-digit Nigerian format e.g. "08031234567"
   accountNumber: string;
   bankName: string;
   referralCode: string;
   kycStatus: 'unverified' | 'pending' | 'verified';
-  createdAt: string;    // ISO timestamp
+  usernameChangedAt: string | null; // ISO timestamp of last username change, null if never changed
+  createdAt: string;             // ISO timestamp
 }
 
 export interface Transaction {

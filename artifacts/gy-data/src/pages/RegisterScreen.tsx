@@ -116,10 +116,11 @@ function validateStep1(name: string, email: string, phone: string): string | nul
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
-type Step = 'details' | 'set-pin' | 'confirm-pin' | 'success';
+type Step = 'details' | 'choose-username' | 'set-pin' | 'confirm-pin' | 'success';
+type UsernameStatus = 'idle' | 'checking' | 'available' | 'taken' | 'invalid';
 
 export default function RegisterScreen() {
-  const { register, accountExists } = useAppContext();
+  const { register, accountExists, checkUsernameAvailable } = useAppContext();
   const [, setLocation] = useLocation();
 
   const [step, setStep] = useState<Step>('details');
@@ -127,11 +128,14 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [fieldErrors, setFieldErrors] = useState('');
+  const [username, setUsername] = useState('');
+  const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>('idle');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [pinError, setPinError] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [isCheckingPhone, setIsCheckingPhone] = useState(false);
+  const [isCheckingUsername, setIsCheckingUsername] = useState(false);
   const [phoneCopied, setPhoneCopied] = useState(false);
   const phoneInputRef = useRef<HTMLInputElement>(null);
 
@@ -146,6 +150,26 @@ export default function RegisterScreen() {
       return;
     }
     setFieldErrors('');
+    setStep('choose-username');
+  };
+
+  const handleUsernameNext = async () => {
+    const normalized = username.toLowerCase().trim();
+    if (!/^[a-z0-9_]{3,20}$/.test(normalized)) {
+      setUsernameStatus('invalid');
+      return;
+    }
+    setIsCheckingUsername(true);
+    setUsernameStatus('checking');
+    const status = await checkUsernameAvailable(normalized);
+    setIsCheckingUsername(false);
+    if (status === 'error') {
+      setUsernameStatus('idle');
+      toast.error('Could not check username availability. Please try again.');
+      return;
+    }
+    setUsernameStatus(status);
+    if (status !== 'available') return;
     setStep('set-pin');
   };
 
@@ -175,11 +199,20 @@ export default function RegisterScreen() {
           phone.replace(/\D/g, '').slice(0, 11),
           email.trim(),
           newPin,
+          username.toLowerCase().trim(),
         );
         if (result === 'phone_taken') {
           toast.error('An account with this phone number already exists.');
           setIsCreating(false);
           setStep('details');
+          setNewPin('');
+          setConfirmPin('');
+        } else if (result === 'username_taken') {
+          toast.error('Username was just taken. Please choose another.');
+          setIsCreating(false);
+          setStep('choose-username');
+          setUsername('');
+          setUsernameStatus('idle');
           setNewPin('');
           setConfirmPin('');
         } else if (result === 'error') {
@@ -195,17 +228,21 @@ export default function RegisterScreen() {
 
   const goBack = () => {
     if (step === 'details') { setLocation('/'); return; }
-    if (step === 'set-pin') { setStep('details'); setNewPin(''); return; }
+    if (step === 'choose-username') { setStep('details'); setUsername(''); setUsernameStatus('idle'); return; }
+    if (step === 'set-pin') { setStep('choose-username'); setNewPin(''); return; }
     if (step === 'confirm-pin') { setStep('set-pin'); setNewPin(''); setConfirmPin(''); setPinError(false); return; }
   };
 
   const stepLabel: Record<Step, string> = {
-    details: 'Personal Details', 'set-pin': 'Set Your PIN',
-    'confirm-pin': 'Confirm Your PIN', success: 'Account Created!',
+    details: 'Personal Details',
+    'choose-username': 'Choose Username',
+    'set-pin': 'Set Your PIN',
+    'confirm-pin': 'Confirm Your PIN',
+    success: 'Account Created!',
   };
 
   const stepProgress: Record<Step, number> = {
-    details: 1, 'set-pin': 2, 'confirm-pin': 3, success: 4,
+    details: 1, 'choose-username': 2, 'set-pin': 3, 'confirm-pin': 4, success: 5,
   };
 
   return (
@@ -238,10 +275,10 @@ export default function RegisterScreen() {
         </div>
       </div>
 
-      {/* Progress bar */}
+      {/* Progress bar — 4 segments for 4 steps */}
       {step !== 'success' && (
         <div className="w-full max-w-sm z-10 flex gap-1.5 mb-6">
-          {[1, 2, 3].map(s => (
+          {[1, 2, 3, 4].map(s => (
             <div key={s} className="h-1 rounded-full flex-1 transition-all duration-300"
               style={{ background: s <= stepProgress[step] - 1 || (s === 1 && step === 'details')
                 ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.2)' }} />
@@ -399,7 +436,61 @@ export default function RegisterScreen() {
           </>
         )}
 
-        {/* ── Step 2: Set PIN ───────────────────────────────────────────── */}
+        {/* ── Step 2: Choose username ───────────────────────────────────── */}
+        {step === 'choose-username' && (
+          <>
+            <div className="text-center mb-6">
+              <h2 className="text-xl font-bold mb-1" style={{ color: '#0B1F4E' }}>Choose a Username</h2>
+              <p className="text-sm" style={{ color: '#6B7FA3' }}>This is how you'll appear across GY DATA</p>
+            </div>
+
+            <div className="mb-5">
+              <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: '#6B7FA3' }}>Username</label>
+              <div className="relative flex items-center">
+                <span className="absolute left-3 text-base font-bold select-none" style={{ color: '#9BA8C0' }}>@</span>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={e => {
+                    const val = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
+                    setUsername(val);
+                    setUsernameStatus('idle');
+                  }}
+                  placeholder="your_username"
+                  autoComplete="username"
+                  spellCheck={false}
+                  className="w-full h-12 rounded-xl text-sm font-semibold outline-none transition-colors"
+                  style={{ border: `2px solid ${usernameStatus === 'available' ? '#16a34a' : usernameStatus === 'taken' || usernameStatus === 'invalid' ? '#DC2626' : '#DDEAFF'}`, background: '#F8FAFF', color: '#0B1F4E', paddingLeft: '2rem', paddingRight: '2.5rem' }}
+                  onFocus={e => { e.currentTarget.style.background = '#EFF6FF'; }}
+                  onBlur={e => { e.currentTarget.style.background = '#F8FAFF'; }}
+                />
+                <div className="absolute right-3 flex items-center">
+                  {usernameStatus === 'checking' && (
+                    <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  )}
+                  {usernameStatus === 'available' && (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  )}
+                  {(usernameStatus === 'taken' || usernameStatus === 'invalid') && (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  )}
+                </div>
+              </div>
+              <div className="mt-1.5 min-h-[18px]">
+                {usernameStatus === 'available' && <p className="text-xs font-semibold" style={{ color: '#16a34a' }}>✓ @{username} is available</p>}
+                {usernameStatus === 'taken' && <p className="text-xs font-semibold" style={{ color: '#DC2626' }}>@{username} is already taken. Try another.</p>}
+                {usernameStatus === 'invalid' && <p className="text-xs font-semibold" style={{ color: '#DC2626' }}>3–20 characters: letters, numbers and _ only.</p>}
+              </div>
+              <p className="text-[11px] mt-2" style={{ color: '#9BA8C0' }}>3–20 characters · letters, numbers and underscores only · cannot be changed for 30 days</p>
+            </div>
+
+            <GradientButton onClick={handleUsernameNext} disabled={isCheckingUsername}>
+              {isCheckingUsername ? 'Checking…' : 'Continue'}
+            </GradientButton>
+          </>
+        )}
+
+        {/* ── Step 3: Set PIN ───────────────────────────────────────────── */}
         {step === 'set-pin' && (
           <>
             <div className="text-center mb-7">

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, ShieldCheck, Lock, Fingerprint, HelpCircle, Info, LogOut, ChevronRight, Copy, X, Eye, EyeOff, CreditCard } from 'lucide-react';
+import { User, ShieldCheck, Lock, Fingerprint, HelpCircle, Info, LogOut, ChevronRight, Copy, X, Eye, EyeOff, CreditCard, AtSign } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
@@ -71,7 +71,8 @@ export default function ProfileScreen() {
               </div>
             )}
           </div>
-          <h2 className="text-2xl font-bold mb-1">{user.name}</h2>
+          <h2 className="text-2xl font-bold mb-0.5">{user.name}</h2>
+          <p className="text-primary font-semibold text-sm mb-1">@{user.username}</p>
           <p className="text-muted-foreground text-sm mb-1">{user.email}</p>
           <p className="text-muted-foreground text-xs mb-3">
             {user.phone.replace(/(\d{4})(\d{3})(\d{4})/, '$1 $2 $3')}
@@ -91,6 +92,12 @@ export default function ProfileScreen() {
                 icon={User}
                 label="Personal Information"
                 onClick={() => setLocation('/profile/personal')}
+              />
+              <MenuRow
+                icon={AtSign}
+                label="Change Username"
+                value={`@${user.username}`}
+                onClick={() => setLocation('/profile/username')}
               />
               <MenuRow
                 icon={CreditCard}

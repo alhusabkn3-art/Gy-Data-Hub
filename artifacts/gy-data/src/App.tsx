@@ -24,6 +24,7 @@ import KYCScreen from './pages/KYCScreen';
 import ReferralScreen from './pages/ReferralScreen';
 import SupportScreen from './pages/SupportScreen';
 import AboutScreen from './pages/AboutScreen';
+import ChangeUsernameScreen from './pages/ChangeUsernameScreen';
 
 import BottomNav from './components/BottomNav';
 
@@ -67,6 +68,7 @@ function MainApp() {
           <Route path="/settings"            component={SettingsScreen} />
           <Route path="/notifications"       component={NotificationsScreen} />
           <Route path="/profile/personal"    component={PersonalInfoScreen} />
+          <Route path="/profile/username"    component={ChangeUsernameScreen} />
           <Route path="/profile/bank"        component={BankAccountScreen} />
           <Route path="/profile/kyc"         component={KYCScreen} />
           <Route path="/profile/referral"    component={ReferralScreen} />

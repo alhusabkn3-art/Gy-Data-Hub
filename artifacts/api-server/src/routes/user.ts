@@ -319,6 +319,65 @@ router.post('/check-pin', async (req: Request, res: Response): Promise<void> => 
   res.json({ valid: ok });
 });
 
+// ── PATCH /api/user/username ──────────────────────────────────────────────────
+//
+// Change username — enforces:
+//   1. Valid format: 3–20 chars, [a-z0-9_] only (stored lowercase)
+//   2. Global uniqueness — 409 if taken
+//   3. 30-day cooldown — 429 with nextChangeAt if changed too recently
+router.patch('/username', async (req: Request, res: Response): Promise<void> => {
+  const userId = req.session.userId!;
+  const { username } = req.body as { username?: string };
+
+  if (!username) {
+    res.status(400).json({ error: 'username is required.' });
+    return;
+  }
+
+  const normalized = username.toLowerCase().trim();
+  if (!/^[a-z0-9_]{3,20}$/.test(normalized)) {
+    res.status(400).json({ error: 'invalid_format' });
+    return;
+  }
+
+  const [user] = await db
+    .select({ id: usersTable.id, username: usersTable.username, usernameChangedAt: usersTable.usernameChangedAt })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId));
+
+  if (!user) { res.status(404).json({ error: 'User not found.' }); return; }
+
+  // Enforce 30-day cooldown
+  if (user.usernameChangedAt) {
+    const elapsed = Date.now() - user.usernameChangedAt.getTime();
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    if (elapsed < thirtyDaysMs) {
+      const nextChangeAt = new Date(user.usernameChangedAt.getTime() + thirtyDaysMs).toISOString();
+      res.status(429).json({ error: 'cooldown', nextChangeAt });
+      return;
+    }
+  }
+
+  // Check availability (another user may have taken it)
+  const [existing] = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(eq(usersTable.username, normalized));
+
+  if (existing && existing.id !== userId) {
+    res.status(409).json({ error: 'username_taken' });
+    return;
+  }
+
+  const now = new Date();
+  await db.update(usersTable)
+    .set({ username: normalized, usernameChangedAt: now, updatedAt: now })
+    .where(eq(usersTable.id, userId));
+
+  logger.info({ userId, username: normalized }, 'Username changed');
+  res.json({ ok: true, username: normalized, usernameChangedAt: now.toISOString() });
+});
+
 // ── PUT /api/user/pin ─────────────────────────────────────────────────────────
 router.put('/pin', async (req: Request, res: Response): Promise<void> => {
   const { currentPin, newPin } = req.body as { currentPin?: string; newPin?: string };

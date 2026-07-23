@@ -43,17 +43,19 @@ function genReferralCode(firstName: string): string {
 /** Shape returned to the frontend — never includes any PIN hash */
 function safeUser(user: typeof usersTable.$inferSelect) {
   return {
-    id:            user.id,
-    name:          user.name,
-    firstName:     user.firstName,
-    lastName:      user.lastName,
-    email:         user.email,
-    phone:         user.phone,
-    accountNumber: user.accountNumber,
-    bankName:      user.bankName,
-    referralCode:  user.referralCode,
-    kycStatus:     user.kycStatus,
-    createdAt:     user.createdAt,
+    id:                user.id,
+    name:              user.name,
+    firstName:         user.firstName,
+    lastName:          user.lastName,
+    username:          user.username,
+    email:             user.email,
+    phone:             user.phone,
+    accountNumber:     user.accountNumber,
+    bankName:          user.bankName,
+    referralCode:      user.referralCode,
+    kycStatus:         user.kycStatus,
+    usernameChangedAt: user.usernameChangedAt ? user.usernameChangedAt.toISOString() : null,
+    createdAt:         user.createdAt,
   };
 }
 
@@ -87,14 +89,33 @@ async function loadFullSession(userId: string) {
   };
 }
 
+// ── GET /api/auth/check-username?username=... ─────────────────────────────────
+router.get('/check-username', async (req: Request, res: Response): Promise<void> => {
+  const { username } = req.query as { username?: string };
+  if (!username || typeof username !== 'string') {
+    res.status(400).json({ error: 'username query param required.' });
+    return;
+  }
+  const normalized = username.toLowerCase().trim();
+  if (!/^[a-z0-9_]{3,20}$/.test(normalized)) {
+    res.json({ available: false, reason: 'invalid_format' });
+    return;
+  }
+  const [existing] = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(eq(usersTable.username, normalized));
+  res.json({ available: !existing });
+});
+
 // ── POST /api/auth/register ───────────────────────────────────────────────────
 router.post('/register', async (req: Request, res: Response): Promise<void> => {
-  const { name, phone, email, loginPin } = req.body as {
-    name?: string; phone?: string; email?: string; loginPin?: string;
+  const { name, phone, email, loginPin, username } = req.body as {
+    name?: string; phone?: string; email?: string; loginPin?: string; username?: string;
   };
 
-  if (!name || !phone || !email || !loginPin) {
-    res.status(400).json({ error: 'name, phone, email, and loginPin are required.' });
+  if (!name || !phone || !email || !loginPin || !username) {
+    res.status(400).json({ error: 'name, phone, email, loginPin, and username are required.' });
     return;
   }
   if (!/^\d{6}$/.test(loginPin)) {
@@ -102,15 +123,33 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
+  const normalizedUsername = username.toLowerCase().trim();
+  if (!/^[a-z0-9_]{3,20}$/.test(normalizedUsername)) {
+    res.status(400).json({ error: 'username must be 3–20 characters: letters, numbers, and underscores only.' });
+    return;
+  }
+
   const normalizedPhone = normalizePhone(phone);
 
-  const existing = await db
+  // Check phone uniqueness
+  const [existingPhone] = await db
     .select({ id: usersTable.id })
     .from(usersTable)
     .where(eq(usersTable.phone, normalizedPhone));
 
-  if (existing.length > 0) {
+  if (existingPhone) {
     res.status(409).json({ error: 'phone_taken' });
+    return;
+  }
+
+  // Check username uniqueness
+  const [existingUsername] = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(eq(usersTable.username, normalizedUsername));
+
+  if (existingUsername) {
+    res.status(409).json({ error: 'username_taken' });
     return;
   }
 
@@ -123,6 +162,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     name:          name.trim(),
     firstName,
     lastName,
+    username:      normalizedUsername,
     email:         email.trim().toLowerCase(),
     phone:         normalizedPhone,
     loginPinHash:  pinHash,
@@ -227,6 +267,7 @@ router.get('/me', async (req: Request, res: Response): Promise<void> => {
 });
 
 // ── GET /api/auth/check-phone?phone=... ──────────────────────────────────────
+// Note: check-username is declared above /register for route ordering
 router.get('/check-phone', async (req: Request, res: Response): Promise<void> => {
   const phone = req.query['phone'];
   if (!phone || typeof phone !== 'string') {

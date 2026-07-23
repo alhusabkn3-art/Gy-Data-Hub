@@ -335,7 +335,7 @@ router.patch('/username', async (req: Request, res: Response): Promise<void> => 
   }
 
   const normalized = username.toLowerCase().trim();
-  if (!/^[a-z0-9_]{3,20}$/.test(normalized)) {
+  if (!/^[a-z]{4,15}$/.test(normalized)) {
     res.status(400).json({ error: 'invalid_format' });
     return;
   }

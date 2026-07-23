@@ -270,7 +270,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const checkUsernameAvailable = async (username: string): Promise<'available' | 'taken' | 'invalid' | 'error'> => {
     const normalized = username.toLowerCase().trim();
-    if (!/^[a-z0-9_]{3,20}$/.test(normalized)) return 'invalid';
+    if (!/^[a-z]{4,15}$/.test(normalized)) return 'invalid';
     try {
       const res = await api(`/auth/check-username?username=${encodeURIComponent(normalized)}`);
       if (!res.ok) return 'error';

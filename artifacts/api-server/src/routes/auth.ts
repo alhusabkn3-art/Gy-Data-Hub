@@ -97,7 +97,7 @@ router.get('/check-username', async (req: Request, res: Response): Promise<void>
     return;
   }
   const normalized = username.toLowerCase().trim();
-  if (!/^[a-z0-9_]{3,20}$/.test(normalized)) {
+  if (!/^[a-z]{4,15}$/.test(normalized)) {
     res.json({ available: false, reason: 'invalid_format' });
     return;
   }
@@ -124,8 +124,8 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
   }
 
   const normalizedUsername = username.toLowerCase().trim();
-  if (!/^[a-z0-9_]{3,20}$/.test(normalizedUsername)) {
-    res.status(400).json({ error: 'username must be 3–20 characters: letters, numbers, and underscores only.' });
+  if (!/^[a-z]{4,15}$/.test(normalizedUsername)) {
+    res.status(400).json({ error: 'username must be 4–15 letters only (A–Z), no numbers or symbols.' });
     return;
   }
 

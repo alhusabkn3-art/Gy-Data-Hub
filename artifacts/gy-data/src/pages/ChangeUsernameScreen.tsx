@@ -5,7 +5,7 @@ import { useLocation } from 'wouter';
 import { useAppContext } from '../context/AppContext';
 import { toast } from 'sonner';
 
-const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
+const USERNAME_RE = /^[a-z]{4,15}$/;
 
 export default function ChangeUsernameScreen() {
   const [, setLocation] = useLocation();
@@ -140,7 +140,7 @@ export default function ChangeUsernameScreen() {
             type="text"
             value={newUsername}
             onChange={e => {
-              const val = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
+              const val = e.target.value.toLowerCase().replace(/[^a-z]/g, '').slice(0, 15);
               setNewUsername(val);
             }}
             placeholder={user.username}
@@ -168,13 +168,13 @@ export default function ChangeUsernameScreen() {
             <p className="text-xs font-semibold text-red-500">@{newUsername} is already taken. Try another.</p>
           )}
           {checkStatus === 'invalid' && newUsername.length > 0 && (
-            <p className="text-xs font-semibold text-red-500">3–20 characters: letters, numbers and _ only.</p>
+            <p className="text-xs font-semibold text-red-500">4–15 letters only — no numbers, spaces or symbols.</p>
           )}
         </div>
 
         <ul className="mt-3 space-y-1">
-          <li className="text-[11px] text-muted-foreground">• 3–20 characters</li>
-          <li className="text-[11px] text-muted-foreground">• Letters, numbers and underscores only</li>
+          <li className="text-[11px] text-muted-foreground">• 4–15 letters only (A–Z)</li>
+          <li className="text-[11px] text-muted-foreground">• No numbers, spaces or special characters</li>
           <li className="text-[11px] text-muted-foreground">• Can only be changed once every 30 days</li>
         </ul>
       </div>

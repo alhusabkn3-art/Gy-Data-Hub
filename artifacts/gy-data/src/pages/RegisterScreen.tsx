@@ -155,7 +155,7 @@ export default function RegisterScreen() {
 
   const handleUsernameNext = async () => {
     const normalized = username.toLowerCase().trim();
-    if (!/^[a-z0-9_]{3,20}$/.test(normalized)) {
+    if (!/^[a-z]{4,15}$/.test(normalized)) {
       setUsernameStatus('invalid');
       return;
     }
@@ -452,11 +452,11 @@ export default function RegisterScreen() {
                   type="text"
                   value={username}
                   onChange={e => {
-                    const val = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
+                    const val = e.target.value.toLowerCase().replace(/[^a-z]/g, '').slice(0, 15);
                     setUsername(val);
                     setUsernameStatus('idle');
                   }}
-                  placeholder="your_username"
+                  placeholder="yourname"
                   autoComplete="username"
                   spellCheck={false}
                   className="w-full h-12 rounded-xl text-sm font-semibold outline-none transition-colors"
@@ -479,9 +479,9 @@ export default function RegisterScreen() {
               <div className="mt-1.5 min-h-[18px]">
                 {usernameStatus === 'available' && <p className="text-xs font-semibold" style={{ color: '#16a34a' }}>✓ @{username} is available</p>}
                 {usernameStatus === 'taken' && <p className="text-xs font-semibold" style={{ color: '#DC2626' }}>@{username} is already taken. Try another.</p>}
-                {usernameStatus === 'invalid' && <p className="text-xs font-semibold" style={{ color: '#DC2626' }}>3–20 characters: letters, numbers and _ only.</p>}
+                {usernameStatus === 'invalid' && <p className="text-xs font-semibold" style={{ color: '#DC2626' }}>4–15 letters only — no numbers, spaces or symbols.</p>}
               </div>
-              <p className="text-[11px] mt-2" style={{ color: '#9BA8C0' }}>3–20 characters · letters, numbers and underscores only · cannot be changed for 30 days</p>
+              <p className="text-[11px] mt-2" style={{ color: '#9BA8C0' }}>4–15 letters only (A–Z) · no numbers or symbols · cannot be changed for 30 days</p>
             </div>
 
             <GradientButton onClick={handleUsernameNext} disabled={isCheckingUsername}>

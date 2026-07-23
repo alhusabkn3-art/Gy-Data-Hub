@@ -12,6 +12,10 @@ import AdminNotifications from './pages/AdminNotifications';
 import AdminSettings from './pages/AdminSettings';
 import AdminManagement from './pages/AdminManagement';
 import AdminAuditLogs from './pages/AdminAuditLogs';
+import WalletManagement from './pages/WalletManagement';
+import ReversalsRefunds from './pages/ReversalsRefunds';
+import FinancialReports from './pages/FinancialReports';
+import APIIntegrations from './pages/APIIntegrations';
 
 type AdminPage =
   | 'dashboard'
@@ -22,14 +26,22 @@ type AdminPage =
   | 'notifications'
   | 'settings'
   | 'adminManagement'
-  | 'auditLogs';
+  | 'auditLogs'
+  | 'walletManagement'
+  | 'reversals'
+  | 'reports'
+  | 'integrations';
+
+const SUPER_ONLY_PAGES: AdminPage[] = [
+  'adminManagement', 'auditLogs', 'walletManagement', 'reversals', 'reports', 'integrations',
+];
 
 function AdminDashboardApp() {
   const [activePage, setActivePage] = useState<AdminPage>('dashboard');
   const { isSuperAdmin } = useAdminContext();
 
   const navigate = (p: string) => {
-    if ((p === 'adminManagement' || p === 'auditLogs') && !isSuperAdmin) {
+    if (SUPER_ONLY_PAGES.includes(p as AdminPage) && !isSuperAdmin) {
       setActivePage('dashboard');
       return;
     }
@@ -47,6 +59,10 @@ function AdminDashboardApp() {
       case 'settings':        return <AdminSettings />;
       case 'adminManagement': return <AdminManagement />;
       case 'auditLogs':       return <AdminAuditLogs />;
+      case 'walletManagement':return <WalletManagement />;
+      case 'reversals':       return <ReversalsRefunds />;
+      case 'reports':         return <FinancialReports />;
+      case 'integrations':    return <APIIntegrations />;
       default:                return <AdminDashboard onNavigate={navigate} />;
     }
   };
@@ -59,22 +75,17 @@ function AdminDashboardApp() {
 }
 
 interface AdminAppProps {
-  /** When true, this entry point is reserved for super_admin only.
-   *  A regular admin who logs in through this path will be rejected. */
+  /** When true, this entry point is reserved for super_admin only. */
   superAdminMode?: boolean;
 }
 
 export default function AdminApp({ superAdminMode = false }: AdminAppProps) {
   const { isAdminLoggedIn, isSuperAdmin } = useAdminContext();
 
-  // Not logged in → show appropriate login screen
   if (!isAdminLoggedIn) {
     return superAdminMode ? <SuperAdminLoginScreen /> : <AdminLoginScreen />;
   }
 
-  // Super-admin entry point: if the logged-in user is NOT a super_admin,
-  // keep rendering the super-admin login screen — its useEffect will call
-  // adminLogout() and reset state, preventing any dashboard flash.
   if (superAdminMode && !isSuperAdmin) {
     return <SuperAdminLoginScreen />;
   }

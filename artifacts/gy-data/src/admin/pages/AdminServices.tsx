@@ -1,19 +1,73 @@
-import React from 'react';
-import { TrendingUp, CheckCircle, XCircle, Clock, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { TrendingUp, CheckCircle, XCircle, Clock, RefreshCw, Crown, Check } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAdminContext } from '../context/AdminContext';
 import { SERVICE_CONFIG } from '../data/adminMockData';
 import { fmtNaira } from '../utils/format';
+import { apiGetServiceSettings, apiUpdateServiceSetting, ServiceSetting } from '../utils/adminApi';
 
 function Skeleton({ className }: { className?: string }) {
   return <div className={`animate-pulse bg-white/[0.07] rounded-lg ${className ?? ''}`} />;
 }
 
 export default function AdminServices() {
-  const { servicesData, servicesLoading, stats, fetchServices } = useAdminContext();
+  const { servicesData, servicesLoading, stats, fetchServices, isSuperAdmin } = useAdminContext();
 
   const totalRevenue = servicesData.reduce((a, s) => a + s.revenue, 0);
   const totalTxns    = servicesData.reduce((a, s) => a + s.total,   0);
   const isLoading    = servicesLoading && servicesData.length === 0;
+
+  // Service settings state (super_admin only)
+  const [serviceSettings, setServiceSettings] = useState<ServiceSetting[]>([]);
+  const [settingsLoading,  setSettingsLoading]  = useState(false);
+  const [settingsSaving,   setSettingsSaving]   = useState<Record<string, boolean>>({});
+
+  // Local edit buffers for markup and notes inputs
+  const [markupDraft, setMarkupDraft] = useState<Record<string, string>>({});
+  const [notesDraft,  setNotesDraft]  = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    setSettingsLoading(true);
+    apiGetServiceSettings()
+      .then(res => {
+        setServiceSettings(res.services);
+        const mb: Record<string, string> = {};
+        const nb: Record<string, string> = {};
+        res.services.forEach(s => {
+          mb[s.serviceKey] = s.markup != null ? String(s.markup) : '';
+          nb[s.serviceKey] = s.notes ?? '';
+        });
+        setMarkupDraft(mb);
+        setNotesDraft(nb);
+      })
+      .catch(e => toast.error((e as Error).message || 'Failed to load service settings.'))
+      .finally(() => setSettingsLoading(false));
+  }, [isSuperAdmin]);
+
+  async function updateSetting(key: string, updates: { enabled?: boolean; markup?: number | null; notes?: string }) {
+    setSettingsSaving(prev => ({ ...prev, [key]: true }));
+    try {
+      await apiUpdateServiceSetting(key, updates);
+      setServiceSettings(prev =>
+        prev.map(s =>
+          s.serviceKey === key
+            ? {
+                ...s,
+                ...(updates.enabled !== undefined ? { enabled: updates.enabled } : {}),
+                ...(updates.markup  !== undefined ? { markup:  updates.markup  } : {}),
+                ...(updates.notes   !== undefined ? { notes:   updates.notes   } : {}),
+              }
+            : s
+        )
+      );
+      toast.success('Setting updated.');
+    } catch (e) {
+      toast.error((e as Error).message || 'Failed to update setting.');
+    } finally {
+      setSettingsSaving(prev => ({ ...prev, [key]: false }));
+    }
+  }
 
   return (
     <div className="p-4 lg:p-6 space-y-6 max-w-7xl mx-auto">
@@ -187,6 +241,158 @@ export default function AdminServices() {
           ))}
         </div>
       </div>
+
+      {/* Service Settings (super_admin only) */}
+      {isSuperAdmin && (
+        <div className="bg-card border border-amber-500/20 rounded-2xl p-5">
+          {/* Section header */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Crown className="w-4 h-4 text-amber-400" />
+              <h2 className="font-bold text-sm">Service Settings</h2>
+              <span className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full font-semibold">
+                Super Admin
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                setSettingsLoading(true);
+                apiGetServiceSettings()
+                  .then(res => {
+                    setServiceSettings(res.services);
+                    const mb: Record<string, string> = {};
+                    const nb: Record<string, string> = {};
+                    res.services.forEach(s => {
+                      mb[s.serviceKey] = s.markup != null ? String(s.markup) : '';
+                      nb[s.serviceKey] = s.notes ?? '';
+                    });
+                    setMarkupDraft(mb);
+                    setNotesDraft(nb);
+                  })
+                  .catch(e => toast.error((e as Error).message || 'Failed to refresh settings.'))
+                  .finally(() => setSettingsLoading(false));
+              }}
+              disabled={settingsLoading}
+              className="w-7 h-7 flex items-center justify-center rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3 h-3 ${settingsLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+
+          {/* Loading skeleton */}
+          {settingsLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-16 w-full" />
+              ))}
+            </div>
+          ) : serviceSettings.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">No service settings available.</p>
+          ) : (
+            <div className="space-y-3">
+              {serviceSettings.map(setting => {
+                const cfg   = SERVICE_CONFIG[setting.serviceKey];
+                const icon  = cfg?.icon  ?? '💳';
+                const label = cfg?.label ?? setting.label ?? setting.serviceKey;
+                const isSaving = settingsSaving[setting.serviceKey] ?? false;
+
+                return (
+                  <div
+                    key={setting.serviceKey}
+                    className="bg-background border border-border rounded-xl p-4 space-y-3"
+                  >
+                    {/* Row top: service name + toggle */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">{icon}</span>
+                        <div>
+                          <p className="text-sm font-semibold">{label}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            Last updated by {setting.updatedByName ?? 'system'}{' '}
+                            {setting.updatedAt
+                              ? `on ${new Date(setting.updatedAt).toLocaleDateString()}`
+                              : ''}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {isSaving && <RefreshCw className="w-3 h-3 animate-spin text-amber-400" />}
+                        {/* Toggle */}
+                        <button
+                          onClick={() => updateSetting(setting.serviceKey, { enabled: !setting.enabled })}
+                          disabled={isSaving}
+                          className={`relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 ${
+                            setting.enabled ? 'bg-green-500' : 'bg-white/20'
+                          }`}
+                        >
+                          <span
+                            className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${
+                              setting.enabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </button>
+                        <span className={`text-xs font-medium ${setting.enabled ? 'text-green-400' : 'text-muted-foreground'}`}>
+                          {setting.enabled ? 'On' : 'Off'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Markup % input */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground w-20 flex-shrink-0">Markup %</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={0.1}
+                        value={markupDraft[setting.serviceKey] ?? ''}
+                        onChange={e =>
+                          setMarkupDraft(prev => ({ ...prev, [setting.serviceKey]: e.target.value }))
+                        }
+                        className="flex-1 bg-card border border-border rounded-lg h-8 px-2 text-xs outline-none focus:border-amber-400 transition-colors"
+                        placeholder="0"
+                      />
+                      <button
+                        onClick={() => {
+                          const val = parseFloat(markupDraft[setting.serviceKey] ?? '');
+                          updateSetting(setting.serviceKey, { markup: isNaN(val) ? null : val });
+                        }}
+                        disabled={isSaving}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* Notes input */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground w-20 flex-shrink-0">Notes</span>
+                      <input
+                        type="text"
+                        value={notesDraft[setting.serviceKey] ?? ''}
+                        onChange={e =>
+                          setNotesDraft(prev => ({ ...prev, [setting.serviceKey]: e.target.value }))
+                        }
+                        className="flex-1 bg-card border border-border rounded-lg h-8 px-2 text-xs outline-none focus:border-amber-400 transition-colors"
+                        placeholder="Optional notes…"
+                      />
+                      <button
+                        onClick={() =>
+                          updateSetting(setting.serviceKey, { notes: notesDraft[setting.serviceKey] ?? '' })
+                        }
+                        disabled={isSaving}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

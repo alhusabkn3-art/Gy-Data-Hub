@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { Shield, Bell, Globe, Lock, Save, AlertTriangle, X, Eye, EyeOff, Pencil, Check, Crown } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Shield, Bell, Globe, Lock, Save, AlertTriangle, X, Eye, EyeOff, Pencil, Check, Crown, Loader2 } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { ROLE_LABELS } from '../data/adminMockData';
 import { toast } from 'sonner';
+import { apiGetSystemSettings, apiUpdateSystemSetting, SystemSettingValue } from '../utils/adminApi';
 
 // ── Toggle row ────────────────────────────────────────────────────────────────
 
@@ -199,23 +200,65 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
 export default function AdminSettings() {
   const { adminEmail, adminRole, isSuperAdmin, adminLogout } = useAdminContext();
 
-  const [modal,          setModal]         = useState<'changePin' | 'editProfile' | null>(null);
-  const [maintenance,    setMaintenance]   = useState(false);
-  const [emailAlerts,    setEmailAlerts]   = useState(true);
-  const [smsAlerts,      setSmsAlerts]     = useState(false);
-  const [twoFactor,      setTwoFactor]     = useState(false);
-  const [autoApproveKYC, setAutoApproveKYC] = useState(false);
-  const [debugMode,      setDebugMode]     = useState(false);
-  const [appName,        setAppName]       = useState('GY DATA');
-  const [supportEmail,   setSupportEmail]  = useState('support@gydata.ng');
-  const [minDeposit,     setMinDeposit]    = useState('100');
-  const [maxDaily,       setMaxDaily]      = useState('500000');
-  const [cfgSaved,       setCfgSaved]      = useState(false);
+  const [modal,             setModal]            = useState<'changePin' | 'editProfile' | null>(null);
+  const [maintenance,       setMaintenance]      = useState(false);
+  const [emailAlerts,       setEmailAlerts]      = useState(true);
+  const [smsAlerts,         setSmsAlerts]        = useState(false);
+  const [twoFactor,         setTwoFactor]        = useState(false);
+  const [debugMode,         setDebugMode]        = useState(false);
+  const [appName]                                = useState('GY DATA');
+  const [supportEmail,      setSupportEmail]     = useState('support@gydata.ng');
+  const [supportPhone,      setSupportPhone]     = useState('');
+  const [minDeposit,        setMinDeposit]       = useState('100');
+  const [maxDaily,          setMaxDaily]         = useState('500000');
+  const [systemAnnouncement, setSystemAnnouncement] = useState('');
+  const [maintenanceConfirm, setMaintenanceConfirm] = useState(false);
+  const [settingsLoading,   setSettingsLoading]  = useState(false);
+  const [settingsSaving,    setSettingsSaving]   = useState(false);
 
-  const saveConfig = () => {
-    setCfgSaved(true);
-    toast.success('Configuration saved successfully.');
-    setTimeout(() => setCfgSaved(false), 2000);
+  // Load system settings from backend on mount (super admin only)
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    setSettingsLoading(true);
+    apiGetSystemSettings()
+      .then(({ settings }) => {
+        if (settings['support_email']?.value)     setSupportEmail(settings['support_email'].value);
+        if (settings['support_phone']?.value)     setSupportPhone(settings['support_phone'].value);
+        if (settings['min_wallet_topup']?.value)  setMinDeposit(settings['min_wallet_topup'].value);
+        if (settings['max_wallet_topup']?.value)  setMaxDaily(settings['max_wallet_topup'].value);
+        if (settings['system_announcement']?.value) setSystemAnnouncement(settings['system_announcement'].value);
+        if (settings['maintenance_mode']?.value)  setMaintenance(settings['maintenance_mode'].value === 'true');
+      })
+      .catch(() => { /* silent — will use local defaults */ })
+      .finally(() => setSettingsLoading(false));
+  }, [isSuperAdmin]);
+
+  const handleMaintenanceChange = (v: boolean) => {
+    if (v) {
+      // Turning ON → show confirm first
+      setMaintenanceConfirm(true);
+    } else {
+      setMaintenance(false);
+    }
+  };
+
+  const saveConfig = async () => {
+    setSettingsSaving(true);
+    try {
+      await Promise.all([
+        apiUpdateSystemSetting('support_email', supportEmail),
+        apiUpdateSystemSetting('support_phone', supportPhone),
+        apiUpdateSystemSetting('min_wallet_topup', minDeposit),
+        apiUpdateSystemSetting('max_wallet_topup', maxDaily),
+        apiUpdateSystemSetting('system_announcement', systemAnnouncement),
+        apiUpdateSystemSetting('maintenance_mode', String(maintenance)),
+      ]);
+      toast.success('Configuration saved successfully.');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save configuration.');
+    } finally {
+      setSettingsSaving(false);
+    }
   };
 
   return (
@@ -293,36 +336,97 @@ export default function AdminSettings() {
             </div>
             <span className="text-[10px] font-semibold text-amber-400 border border-amber-400/30 bg-amber-500/8 rounded-full px-2 py-0.5">Super Admin</span>
           </div>
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">App Name</label>
-                <input value={appName} onChange={e => setAppName(e.target.value)}
-                  className="w-full bg-background border-2 border-border focus:border-primary rounded-xl h-11 px-4 text-sm outline-none transition-colors" />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Support Email</label>
-                <input value={supportEmail} onChange={e => setSupportEmail(e.target.value)} type="email"
-                  className="w-full bg-background border-2 border-border focus:border-primary rounded-xl h-11 px-4 text-sm outline-none transition-colors" />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Min Deposit (₦)</label>
-                <input value={minDeposit} onChange={e => setMinDeposit(e.target.value)} type="number"
-                  className="w-full bg-background border-2 border-border focus:border-primary rounded-xl h-11 px-4 text-sm outline-none transition-colors" />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Max Daily Spend (₦)</label>
-                <input value={maxDaily} onChange={e => setMaxDaily(e.target.value)} type="number"
-                  className="w-full bg-background border-2 border-border focus:border-primary rounded-xl h-11 px-4 text-sm outline-none transition-colors" />
-              </div>
+
+          {settingsLoading ? (
+            <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground text-sm">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading settings…
             </div>
-            <ToggleRow label="Maintenance Mode" description="Take the app offline for maintenance" value={maintenance} onChange={setMaintenance} />
-            <ToggleRow label="Auto-approve KYC" description="Automatically verify submitted KYC" value={autoApproveKYC} onChange={setAutoApproveKYC} />
-            <button onClick={saveConfig}
-              className="flex items-center gap-2 px-5 py-2.5 bg-primary hover:bg-primary/90 text-white rounded-xl text-sm font-semibold transition-colors shadow-[0_4px_16px_rgba(59,130,246,0.3)]">
-              {cfgSaved ? <><Check className="w-4 h-4" />Saved!</> : <><Save className="w-4 h-4" />Save Configuration</>}
-            </button>
-          </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* App Name — read-only */}
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">App Name</label>
+                  <input
+                    value={appName}
+                    readOnly
+                    className="w-full bg-background border-2 border-border rounded-xl h-11 px-4 text-sm outline-none opacity-60 cursor-not-allowed"
+                  />
+                </div>
+                {/* Support Email */}
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Support Email</label>
+                  <input
+                    value={supportEmail}
+                    onChange={e => setSupportEmail(e.target.value)}
+                    type="email"
+                    className="w-full bg-background border-2 border-border focus:border-primary rounded-xl h-11 px-4 text-sm outline-none transition-colors"
+                  />
+                </div>
+                {/* Support Phone */}
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Support Phone</label>
+                  <input
+                    value={supportPhone}
+                    onChange={e => setSupportPhone(e.target.value)}
+                    type="tel"
+                    placeholder="+234 800 000 0000"
+                    className="w-full bg-background border-2 border-border focus:border-primary rounded-xl h-11 px-4 text-sm outline-none transition-colors"
+                  />
+                </div>
+                {/* Min Deposit */}
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Min Deposit (₦)</label>
+                  <input
+                    value={minDeposit}
+                    onChange={e => setMinDeposit(e.target.value)}
+                    type="number"
+                    className="w-full bg-background border-2 border-border focus:border-primary rounded-xl h-11 px-4 text-sm outline-none transition-colors"
+                  />
+                </div>
+                {/* Max Daily */}
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Max Daily Spend (₦)</label>
+                  <input
+                    value={maxDaily}
+                    onChange={e => setMaxDaily(e.target.value)}
+                    type="number"
+                    className="w-full bg-background border-2 border-border focus:border-primary rounded-xl h-11 px-4 text-sm outline-none transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* System Announcement */}
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">System Announcement</label>
+                <textarea
+                  value={systemAnnouncement}
+                  onChange={e => setSystemAnnouncement(e.target.value)}
+                  rows={3}
+                  placeholder="Global banner shown to all users (leave blank to hide)…"
+                  className="w-full bg-background border-2 border-border focus:border-primary rounded-xl px-4 py-3 text-sm outline-none transition-colors resize-none"
+                />
+              </div>
+
+              <ToggleRow
+                label="Maintenance Mode"
+                description="Take the app offline for maintenance"
+                value={maintenance}
+                onChange={handleMaintenanceChange}
+              />
+
+              <button
+                onClick={saveConfig}
+                disabled={settingsSaving}
+                className="flex items-center gap-2 px-5 py-2.5 bg-primary hover:bg-primary/90 disabled:opacity-70 text-white rounded-xl text-sm font-semibold transition-colors shadow-[0_4px_16px_rgba(59,130,246,0.3)]"
+              >
+                {settingsSaving
+                  ? <><Loader2 className="w-4 h-4 animate-spin" />Saving…</>
+                  : <><Save className="w-4 h-4" />Save Configuration</>
+                }
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -347,6 +451,33 @@ export default function AdminSettings() {
 
       {modal === 'changePin'   && <ChangePinModal   onClose={() => setModal(null)} />}
       {modal === 'editProfile' && <EditProfileModal  onClose={() => setModal(null)} />}
+
+      {/* Maintenance Mode Confirmation */}
+      {maintenanceConfirm && (
+        <Modal title="Enable Maintenance Mode?" onClose={() => setMaintenanceConfirm(false)}>
+          <div className="space-y-4">
+            <div className="p-3 rounded-xl bg-red-500/8 border border-red-500/20 text-xs text-red-400 flex items-start gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+              <span>All users will see a maintenance page and cannot use the app until maintenance mode is turned off.</span>
+            </div>
+            <p className="text-sm text-muted-foreground">Are you sure you want to enable maintenance mode?</p>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setMaintenanceConfirm(false)}
+                className="flex-1 h-11 border border-border rounded-xl text-sm font-semibold hover:bg-white/5 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { setMaintenance(true); setMaintenanceConfirm(false); }}
+                className="flex-1 h-11 bg-red-500 hover:bg-red-500/90 text-white rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2"
+              >
+                <Check className="w-4 h-4" /> Enable
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { Bell, Plus, Send, FileText, X, Users, UserCheck } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Bell, Plus, Send, FileText, X, Users, UserCheck, Crown, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { StatusBadge } from './AdminDashboard';
 import { Announcement } from '../data/adminMockData';
 import { toast } from 'sonner';
+import { apiGetNotificationHistory, NotificationHistoryEntry } from '../utils/adminApi';
 
 const targetIcons: Record<string, React.ElementType> = {
   all: Users,
@@ -18,18 +19,68 @@ const targetLabels: Record<string, string> = {
 };
 
 export default function AdminNotifications() {
-  const { announcements, addAnnouncement, stats } = useAdminContext();
+  const { announcements, addAnnouncement, stats, isSuperAdmin, broadcastNotification } = useAdminContext();
   const [showCompose, setShowCompose] = useState(false);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [target, setTarget] = useState<'all' | 'verified' | 'unverified'>('all');
   const [sendAs, setSendAs] = useState<'sent' | 'draft'>('sent');
+  const [broadcasting, setBroadcasting] = useState(false);
 
-  const handleSend = () => {
+  const [notifHistory, setNotifHistory] = useState<NotificationHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPages, setHistoryPages] = useState(1);
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    loadHistory(1);
+  }, [isSuperAdmin]);
+
+  const loadHistory = async (page: number) => {
+    setHistoryLoading(true);
+    try {
+      const result = await apiGetNotificationHistory(page);
+      setNotifHistory(result.notifications);
+      setHistoryPage(page);
+      setHistoryPages(result.pages);
+    } catch (err) {
+      // silent — history is best-effort
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const handleSend = async () => {
     if (!title.trim() || !body.trim()) {
       toast.error('Title and message body are required.');
       return;
     }
+
+    // Super admin "Send Now" → real broadcast
+    if (isSuperAdmin && sendAs === 'sent') {
+      setBroadcasting(true);
+      try {
+        const result = await broadcastNotification(title.trim(), body.trim());
+        if (result.ok) {
+          toast.success(`Broadcast sent to ${result.sent} users`);
+          addAnnouncement({ title: title.trim(), body: body.trim(), target, status: 'sent' });
+          setTitle(''); setBody(''); setTarget('all'); setSendAs('sent');
+          setShowCompose(false);
+          // Refresh history
+          loadHistory(1);
+        } else {
+          toast.error(result.error ?? 'Broadcast failed.');
+        }
+      } catch (err: unknown) {
+        toast.error(err instanceof Error ? err.message : 'Broadcast failed.');
+      } finally {
+        setBroadcasting(false);
+      }
+      return;
+    }
+
+    // Draft or non-super-admin send → local only
     addAnnouncement({ title: title.trim(), body: body.trim(), target, status: sendAs });
     toast.success(sendAs === 'sent' ? 'Announcement sent!' : 'Saved as draft.');
     setTitle(''); setBody(''); setTarget('all'); setSendAs('sent');
@@ -117,17 +168,116 @@ export default function AdminNotifications() {
         })}
       </div>
 
+      {/* Notification History — Super Admin only */}
+      {isSuperAdmin && (
+        <div className="bg-card border border-amber-500/20 rounded-2xl overflow-hidden">
+          <div className="p-4 border-b border-border flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Crown className="w-4 h-4 text-amber-400" />
+              <h2 className="font-bold text-sm">Notification History</h2>
+              <span className="text-[10px] font-semibold text-amber-400 border border-amber-400/30 bg-amber-500/8 rounded-full px-2 py-0.5">Super Admin</span>
+            </div>
+            <span className="text-xs text-muted-foreground">{notifHistory.length} notifications</span>
+          </div>
+
+          {historyLoading ? (
+            <div className="p-6 space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="flex gap-3 animate-pulse">
+                  <div className="h-4 bg-white/10 rounded flex-1" />
+                  <div className="h-4 bg-white/10 rounded w-24" />
+                  <div className="h-4 bg-white/10 rounded w-16" />
+                  <div className="h-4 bg-white/10 rounded w-10" />
+                  <div className="h-4 bg-white/10 rounded w-20" />
+                </div>
+              ))}
+            </div>
+          ) : notifHistory.length === 0 ? (
+            <div className="p-10 text-center">
+              <Bell className="w-8 h-8 text-muted-foreground mx-auto mb-2 opacity-40" />
+              <p className="text-sm text-muted-foreground">No notifications sent yet</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border bg-background/50 text-muted-foreground">
+                    <th className="text-left px-4 py-3 font-semibold">User</th>
+                    <th className="text-left px-4 py-3 font-semibold">Title</th>
+                    <th className="text-left px-4 py-3 font-semibold">Type</th>
+                    <th className="text-left px-4 py-3 font-semibold">Read</th>
+                    <th className="text-left px-4 py-3 font-semibold">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {notifHistory.map(n => (
+                    <tr key={n.id} className="border-b border-border/50 hover:bg-white/[0.02] transition-colors">
+                      <td className="px-4 py-3 text-muted-foreground">
+                        <span className="text-foreground font-medium">{n.userName}</span>
+                        {' · '}
+                        <span>{n.userPhone}</span>
+                      </td>
+                      <td className="px-4 py-3 max-w-[200px] truncate">{n.title}</td>
+                      <td className="px-4 py-3">
+                        <span className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 whitespace-nowrap">
+                          {n.type}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {n.read
+                          ? <span className="text-green-400">Yes</span>
+                          : <span className="text-muted-foreground">No</span>
+                        }
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                        {new Date(n.createdAt).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {historyPages > 1 && (
+            <div className="p-3 border-t border-border flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Page {historyPage} of {historyPages}</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => loadHistory(historyPage - 1)}
+                  disabled={historyPage <= 1 || historyLoading}
+                  className="w-8 h-8 rounded-lg border border-border flex items-center justify-center hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => loadHistory(historyPage + 1)}
+                  disabled={historyPage >= historyPages || historyLoading}
+                  className="w-8 h-8 rounded-lg border border-border flex items-center justify-center hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Compose Modal */}
       {showCompose && (
         <>
           <div
             className="fixed inset-0 bg-black/60 z-50 backdrop-blur-sm"
-            onClick={() => setShowCompose(false)}
+            onClick={() => !broadcasting && setShowCompose(false)}
           />
           <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 bg-[#0A1628] border border-border rounded-2xl z-50 p-5 max-w-md mx-auto shadow-2xl max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h2 className="font-bold">New Announcement</h2>
-              <button onClick={() => setShowCompose(false)} className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors">
+              <button
+                onClick={() => !broadcasting && setShowCompose(false)}
+                className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors disabled:opacity-40"
+                disabled={broadcasting}
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -168,15 +318,20 @@ export default function AdminNotifications() {
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => { setSendAs('draft'); handleSend(); }}
-                  className="flex-1 h-11 border-2 border-border text-muted-foreground hover:text-foreground hover:border-white/20 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                  disabled={broadcasting}
+                  className="flex-1 h-11 border-2 border-border text-muted-foreground hover:text-foreground hover:border-white/20 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   <FileText className="w-4 h-4" /> Save Draft
                 </button>
                 <button
                   onClick={() => { setSendAs('sent'); handleSend(); }}
-                  className="flex-1 h-11 bg-primary hover:bg-primary/90 text-white rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(59,130,246,0.3)]"
+                  disabled={broadcasting}
+                  className="flex-1 h-11 bg-primary hover:bg-primary/90 disabled:opacity-70 text-white rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(59,130,246,0.3)]"
                 >
-                  <Send className="w-4 h-4" /> Send Now
+                  {broadcasting
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</>
+                    : <><Send className="w-4 h-4" /> Send Now</>
+                  }
                 </button>
               </div>
             </div>

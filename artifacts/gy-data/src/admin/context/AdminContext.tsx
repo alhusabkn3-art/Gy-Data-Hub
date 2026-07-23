@@ -25,7 +25,7 @@ import {
 
 const BASE = (import.meta.env.BASE_URL as string).replace(/\/$/, '');
 
-function adminApi(path: string, opts: RequestInit = {}): Promise<Response> {
+export function adminApi(path: string, opts: RequestInit = {}): Promise<Response> {
   const url = `${BASE}${path.startsWith('/') ? path : `/${path}`}`;
   return fetch(url, {
     credentials: 'include',
@@ -48,6 +48,9 @@ interface AdminContextType {
   currentAdminId:  string;
   adminLogin:  (email: string, pin: string) => Promise<boolean>;
   adminLogout: () => void;
+
+  // API helper (exported so pages can use the authenticated client directly)
+  api: (path: string, opts?: RequestInit) => Promise<Response>;
 
   // Stats (from backend)
   stats:        AdminStats | null;
@@ -77,9 +80,11 @@ interface AdminContextType {
   servicesLoading: boolean;
   fetchServices:   () => Promise<void>;
 
-  // Announcements (in-memory)
-  announcements:   Announcement[];
-  addAnnouncement: (ann: Omit<Announcement, 'id' | 'sentAt' | 'recipients'>) => void;
+  // Announcements (in-memory + broadcast to real backend)
+  announcements:       Announcement[];
+  addAnnouncement:     (ann: Omit<Announcement, 'id' | 'sentAt' | 'recipients'>) => void;
+  broadcastNotification:  (title: string, body: string) => Promise<{ ok: boolean; sent: number; error?: string }>;
+  sendTargetedNotification:(userIds: string[], title: string, body: string) => Promise<{ ok: boolean; sent: number; error?: string }>;
 
   // Admin account management (real backend — super_admin only)
   adminAccounts:       AdminAccount[];
@@ -230,13 +235,13 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
           status: 'active' | 'disabled'; lastLoginAt: string | null; createdAt: string;
         }> };
         setAdminAccounts(data.admins.map(a => ({
-          id:          a.id,
-          name:        a.name,
-          email:       a.email,
-          role:        a.role,
-          status:      a.status,
-          createdAt:   new Date(a.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-          lastLogin:   a.lastLoginAt
+          id:           a.id,
+          name:         a.name,
+          email:        a.email,
+          role:         a.role,
+          status:       a.status,
+          createdAt:    new Date(a.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          lastLogin:    a.lastLoginAt
             ? new Date(a.lastLoginAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
             : 'Never',
           isSuperAdmin: a.role === 'super_admin',
@@ -281,18 +286,11 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       setAdminRole(role);
       setCurrentAdminId(data.id);
 
-      // Fetch all dashboard data in parallel
       const fetches: Promise<void>[] = [
-        refreshStats(),
-        fetchWeeklyRevenue(),
-        fetchServices(),
-        fetchUsers(),
-        fetchTransactions(),
+        refreshStats(), fetchWeeklyRevenue(), fetchServices(), fetchUsers(), fetchTransactions(),
       ];
-      // Fetch admin-management data if super admin
       if (role === 'super_admin') {
-        fetches.push(fetchAdminAccounts());
-        fetches.push(fetchAuditLogs());
+        fetches.push(fetchAdminAccounts(), fetchAuditLogs());
       }
       void Promise.all(fetches);
 
@@ -315,6 +313,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     setServicesData([]);
     setAdminAccounts([]);
     setAuditLogs([]);
+    setAnnouncements(seedAnnouncements);
   };
 
   // ── User status ───────────────────────────────────────────────────────────
@@ -335,14 +334,11 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   const suspendUser  = (id: string) => void updateUserStatus(id, 'suspended');
   const activateUser = (id: string) => void updateUserStatus(id, 'active');
 
-  // ── Admin CRUD (super_admin only — backend enforces) ──────────────────────
+  // ── Admin CRUD ────────────────────────────────────────────────────────────
 
   const addAdminAccount = async (data: { name: string; email: string; role: AdminRole; pin: string }): Promise<boolean> => {
     try {
-      const res = await adminApi('/api/admin/admins', {
-        method: 'POST',
-        body:   JSON.stringify(data),
-      });
+      const res = await adminApi('/api/admin/admins', { method: 'POST', body: JSON.stringify(data) });
       if (!res.ok) return false;
       await fetchAdminAccounts();
       return true;
@@ -351,10 +347,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
 
   const updateAdminAccount = async (id: string, updates: { name?: string; email?: string; role?: AdminRole }): Promise<boolean> => {
     try {
-      const res = await adminApi(`/api/admin/admins/${id}`, {
-        method: 'PATCH',
-        body:   JSON.stringify(updates),
-      });
+      const res = await adminApi(`/api/admin/admins/${id}`, { method: 'PATCH', body: JSON.stringify(updates) });
       if (!res.ok) return false;
       await fetchAdminAccounts();
       return true;
@@ -363,20 +356,14 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
 
   const changeAdminPin = async (id: string, newPin: string): Promise<boolean> => {
     try {
-      const res = await adminApi(`/api/admin/admins/${id}/pin`, {
-        method: 'PATCH',
-        body:   JSON.stringify({ newPin }),
-      });
+      const res = await adminApi(`/api/admin/admins/${id}/pin`, { method: 'PATCH', body: JSON.stringify({ newPin }) });
       return res.ok;
     } catch { return false; }
   };
 
   const toggleAdminStatus = async (id: string, newStatus: 'active' | 'disabled'): Promise<boolean> => {
     try {
-      const res = await adminApi(`/api/admin/admins/${id}/status`, {
-        method: 'PATCH',
-        body:   JSON.stringify({ status: newStatus }),
-      });
+      const res = await adminApi(`/api/admin/admins/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: newStatus }) });
       if (!res.ok) return false;
       setAdminAccounts(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
       return true;
@@ -396,10 +383,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
 
   const updateOwnProfile = async (updates: { name?: string; email?: string }): Promise<boolean> => {
     try {
-      const res = await adminApi('/api/admin/me', {
-        method: 'PATCH',
-        body:   JSON.stringify(updates),
-      });
+      const res = await adminApi('/api/admin/me', { method: 'PATCH', body: JSON.stringify(updates) });
       if (!res.ok) return false;
       if (updates.email) setAdminEmail(updates.email);
       return true;
@@ -408,10 +392,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
 
   const changeOwnPin = async (currentPin: string, newPin: string): Promise<{ ok: boolean; error?: string }> => {
     try {
-      const res = await adminApi('/api/admin/me/pin', {
-        method: 'PATCH',
-        body:   JSON.stringify({ currentPin, newPin }),
-      });
+      const res = await adminApi('/api/admin/me/pin', { method: 'PATCH', body: JSON.stringify({ currentPin, newPin }) });
       if (res.ok) return { ok: true };
       const body = await res.json() as { error?: string };
       return { ok: false, error: body.error ?? 'Failed to change PIN.' };
@@ -432,18 +413,57 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     setAnnouncements(prev => [newAnn, ...prev]);
   };
 
+  // ── Real notification broadcast (super_admin only) ────────────────────────
+
+  const broadcastNotification = async (title: string, body: string): Promise<{ ok: boolean; sent: number; error?: string }> => {
+    try {
+      const res = await adminApi('/api/admin/notifications/broadcast', {
+        method: 'POST',
+        body:   JSON.stringify({ title, body, type: 'system' }),
+      });
+      if (!res.ok) {
+        const err = await res.json() as { error?: string };
+        return { ok: false, sent: 0, error: err.error ?? 'Failed to broadcast.' };
+      }
+      const data = await res.json() as { ok: boolean; sent: number };
+      // Also add to local announcement history
+      addAnnouncement({ title, body: body, target: 'all', status: 'sent' });
+      return { ok: true, sent: data.sent };
+    } catch {
+      return { ok: false, sent: 0, error: 'Network error.' };
+    }
+  };
+
+  const sendTargetedNotification = async (userIds: string[], title: string, body: string): Promise<{ ok: boolean; sent: number; error?: string }> => {
+    try {
+      const res = await adminApi('/api/admin/notifications/targeted', {
+        method: 'POST',
+        body:   JSON.stringify({ userIds, title, body, type: 'system' }),
+      });
+      if (!res.ok) {
+        const err = await res.json() as { error?: string };
+        return { ok: false, sent: 0, error: err.error ?? 'Failed.' };
+      }
+      const data = await res.json() as { ok: boolean; sent: number };
+      return { ok: true, sent: data.sent };
+    } catch {
+      return { ok: false, sent: 0, error: 'Network error.' };
+    }
+  };
+
   // ── Context value ─────────────────────────────────────────────────────────
 
   return (
     <AdminContext.Provider value={{
       isAdminLoggedIn, adminEmail, adminRole, isSuperAdmin, currentAdminId,
       adminLogin, adminLogout,
+      api: adminApi,
       stats, statsLoading, refreshStats,
       users, usersTotal, usersLoading, fetchUsers, updateUserStatus,
       transactions, txnsTotal, txnsLoading, fetchTransactions,
       weeklyRevenue, revenueLoading, fetchWeeklyRevenue,
       servicesData, servicesLoading, fetchServices,
-      announcements, addAnnouncement,
+      announcements, addAnnouncement, broadcastNotification, sendTargetedNotification,
       adminAccounts, adminAccountsLoading, fetchAdminAccounts,
       addAdminAccount, updateAdminAccount, changeAdminPin,
       toggleAdminStatus, removeAdminAccount,

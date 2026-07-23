@@ -4,22 +4,30 @@ import {
   LayoutDashboard, Users, ArrowLeftRight, Wallet,
   Grid3X3, Bell, Settings, LogOut, Menu, X, Shield, ChevronRight,
   UserCog, User, Lock, ChevronDown, ScrollText, Crown,
+  RotateCcw, BarChart2, Plug, WalletCards,
 } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { ROLE_LABELS } from '../data/adminMockData';
 
-// ── Nav items — filtered by role in SidebarContent ───────────────────────────
+// ── Nav items ─────────────────────────────────────────────────────────────────
+// superOnly: true  → visible only to super_admin, renders in amber section
+// superOnly: false → visible to all admins
 
 const BASE_NAV = [
-  { id: 'dashboard',       label: 'Dashboard',       icon: LayoutDashboard, superOnly: false },
-  { id: 'users',           label: 'Users',            icon: Users,           superOnly: false },
-  { id: 'transactions',    label: 'Transactions',     icon: ArrowLeftRight,  superOnly: false },
-  { id: 'wallet',          label: 'Wallet',           icon: Wallet,          superOnly: false },
-  { id: 'services',        label: 'Services',         icon: Grid3X3,         superOnly: false },
-  { id: 'notifications',   label: 'Announcements',    icon: Bell,            superOnly: false },
-  { id: 'adminManagement', label: 'Admin Management', icon: UserCog,         superOnly: true  },
-  { id: 'auditLogs',       label: 'Audit Logs',       icon: ScrollText,      superOnly: true  },
-  { id: 'settings',        label: 'Settings',         icon: Settings,        superOnly: false },
+  { id: 'dashboard',        label: 'Dashboard',         icon: LayoutDashboard, superOnly: false },
+  { id: 'users',            label: 'Users',              icon: Users,           superOnly: false },
+  { id: 'transactions',     label: 'Transactions',       icon: ArrowLeftRight,  superOnly: false },
+  { id: 'wallet',           label: 'Wallet Overview',    icon: Wallet,          superOnly: false },
+  { id: 'services',         label: 'Services',           icon: Grid3X3,         superOnly: false },
+  { id: 'notifications',    label: 'Announcements',      icon: Bell,            superOnly: false },
+  { id: 'settings',         label: 'Settings',           icon: Settings,        superOnly: false },
+  // ── Super Admin only ──
+  { id: 'walletManagement', label: 'Wallet Management',  icon: WalletCards,     superOnly: true  },
+  { id: 'reversals',        label: 'Reversals & Refunds',icon: RotateCcw,       superOnly: true  },
+  { id: 'reports',          label: 'Financial Reports',  icon: BarChart2,       superOnly: true  },
+  { id: 'integrations',     label: 'API Integrations',   icon: Plug,            superOnly: true  },
+  { id: 'adminManagement',  label: 'Admin Management',   icon: UserCog,         superOnly: true  },
+  { id: 'auditLogs',        label: 'Audit Logs',         icon: ScrollText,      superOnly: true  },
 ];
 
 interface AdminLayoutProps {
@@ -28,7 +36,7 @@ interface AdminLayoutProps {
   onNavigate: (page: string) => void;
 }
 
-// ── Avatar dropdown menu ──────────────────────────────────────────────────────
+// ── Avatar dropdown ───────────────────────────────────────────────────────────
 
 interface AvatarDropdownProps {
   adminEmail: string;
@@ -59,9 +67,9 @@ function AvatarDropdown({ adminEmail, isSuperAdmin, onNavigate, onLogout, direct
   const initial = adminEmail ? adminEmail[0].toUpperCase() : 'A';
 
   const menuItems = [
-    { icon: User,  label: 'Admin Profile', sub: adminEmail || 'Admin', action: () => { onNavigate('settings'); setOpen(false); } },
-    { icon: Lock,  label: 'Security',       sub: 'Change PIN & access', action: () => { onNavigate('settings'); setOpen(false); } },
-    { icon: Settings, label: 'Settings',   sub: 'App configuration',   action: () => { onNavigate('settings'); setOpen(false); } },
+    { icon: User,     label: 'Admin Profile', sub: adminEmail || 'Admin',        action: () => { onNavigate('settings'); setOpen(false); } },
+    { icon: Lock,     label: 'Security',      sub: 'Change PIN & access',        action: () => { onNavigate('settings'); setOpen(false); } },
+    { icon: Settings, label: 'Settings',      sub: 'App configuration',          action: () => { onNavigate('settings'); setOpen(false); } },
   ];
 
   const dropdownClass = direction === 'up'
@@ -95,7 +103,6 @@ function AvatarDropdown({ adminEmail, isSuperAdmin, onNavigate, onLogout, direct
             transition={{ duration: 0.15 }}
             className={`absolute z-[80] ${dropdownClass} bg-[#0D1F3C] border border-white/10 rounded-2xl shadow-2xl shadow-black/40 overflow-hidden`}
           >
-            {/* Profile header */}
             <div className="px-4 py-3 border-b border-white/[0.08] flex items-center gap-3">
               <div className="relative w-9 h-9 flex-shrink-0">
                 <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-sm font-bold text-primary border border-primary/30">
@@ -147,18 +154,54 @@ function AvatarDropdown({ adminEmail, isSuperAdmin, onNavigate, onLogout, direct
   );
 }
 
+// ── Sidebar nav button ────────────────────────────────────────────────────────
+
+function NavButton({ id, label, icon: Icon, active, superAdmin, onNavigate, onClose }: {
+  id: string; label: string; icon: React.ElementType; active: boolean;
+  superAdmin: boolean; onNavigate: (id: string) => void; onClose?: () => void;
+}) {
+  if (superAdmin) {
+    return (
+      <button onClick={() => { onNavigate(id); onClose?.(); }}
+        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group ${
+          active
+            ? 'bg-amber-500/20 text-amber-300 border border-amber-400/25'
+            : 'text-amber-400/70 hover:text-amber-300 hover:bg-amber-500/10'
+        }`}>
+        <Icon className={`w-4 h-4 flex-shrink-0 ${active ? 'text-amber-300' : 'text-amber-400/60 group-hover:text-amber-300'}`} />
+        <span className="truncate">{label}</span>
+        {active && <ChevronRight className="w-3.5 h-3.5 ml-auto opacity-70 flex-shrink-0" />}
+      </button>
+    );
+  }
+  return (
+    <button onClick={() => { onNavigate(id); onClose?.(); }}
+      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group ${
+        active
+          ? 'bg-primary text-white shadow-[0_4px_16px_rgba(59,130,246,0.35)]'
+          : 'text-muted-foreground hover:text-white hover:bg-white/5'
+      }`}>
+      <Icon className={`w-4 h-4 flex-shrink-0 ${active ? 'text-white' : 'text-muted-foreground group-hover:text-white'}`} />
+      <span className="truncate">{label}</span>
+      {active && <ChevronRight className="w-3.5 h-3.5 ml-auto opacity-70 flex-shrink-0" />}
+    </button>
+  );
+}
+
 // ── Layout ────────────────────────────────────────────────────────────────────
 
 export default function AdminLayout({ children, activePage, onNavigate }: AdminLayoutProps) {
   const { adminLogout, adminEmail, adminRole, isSuperAdmin } = useAdminContext();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const navItems = BASE_NAV.filter(item => !item.superOnly || isSuperAdmin);
+  const regularItems = BASE_NAV.filter(i => !i.superOnly);
+  const superItems   = BASE_NAV.filter(i => i.superOnly);
+  const allVisible   = BASE_NAV.filter(i => !i.superOnly || isSuperAdmin);
 
   const SidebarContent = ({ onClose }: { onClose?: () => void }) => (
     <div className="flex flex-col h-full">
       {/* Brand */}
-      <div className="px-5 py-5 border-b border-white/10 flex items-center gap-3">
+      <div className="px-5 py-5 border-b border-white/10 flex items-center gap-3 flex-shrink-0">
         <div className="w-9 h-9 rounded-xl bg-primary/20 flex items-center justify-center border border-primary/30">
           <Shield className="w-5 h-5 text-primary" />
         </div>
@@ -174,26 +217,18 @@ export default function AdminLayout({ children, activePage, onNavigate }: AdminL
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {/* Super Admin section divider */}
-        {isSuperAdmin && (
-          <div className="pb-1">
-            {navItems.filter(i => !i.superOnly).map(({ id, label, icon: Icon }) => {
-              const active = activePage === id;
-              return (
-                <button key={id} onClick={() => { onNavigate(id); onClose?.(); }}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group ${
-                    active ? 'bg-primary text-white shadow-[0_4px_16px_rgba(59,130,246,0.35)]' : 'text-muted-foreground hover:text-white hover:bg-white/5'
-                  }`}>
-                  <Icon className={`w-4 h-4 flex-shrink-0 ${active ? 'text-white' : 'text-muted-foreground group-hover:text-white'}`} />
-                  {label}
-                  {active && <ChevronRight className="w-3.5 h-3.5 ml-auto opacity-70" />}
-                </button>
-              );
-            })}
+      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+        {isSuperAdmin ? (
+          <>
+            {/* Regular items */}
+            {regularItems.map(({ id, label, icon }) => (
+              <NavButton key={id} id={id} label={label} icon={icon}
+                active={activePage === id} superAdmin={false}
+                onNavigate={onNavigate} onClose={onClose} />
+            ))}
 
-            {/* Super Admin section */}
-            <div className="mt-3 mb-1 px-3 flex items-center gap-2">
+            {/* Super Admin section divider */}
+            <div className="mt-3 mb-1.5 px-3 flex items-center gap-2">
               <div className="flex-1 h-px bg-amber-400/20" />
               <div className="flex items-center gap-1">
                 <Crown className="w-2.5 h-2.5 text-amber-400/70" />
@@ -201,40 +236,24 @@ export default function AdminLayout({ children, activePage, onNavigate }: AdminL
               </div>
               <div className="flex-1 h-px bg-amber-400/20" />
             </div>
-            {navItems.filter(i => i.superOnly).map(({ id, label, icon: Icon }) => {
-              const active = activePage === id;
-              return (
-                <button key={id} onClick={() => { onNavigate(id); onClose?.(); }}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group ${
-                    active ? 'bg-amber-500/20 text-amber-300 border border-amber-400/25' : 'text-amber-400/70 hover:text-amber-300 hover:bg-amber-500/10'
-                  }`}>
-                  <Icon className={`w-4 h-4 flex-shrink-0 ${active ? 'text-amber-300' : 'text-amber-400/60 group-hover:text-amber-300'}`} />
-                  {label}
-                  {active && <ChevronRight className="w-3.5 h-3.5 ml-auto opacity-70" />}
-                </button>
-              );
-            })}
-          </div>
-        )}
 
-        {/* Non-super-admin — just show all allowed nav items */}
-        {!isSuperAdmin && navItems.map(({ id, label, icon: Icon }) => {
-          const active = activePage === id;
-          return (
-            <button key={id} onClick={() => { onNavigate(id); onClose?.(); }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group ${
-                active ? 'bg-primary text-white shadow-[0_4px_16px_rgba(59,130,246,0.35)]' : 'text-muted-foreground hover:text-white hover:bg-white/5'
-              }`}>
-              <Icon className={`w-4 h-4 flex-shrink-0 ${active ? 'text-white' : 'text-muted-foreground group-hover:text-white'}`} />
-              {label}
-              {active && <ChevronRight className="w-3.5 h-3.5 ml-auto opacity-70" />}
-            </button>
-          );
-        })}
+            {superItems.map(({ id, label, icon }) => (
+              <NavButton key={id} id={id} label={label} icon={icon}
+                active={activePage === id} superAdmin={true}
+                onNavigate={onNavigate} onClose={onClose} />
+            ))}
+          </>
+        ) : (
+          allVisible.map(({ id, label, icon }) => (
+            <NavButton key={id} id={id} label={label} icon={icon}
+              active={activePage === id} superAdmin={false}
+              onNavigate={onNavigate} onClose={onClose} />
+          ))
+        )}
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-white/10 p-4">
+      <div className="border-t border-white/10 p-4 flex-shrink-0">
         <div className="flex items-center gap-3 mb-3 px-1">
           <AvatarDropdown
             adminEmail={adminEmail}

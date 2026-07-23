@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAdminContext } from './context/AdminContext';
 import AdminLoginScreen from './pages/AdminLoginScreen';
+import SuperAdminLoginScreen from './pages/SuperAdminLoginScreen';
 import AdminLayout from './components/AdminLayout';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminUsers from './pages/AdminUsers';
@@ -28,7 +29,6 @@ function AdminDashboardApp() {
   const { isSuperAdmin } = useAdminContext();
 
   const navigate = (p: string) => {
-    // Prevent non-super-admins from navigating to super-admin pages via direct calls
     if ((p === 'adminManagement' || p === 'auditLogs') && !isSuperAdmin) {
       setActivePage('dashboard');
       return;
@@ -45,7 +45,6 @@ function AdminDashboardApp() {
       case 'services':        return <AdminServices />;
       case 'notifications':   return <AdminNotifications />;
       case 'settings':        return <AdminSettings />;
-      // Super admin only — backend independently enforces these
       case 'adminManagement': return <AdminManagement />;
       case 'auditLogs':       return <AdminAuditLogs />;
       default:                return <AdminDashboard onNavigate={navigate} />;
@@ -59,7 +58,26 @@ function AdminDashboardApp() {
   );
 }
 
-export default function AdminApp() {
-  const { isAdminLoggedIn } = useAdminContext();
-  return isAdminLoggedIn ? <AdminDashboardApp /> : <AdminLoginScreen />;
+interface AdminAppProps {
+  /** When true, this entry point is reserved for super_admin only.
+   *  A regular admin who logs in through this path will be rejected. */
+  superAdminMode?: boolean;
+}
+
+export default function AdminApp({ superAdminMode = false }: AdminAppProps) {
+  const { isAdminLoggedIn, isSuperAdmin } = useAdminContext();
+
+  // Not logged in → show appropriate login screen
+  if (!isAdminLoggedIn) {
+    return superAdminMode ? <SuperAdminLoginScreen /> : <AdminLoginScreen />;
+  }
+
+  // Super-admin entry point: if the logged-in user is NOT a super_admin,
+  // keep rendering the super-admin login screen — its useEffect will call
+  // adminLogout() and reset state, preventing any dashboard flash.
+  if (superAdminMode && !isSuperAdmin) {
+    return <SuperAdminLoginScreen />;
+  }
+
+  return <AdminDashboardApp />;
 }

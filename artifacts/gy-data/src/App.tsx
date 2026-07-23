@@ -119,12 +119,21 @@ function CustomerApp() {
 
 function RootRouter() {
   const [location] = useLocation();
-  const isAdmin = location === '/admin' || location === '/admin-login' || location.startsWith('/admin/');
+  const isAdminPath = location === '/admin' || location === '/admin-login' || location.startsWith('/admin/');
+  const isSuperAdminPath = location === '/super-admin-login' || location === '/super-admin' || location.startsWith('/super-admin/');
 
-  if (isAdmin) {
+  if (isAdminPath) {
     return (
       <AdminProvider>
         <AdminApp />
+      </AdminProvider>
+    );
+  }
+
+  if (isSuperAdminPath) {
+    return (
+      <AdminProvider>
+        <AdminApp superAdminMode />
       </AdminProvider>
     );
   }

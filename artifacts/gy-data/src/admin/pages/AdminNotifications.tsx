@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Plus, Send, FileText, X, Users, UserCheck, Crown, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Bell, Plus, Send, FileText, X, Users, UserCheck, Crown, Loader2, ChevronLeft, ChevronRight, Megaphone } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { StatusBadge } from './AdminDashboard';
 import { Announcement } from '../data/adminMockData';
 import { toast } from 'sonner';
-import { apiGetNotificationHistory, NotificationHistoryEntry } from '../utils/adminApi';
+import { apiGetNotificationHistory, NotificationHistoryEntry, apiSendStaffNotification, apiGetStaff, StaffMember, apiGetSystemSettings, apiUpdateSystemSetting } from '../utils/adminApi';
 
 const targetIcons: Record<string, React.ElementType> = {
   all: Users,
@@ -23,7 +23,7 @@ export default function AdminNotifications() {
   const [showCompose, setShowCompose] = useState(false);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
-  const [target, setTarget] = useState<'all' | 'verified' | 'unverified'>('all');
+  const [target, setTarget] = useState<'all' | 'verified' | 'unverified' | 'staff'>('all');
   const [sendAs, setSendAs] = useState<'sent' | 'draft'>('sent');
   const [broadcasting, setBroadcasting] = useState(false);
 
@@ -32,9 +32,17 @@ export default function AdminNotifications() {
   const [historyPage, setHistoryPage] = useState(1);
   const [historyPages, setHistoryPages] = useState(1);
 
+  const [staffList, setStaffList] = useState<StaffMember[]>([]);
+  const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
+  const [staffLoading, setStaffLoading] = useState(false);
+
+  const [announcementText, setAnnouncementText] = useState('');
+  const [announcementSaving, setAnnouncementSaving] = useState(false);
+
   useEffect(() => {
     if (!isSuperAdmin) return;
     loadHistory(1);
+    apiGetSystemSettings().then(r => setAnnouncementText(r.settings['system_announcement']?.value ?? '')).catch(() => {});
   }, [isSuperAdmin]);
 
   const loadHistory = async (page: number) => {
@@ -61,16 +69,30 @@ export default function AdminNotifications() {
     if (isSuperAdmin && sendAs === 'sent') {
       setBroadcasting(true);
       try {
-        const result = await broadcastNotification(title.trim(), body.trim());
-        if (result.ok) {
-          toast.success(`Broadcast sent to ${result.sent} users`);
-          addAnnouncement({ title: title.trim(), body: body.trim(), target, status: 'sent' });
-          setTitle(''); setBody(''); setTarget('all'); setSendAs('sent');
+        if (target === 'staff') {
+          if (selectedStaffIds.length === 0) {
+            toast.error('Select at least one staff member.');
+            setBroadcasting(false);
+            return;
+          }
+          const res = await apiSendStaffNotification(selectedStaffIds, title.trim(), body.trim());
+          toast.success(`Notification sent to ${res.sent} staff member(s)`);
+          addAnnouncement({ title: title.trim(), body: body.trim(), target: 'all', status: 'sent' });
+          setTitle(''); setBody(''); setTarget('all'); setSendAs('sent'); setSelectedStaffIds([]);
           setShowCompose(false);
-          // Refresh history
           loadHistory(1);
         } else {
-          toast.error(result.error ?? 'Broadcast failed.');
+          const result = await broadcastNotification(title.trim(), body.trim());
+          if (result.ok) {
+            toast.success(`Broadcast sent to ${result.sent} users`);
+            addAnnouncement({ title: title.trim(), body: body.trim(), target, status: 'sent' });
+            setTitle(''); setBody(''); setTarget('all'); setSendAs('sent');
+            setShowCompose(false);
+            // Refresh history
+            loadHistory(1);
+          } else {
+            toast.error(result.error ?? 'Broadcast failed.');
+          }
         }
       } catch (err: unknown) {
         toast.error(err instanceof Error ? err.message : 'Broadcast failed.');
@@ -81,7 +103,8 @@ export default function AdminNotifications() {
     }
 
     // Draft or non-super-admin send → local only
-    addAnnouncement({ title: title.trim(), body: body.trim(), target, status: sendAs });
+    const safeTarget = (target === 'staff' ? 'all' : target) as 'all' | 'verified' | 'unverified';
+    addAnnouncement({ title: title.trim(), body: body.trim(), target: safeTarget, status: sendAs });
     toast.success(sendAs === 'sent' ? 'Announcement sent!' : 'Saved as draft.');
     setTitle(''); setBody(''); setTarget('all'); setSendAs('sent');
     setShowCompose(false);
@@ -167,6 +190,38 @@ export default function AdminNotifications() {
           );
         })}
       </div>
+
+      {/* Announcement Banner — Super Admin only */}
+      {isSuperAdmin && (
+        <div className="bg-[#0D1F3C] rounded-2xl border border-white/[0.06] p-5">
+          <div className="flex items-center gap-2 mb-1">
+            <Megaphone className="w-4 h-4 text-amber-400"/>
+            <h3 className="text-sm font-semibold">System Announcement Banner</h3>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">Shown as a banner on the app homepage for all users</p>
+          <textarea
+            value={announcementText}
+            onChange={e => setAnnouncementText(e.target.value)}
+            maxLength={280}
+            rows={3}
+            placeholder="Enter announcement message (leave empty to hide banner)..."
+            className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-muted-foreground resize-none focus:outline-none focus:border-primary/50"
+          />
+          <div className="flex items-center justify-between mt-2">
+            <span className="text-xs text-muted-foreground">{announcementText.length}/280</span>
+            <div className="flex gap-2">
+              <button onClick={()=>setAnnouncementText('')} className="px-3 py-1.5 text-xs text-muted-foreground hover:text-white hover:bg-white/5 rounded-xl transition-colors">Clear</button>
+              <button
+                onClick={async()=>{setAnnouncementSaving(true);try{await apiUpdateSystemSetting('system_announcement',announcementText);toast.success('Banner saved!');}catch{toast.error('Failed to save banner.');}finally{setAnnouncementSaving(false);}}}
+                disabled={announcementSaving}
+                className="px-4 py-1.5 bg-amber-500/20 text-amber-400 border border-amber-400/25 rounded-xl text-xs font-medium hover:bg-amber-500/30 transition-colors disabled:opacity-50"
+              >
+                {announcementSaving ? 'Saving...' : 'Save Banner'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Notification History — Super Admin only */}
       {isSuperAdmin && (
@@ -307,14 +362,54 @@ export default function AdminNotifications() {
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 block">Target Audience</label>
                 <select
                   value={target}
-                  onChange={e => setTarget(e.target.value as typeof target)}
+                  onChange={e => {
+                    const val = e.target.value as typeof target;
+                    setTarget(val);
+                    if (val === 'staff' && staffList.length === 0) {
+                      setStaffLoading(true);
+                      apiGetStaff().then(r => setStaffList(r.staff)).catch(() => {}).finally(() => setStaffLoading(false));
+                    }
+                  }}
                   className="w-full bg-background border border-border focus:border-primary rounded-xl h-11 px-3 text-sm outline-none transition-colors"
                 >
                   <option value="all">All Users{stats ? ` (${stats.totalUsers.toLocaleString()})` : ''}</option>
                   <option value="verified">KYC Verified Only{stats ? ` (${stats.verifiedUsers.toLocaleString()})` : ''}</option>
                   <option value="unverified">Unverified Only{stats ? ` (${stats.unverifiedUsers.toLocaleString()})` : ''}</option>
+                  <option value="staff">Staff Members</option>
                 </select>
               </div>
+
+              {/* Staff member checklist */}
+              {target === 'staff' && (
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 block">Select Staff</label>
+                  {staffLoading ? (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground py-2"><Loader2 className="w-3.5 h-3.5 animate-spin"/>Loading staff…</div>
+                  ) : staffList.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-2">No staff members found.</p>
+                  ) : (
+                    <div className="bg-background border border-border rounded-xl max-h-40 overflow-y-auto divide-y divide-border/50">
+                      {staffList.map(s => (
+                        <label key={s.id} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-white/5 transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={selectedStaffIds.includes(s.id)}
+                            onChange={e => setSelectedStaffIds(prev => e.target.checked ? [...prev, s.id] : prev.filter(id => id !== s.id))}
+                            className="accent-primary"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{s.name}</p>
+                            <p className="text-xs text-muted-foreground truncate">{s.role}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {selectedStaffIds.length > 0 && (
+                    <p className="text-xs text-primary mt-1">{selectedStaffIds.length} staff selected</p>
+                  )}
+                </div>
+              )}
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => { setSendAs('draft'); handleSend(); }}

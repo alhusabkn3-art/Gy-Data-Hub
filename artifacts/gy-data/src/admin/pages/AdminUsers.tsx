@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, UserCheck, UserX, Eye, X, Phone, Mail, CreditCard, Calendar, ShoppingBag, RefreshCw, Send, MessageSquare, ChevronLeft, ChevronRight, ArrowRight, Clipboard, Copy, Check } from 'lucide-react';
+import { Search, UserCheck, UserX, Eye, X, Phone, Mail, CreditCard, Calendar, ShoppingBag, RefreshCw, Send, MessageSquare, ChevronLeft, ChevronRight, ArrowRight, Clipboard, Copy, Check, LogIn } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { StatusBadge } from './AdminDashboard';
 import { AdminUser } from '../data/adminMockData';
@@ -9,6 +9,7 @@ import {
   apiGetUserStatusHistory, apiChangeUserStatus, apiResetLoginPin,
   apiResetPurchasePin, WalletSummary, WalletLedgerEntry,
   UserTransaction, UserStatusHistoryEntry,
+  apiGetUserLoginHistory, type UserLoginHistoryEntry,
 } from '../utils/adminApi';
 import { fmtNaira } from '../utils/format';
 
@@ -160,7 +161,7 @@ function UserDetailModal({ user, onClose, onStatusChange }: {
 }) {
   const { isSuperAdmin } = useAdminContext();
 
-  const [tab, setTab] = useState<'profile' | 'wallet' | 'transactions' | 'history'>('profile');
+  const [tab, setTab] = useState<'profile' | 'wallet' | 'transactions' | 'history' | 'loginHistory'>('profile');
 
   // Wallet tab state
   const [walletSummary, setWalletSummary] = useState<WalletSummary | null>(null);
@@ -193,6 +194,10 @@ function UserDetailModal({ user, onClose, onStatusChange }: {
   const [pinResult, setPinResult] = useState<string | null>(null);
   const [pinLoading, setPinLoading] = useState(false);
   const [pinCopied, setPinCopied] = useState(false);
+
+  // Login history tab state
+  const [loginHistory, setLoginHistory] = useState<UserLoginHistoryEntry[]>([]);
+  const [loginHistLoading, setLoginHistLoading] = useState(false);
 
   // ── Data fetching via useEffect ──────────────────────────────────────────────
   useEffect(() => {
@@ -238,6 +243,15 @@ function UserDetailModal({ user, onClose, onStatusChange }: {
       }).finally(() => setHistoryLoading(false));
     }
   }, [tab, historyLoaded, user.id]);
+
+  useEffect(() => {
+    if (tab !== 'loginHistory' || !user) return;
+    setLoginHistLoading(true);
+    apiGetUserLoginHistory(user.id)
+      .then(r => setLoginHistory(r.history))
+      .catch(console.error)
+      .finally(() => setLoginHistLoading(false));
+  }, [tab, user]);
 
   // ── Ledger pagination ───────────────────────────────────────────────────────
   const goLedgerPage = async (p: number) => {
@@ -719,12 +733,12 @@ function UserDetailModal({ user, onClose, onStatusChange }: {
         </div>
 
         {/* Tab bar */}
-        <div className="px-5 pt-3 border-b border-border flex gap-1 flex-shrink-0">
+        <div className="px-5 pt-3 border-b border-border flex gap-1 flex-shrink-0 overflow-x-auto">
           {(['profile', 'wallet', 'transactions', 'history'] as const).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-4 py-2 text-sm transition-colors capitalize rounded-t-lg ${
+              className={`px-4 py-2 text-sm transition-colors capitalize rounded-t-lg whitespace-nowrap ${
                 tab === t
                   ? 'bg-primary text-white font-semibold'
                   : 'text-muted-foreground hover:text-white'
@@ -733,6 +747,16 @@ function UserDetailModal({ user, onClose, onStatusChange }: {
               {t}
             </button>
           ))}
+          <button
+            onClick={() => setTab('loginHistory')}
+            className={`px-4 py-2 text-sm transition-colors rounded-t-lg whitespace-nowrap flex items-center gap-1.5 ${
+              tab === 'loginHistory'
+                ? 'bg-primary text-white font-semibold'
+                : 'text-muted-foreground hover:text-white'
+            }`}
+          >
+            <LogIn className="w-3.5 h-3.5" /> Login History
+          </button>
         </div>
 
         {/* Tab content */}
@@ -741,6 +765,40 @@ function UserDetailModal({ user, onClose, onStatusChange }: {
           {tab === 'wallet'       && renderWallet()}
           {tab === 'transactions' && renderTransactions()}
           {tab === 'history'      && renderHistory()}
+          {tab === 'loginHistory' && (
+            <div className="space-y-2">
+              {loginHistLoading ? (
+                Array.from({length:5}).map((_,i) => <div key={i} className="animate-pulse bg-white/5 rounded-lg h-12"/>)
+              ) : loginHistory.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground text-sm">No login history available</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead><tr className="bg-white/[0.03]">
+                      <th className="px-3 py-2 text-left text-xs text-muted-foreground">Time</th>
+                      <th className="px-3 py-2 text-left text-xs text-muted-foreground">Status</th>
+                      <th className="px-3 py-2 text-left text-xs text-muted-foreground">IP Address</th>
+                      <th className="px-3 py-2 text-left text-xs text-muted-foreground">Device</th>
+                    </tr></thead>
+                    <tbody>
+                      {loginHistory.map(h => (
+                        <tr key={h.id} className="border-b border-white/[0.04] hover:bg-white/[0.02]">
+                          <td className="px-3 py-2.5 text-xs">{new Date(h.createdAt).toLocaleString('en-NG')}</td>
+                          <td className="px-3 py-2.5">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${h.status==='success'?'bg-green-500/15 text-green-400':'bg-red-500/15 text-red-400'}`}>
+                              {h.status}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-xs font-mono">{h.ipAddress || '—'}</td>
+                          <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[160px] truncate">{h.userAgent?.slice(0,50) || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

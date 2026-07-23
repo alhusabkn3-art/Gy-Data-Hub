@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Search, RefreshCw, Wallet, ArrowUpRight, ArrowDownLeft,
-  X, Check, ChevronLeft, ChevronRight, Crown,
+  X, Check, ChevronLeft, ChevronRight, Crown, Download,
 } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { StatusBadge } from './AdminDashboard';
 import { fmtNaira } from '../utils/format';
 import {
   apiGetUserWallet, apiGetWalletLedger, apiCreditWallet, apiDebitWallet,
+  exportToCsv,
   WalletSummary, WalletLedgerEntry,
 } from '../utils/adminApi';
 import { AdminUser } from '../data/adminMockData';
@@ -493,9 +494,32 @@ export default function WalletManagement() {
             <div className="bg-card border border-border rounded-2xl overflow-hidden">
               <div className="px-5 py-4 border-b border-border flex items-center justify-between">
                 <h3 className="font-semibold text-white">Ledger History</h3>
-                {!ledgerLoading && (
-                  <span className="text-xs text-zinc-500">{ledgerTotal} entries</span>
-                )}
+                <div className="flex items-center gap-3">
+                  {!ledgerLoading && (
+                    <span className="text-xs text-zinc-500">{ledgerTotal} entries</span>
+                  )}
+                  {ledger && ledger.length > 0 && (
+                    <button
+                      onClick={() => exportToCsv(
+                        ledger.map(e => ({
+                          Date: new Date(e.createdAt).toLocaleString('en-NG'),
+                          Type: e.type,
+                          'Amount (₦)': e.amount,
+                          'Balance Before (₦)': e.balanceBefore,
+                          'Balance After (₦)': e.balanceAfter,
+                          Reference: e.reference || '',
+                          Reason: e.reason || '',
+                          'Performed By': e.performedByName || '',
+                        })),
+                        'wallet-ledger-export.csv'
+                      )}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs text-muted-foreground hover:text-white transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Export CSV
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">

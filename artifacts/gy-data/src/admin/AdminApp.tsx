@@ -16,6 +16,11 @@ import WalletManagement from './pages/WalletManagement';
 import ReversalsRefunds from './pages/ReversalsRefunds';
 import FinancialReports from './pages/FinancialReports';
 import APIIntegrations from './pages/APIIntegrations';
+import StaffManagement from './pages/StaffManagement';
+import APIManagement from './pages/APIManagement';
+import PricingManagement from './pages/PricingManagement';
+import SecurityPage from './pages/SecurityPage';
+import FinancePage from './pages/FinancePage';
 
 type AdminPage =
   | 'dashboard'
@@ -30,10 +35,16 @@ type AdminPage =
   | 'walletManagement'
   | 'reversals'
   | 'reports'
-  | 'integrations';
+  | 'integrations'
+  | 'staff'
+  | 'apiManagement'
+  | 'pricing'
+  | 'security'
+  | 'finance';
 
 const SUPER_ONLY_PAGES: AdminPage[] = [
   'adminManagement', 'auditLogs', 'walletManagement', 'reversals', 'reports', 'integrations',
+  'apiManagement', 'pricing', 'security', 'finance',
 ];
 
 function AdminDashboardApp() {
@@ -63,6 +74,11 @@ function AdminDashboardApp() {
       case 'reversals':       return <ReversalsRefunds />;
       case 'reports':         return <FinancialReports />;
       case 'integrations':    return <APIIntegrations />;
+      case 'staff':           return <StaffManagement />;
+      case 'apiManagement':   return <APIManagement />;
+      case 'pricing':         return <PricingManagement />;
+      case 'security':        return <SecurityPage />;
+      case 'finance':         return <FinancePage />;
       default:                return <AdminDashboard onNavigate={navigate} />;
     }
   };

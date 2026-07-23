@@ -5,6 +5,7 @@ import {
   Grid3X3, Bell, Settings, LogOut, Menu, X, Shield, ChevronRight,
   UserCog, User, Lock, ChevronDown, ScrollText, Crown,
   RotateCcw, BarChart2, Plug, WalletCards,
+  Users2, Banknote, Cpu, Tags, ShieldCheck,
 } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { ROLE_LABELS } from '../data/adminMockData';
@@ -14,20 +15,25 @@ import { ROLE_LABELS } from '../data/adminMockData';
 // superOnly: false → visible to all admins
 
 const BASE_NAV = [
-  { id: 'dashboard',        label: 'Dashboard',         icon: LayoutDashboard, superOnly: false },
-  { id: 'users',            label: 'Users',              icon: Users,           superOnly: false },
-  { id: 'transactions',     label: 'Transactions',       icon: ArrowLeftRight,  superOnly: false },
-  { id: 'wallet',           label: 'Wallet Overview',    icon: Wallet,          superOnly: false },
-  { id: 'services',         label: 'Services',           icon: Grid3X3,         superOnly: false },
-  { id: 'notifications',    label: 'Announcements',      icon: Bell,            superOnly: false },
-  { id: 'settings',         label: 'Settings',           icon: Settings,        superOnly: false },
+  { id: 'dashboard',        label: 'Dashboard',          icon: LayoutDashboard, superOnly: false },
+  { id: 'users',            label: 'Users',               icon: Users,           superOnly: false },
+  { id: 'transactions',     label: 'Transactions',        icon: ArrowLeftRight,  superOnly: false },
+  { id: 'wallet',           label: 'Wallet Overview',     icon: Wallet,          superOnly: false },
+  { id: 'services',         label: 'Services',            icon: Grid3X3,         superOnly: false },
+  { id: 'notifications',    label: 'Announcements',       icon: Bell,            superOnly: false },
+  { id: 'settings',         label: 'Settings',            icon: Settings,        superOnly: false },
+  { id: 'staff',            label: 'Staff Management',    icon: Users2,          superOnly: false },
   // ── Super Admin only ──
-  { id: 'walletManagement', label: 'Wallet Management',  icon: WalletCards,     superOnly: true  },
-  { id: 'reversals',        label: 'Reversals & Refunds',icon: RotateCcw,       superOnly: true  },
-  { id: 'reports',          label: 'Financial Reports',  icon: BarChart2,       superOnly: true  },
-  { id: 'integrations',     label: 'API Integrations',   icon: Plug,            superOnly: true  },
-  { id: 'adminManagement',  label: 'Admin Management',   icon: UserCog,         superOnly: true  },
-  { id: 'auditLogs',        label: 'Audit Logs',         icon: ScrollText,      superOnly: true  },
+  { id: 'walletManagement', label: 'Wallet Management',   icon: WalletCards,     superOnly: true  },
+  { id: 'finance',          label: 'Finance',             icon: Banknote,        superOnly: true  },
+  { id: 'pricing',          label: 'Pricing',             icon: Tags,            superOnly: true  },
+  { id: 'apiManagement',    label: 'API Management',      icon: Cpu,             superOnly: true  },
+  { id: 'reversals',        label: 'Reversals & Refunds', icon: RotateCcw,       superOnly: true  },
+  { id: 'reports',          label: 'Reports',             icon: BarChart2,       superOnly: true  },
+  { id: 'security',         label: 'Security',            icon: ShieldCheck,     superOnly: true  },
+  { id: 'integrations',     label: 'API Integrations',    icon: Plug,            superOnly: true  },
+  { id: 'adminManagement',  label: 'Admin Management',    icon: UserCog,         superOnly: true  },
+  { id: 'auditLogs',        label: 'Audit Logs',          icon: ScrollText,      superOnly: true  },
 ];
 
 interface AdminLayoutProps {

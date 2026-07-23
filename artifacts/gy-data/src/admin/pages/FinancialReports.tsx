@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { BarChart2, TrendingUp, ArrowUpRight, ArrowDownLeft, RotateCcw, RefreshCw, Calendar, Crown } from 'lucide-react';
-import { apiGetFinancialReport, FinancialReport } from '../utils/adminApi';
+import React, { useState, useEffect, useRef } from 'react';
+import { BarChart2, TrendingUp, ArrowUpRight, ArrowDownLeft, RotateCcw, RefreshCw, Calendar, Crown, Download } from 'lucide-react';
+import { apiGetFinancialReport, FinancialReport, exportToCsv, exportToHtmlPrint } from '../utils/adminApi';
 import { SERVICE_CONFIG } from '../data/adminMockData';
 import { fmtNaira } from '../utils/format';
 import { toast } from 'sonner';
@@ -20,6 +20,18 @@ export default function FinancialReports() {
   const [error, setError] = useState<string | null>(null);
   const [fromDate, setFromDate] = useState(defaults.from);
   const [toDate, setToDate] = useState(defaults.to);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setExportMenuOpen(false);
+      }
+    }
+    if (exportMenuOpen) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [exportMenuOpen]);
 
   const fetchReport = async (from: string, to: string) => {
     setLoading(true);
@@ -71,6 +83,30 @@ export default function FinancialReports() {
             </span>
           </div>
           <p className="text-muted-foreground text-sm">Revenue, transaction analytics and service breakdown</p>
+        </div>
+        <div className="relative" ref={exportMenuRef}>
+          <button onClick={()=>setExportMenuOpen(v=>!v)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-primary/20 text-primary border border-primary/30 rounded-xl text-sm font-medium hover:bg-primary/30 transition-colors">
+            <Download className="w-4 h-4"/>
+            Export
+            <svg className="w-3 h-3 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/></svg>
+          </button>
+          {exportMenuOpen && (
+            <div className="absolute right-0 top-full mt-1 w-44 bg-[#0D1F3C] border border-white/10 rounded-xl shadow-xl z-20 overflow-hidden">
+              <button onClick={()=>{ setExportMenuOpen(false);
+                if(!report) return;
+                exportToCsv([
+                  ...report.dailyRevenue.map(d=>({'Date':d.day,'Revenue (₦)':d.revenue,'Transactions':d.count})),
+                ],'gy-data-daily-report.csv');
+              }} className="w-full px-4 py-2.5 text-sm text-left hover:bg-white/5 transition-colors">Export as CSV</button>
+              <button onClick={()=>{ setExportMenuOpen(false);
+                if(!report) return;
+                exportToHtmlPrint('GY DATA Financial Report',
+                  report.dailyRevenue.map(d=>({'Date':d.day,'Revenue (₦)':d.revenue.toLocaleString(),'Transactions':d.count})),
+                  'report.html');
+              }} className="w-full px-4 py-2.5 text-sm text-left hover:bg-white/5 border-t border-white/[0.06] transition-colors">Export as PDF</button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -232,6 +268,13 @@ export default function FinancialReports() {
               </div>
               <p className="text-xl font-bold text-red-300/70">{fmtNaira(report.transactions.failedValue)}</p>
               <p className="text-xs text-muted-foreground">Lost to failures</p>
+            </div>
+
+            {/* Est. Net Profit */}
+            <div className="bg-[#0D1F3C] rounded-2xl p-5 border border-white/[0.06]">
+              <p className="text-xs text-muted-foreground mb-1">Est. Net Profit</p>
+              <p className="text-xl font-bold text-green-400">₦{((report?.transactions?.totalRevenue ?? 0) * 0.08).toLocaleString('en-NG', {minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+              <p className="text-xs text-muted-foreground mt-1">~8% estimated margin</p>
             </div>
           </div>
 

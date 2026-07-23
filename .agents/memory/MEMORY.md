@@ -4,3 +4,4 @@
 - [Drizzle schema type exports](drizzle-schema-exports.md) — api-server tsc needs db package built first (tsc --build on lib/db) before schema named exports resolve.
 - [Notification Center architecture](notification-center-arch.md) — hook/context/modal boundary pattern; all UI goes via useNotifications, never AppContext directly.
 - [Super Admin RBAC architecture](super-admin-rbac.md) — admin_accounts + admin_audit_logs tables; requireSuperAdmin middleware; bcryptjs; session stores adminId+adminRole; auto-seeds from env vars.
+- [Enterprise admin panel build](enterprise-admin-panel.md) — 11-module upgrade pattern; 5 new pages + 6 enhanced; backend appended to admin-super.ts; no Drizzle schema files for new tables.

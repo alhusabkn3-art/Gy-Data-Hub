@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Users, ArrowLeftRight, TrendingUp, Clock,
   UserCheck, AlertCircle, CheckCircle, XCircle, RefreshCw,
@@ -7,6 +7,11 @@ import {
 import { useAdminContext } from '../context/AdminContext';
 import { SERVICE_CONFIG } from '../data/adminMockData';
 import { fmtNaira } from '../utils/format';
+import { apiGetDashboardExtended, type DashboardExtended } from '../utils/adminApi';
+import {
+  AreaChart, Area, BarChart, Bar, XAxis, YAxis,
+  CartesianGrid, Tooltip, ResponsiveContainer,
+} from 'recharts';
 
 // ── Shared UI helpers ─────────────────────────────────────────────────────────
 
@@ -100,6 +105,12 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     servicesData, servicesLoading,
     fetchWeeklyRevenue, fetchServices,
   } = useAdminContext();
+
+  const [extData, setExtData] = useState<DashboardExtended | null>(null);
+
+  useEffect(() => {
+    apiGetDashboardExtended().then(setExtData).catch(console.error);
+  }, []);
 
   const recentTxns = transactions.slice(0, 8);
   const isLoading  = statsLoading;
@@ -205,6 +216,59 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           onClick={() => onNavigate('transactions')}
         />
       </div>
+
+      {/* ── Revenue Analytics ────────────────────────────────────────────── */}
+      {extData && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="bg-[#0D1F3C] rounded-2xl p-5 border border-white/[0.06]">
+            <p className="text-sm font-semibold mb-4">Daily Revenue (14 days)</p>
+            <ResponsiveContainer width="100%" height={180}>
+              <AreaChart data={extData.dailyRevenue}>
+                <defs>
+                  <linearGradient id="rev14" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
+                <XAxis dataKey="day" tick={{fill:'#6b7280',fontSize:10}} tickFormatter={(v)=>v.slice(5)}/>
+                <YAxis tick={{fill:'#6b7280',fontSize:10}} tickFormatter={(v: number)=>`₦${v>=1000?`${(v/1000).toFixed(0)}k`:v}`}/>
+                <Tooltip contentStyle={{background:'#0D1F3C',border:'1px solid rgba(255,255,255,0.1)',borderRadius:'12px',color:'#fff'}} formatter={(v: number)=>[`₦${v.toLocaleString()}`,'Revenue']}/>
+                <Area type="monotone" dataKey="revenue" stroke="#3B82F6" strokeWidth={2} fill="url(#rev14)"/>
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="bg-[#0D1F3C] rounded-2xl p-5 border border-white/[0.06]">
+            <p className="text-sm font-semibold mb-4">Monthly Revenue (6 months)</p>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={extData.monthlyRevenue}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
+                <XAxis dataKey="month" tick={{fill:'#6b7280',fontSize:10}} tickFormatter={(v)=>v.slice(0,7)}/>
+                <YAxis tick={{fill:'#6b7280',fontSize:10}} tickFormatter={(v: number)=>`₦${v>=1000?`${(v/1000).toFixed(0)}k`:v}`}/>
+                <Tooltip contentStyle={{background:'#0D1F3C',border:'1px solid rgba(255,255,255,0.1)',borderRadius:'12px',color:'#fff'}} formatter={(v: number)=>[`₦${v.toLocaleString()}`,'Revenue']}/>
+                <Bar dataKey="revenue" fill="#3B82F6" radius={[4,4,0,0]}/>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* ── Profit / Activity analytics ──────────────────────────────────── */}
+      {extData && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {[
+            { label: 'Net Profit (est.)', value: `₦${extData.netProfit.toLocaleString()}`, color: 'text-green-400', sub: `${extData.profitMargin.toFixed(1)}% margin` },
+            { label: 'Active Users Today', value: extData.activeUsersToday.toString(), color: 'text-blue-400', sub: 'made a transaction' },
+            { label: 'New Users This Week', value: extData.newUsersThisWeek.toString(), color: 'text-purple-400', sub: 'registered' },
+          ].map(c => (
+            <div key={c.label} className="bg-[#0D1F3C] rounded-2xl p-5 border border-white/[0.06]">
+              <p className="text-xs text-muted-foreground mb-1">{c.label}</p>
+              <p className={`text-2xl font-bold ${c.color}`}>{c.value}</p>
+              <p className="text-xs text-muted-foreground mt-1">{c.sub}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ── Charts row ─────────────────────────────────────────────────────── */}
       <div className="grid lg:grid-cols-2 gap-4">
@@ -465,6 +529,30 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           </button>
         </div>
       </div>
+
+      {/* ── Recent Admin Activity feed ────────────────────────────────────── */}
+      {extData && extData.recentActivity.length > 0 && (
+        <div className="bg-[#0D1F3C] rounded-2xl p-5 border border-white/[0.06]">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm font-semibold">Recent Admin Activity</p>
+            <button onClick={() => onNavigate('auditLogs')} className="text-xs text-primary hover:underline">View All</button>
+          </div>
+          <div className="space-y-3">
+            {extData.recentActivity.slice(0, 8).map(a => (
+              <div key={a.id} className="flex items-center gap-3">
+                <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 text-[10px] font-bold text-primary">
+                  {a.adminEmail?.[0]?.toUpperCase() ?? 'A'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium truncate">{a.action}{a.targetLabel ? ` · ${a.targetLabel}` : ''}</p>
+                  <p className="text-[10px] text-muted-foreground">{a.adminEmail}</p>
+                </div>
+                <p className="text-[10px] text-muted-foreground flex-shrink-0">{new Date(a.createdAt).toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit'})}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

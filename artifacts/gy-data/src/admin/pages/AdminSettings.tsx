@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Bell, Globe, Lock, Save, AlertTriangle, X, Eye, EyeOff, Pencil, Check, Crown, Loader2 } from 'lucide-react';
+import { Shield, Bell, Globe, Lock, Save, AlertTriangle, X, Eye, EyeOff, Pencil, Check, Crown, Loader2, Palette, Gift } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { ROLE_LABELS } from '../data/adminMockData';
 import { toast } from 'sonner';
@@ -216,6 +216,16 @@ export default function AdminSettings() {
   const [settingsLoading,   setSettingsLoading]  = useState(false);
   const [settingsSaving,    setSettingsSaving]   = useState(false);
 
+  // App Branding
+  const [appNameEditable,   setAppNameEditable]  = useState('GY DATA');
+  const [themeColor,        setThemeColor]       = useState('#3B82F6');
+  const [appLogoBase64,     setAppLogoBase64]    = useState('');
+
+  // Referral & Commission
+  const [referralBonus,     setReferralBonus]    = useState('');
+  const [commissionPct,     setCommissionPct]    = useState('');
+  const [maxReferralBonus,  setMaxReferralBonus] = useState('');
+
   // Load system settings from backend on mount (super admin only)
   useEffect(() => {
     if (!isSuperAdmin) return;
@@ -228,6 +238,12 @@ export default function AdminSettings() {
         if (settings['max_wallet_topup']?.value)  setMaxDaily(settings['max_wallet_topup'].value);
         if (settings['system_announcement']?.value) setSystemAnnouncement(settings['system_announcement'].value);
         if (settings['maintenance_mode']?.value)  setMaintenance(settings['maintenance_mode'].value === 'true');
+        if (settings['app_name']?.value)          setAppNameEditable(settings['app_name'].value);
+        if (settings['theme_color']?.value)       setThemeColor(settings['theme_color'].value);
+        if (settings['app_logo_base64']?.value)   setAppLogoBase64(settings['app_logo_base64'].value);
+        if (settings['referral_bonus_amount']?.value) setReferralBonus(settings['referral_bonus_amount'].value);
+        if (settings['commission_percent']?.value)    setCommissionPct(settings['commission_percent'].value);
+        if (settings['max_referral_bonus']?.value)    setMaxReferralBonus(settings['max_referral_bonus'].value);
       })
       .catch(() => { /* silent — will use local defaults */ })
       .finally(() => setSettingsLoading(false));
@@ -427,6 +443,80 @@ export default function AdminSettings() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* App Branding — super admin only */}
+      {isSuperAdmin && (
+        <div className="bg-[#0D1F3C] rounded-2xl border border-white/[0.06] p-5 space-y-4">
+          <h3 className="text-sm font-semibold flex items-center gap-2"><Palette className="w-4 h-4 text-primary"/>App Branding</h3>
+
+          {/* App Name */}
+          <div>
+            <label className="text-xs text-muted-foreground mb-1.5 block">App Name</label>
+            <input
+              type="text"
+              value={appNameEditable}
+              onChange={e => setAppNameEditable(e.target.value)}
+              onBlur={e => apiUpdateSystemSetting('app_name', e.target.value).catch(() => {})}
+              placeholder="GY DATA"
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-primary/50"
+            />
+          </div>
+
+          {/* Theme Color */}
+          <div>
+            <label className="text-xs text-muted-foreground mb-1.5 block">Theme Color</label>
+            <div className="flex items-center gap-3">
+              <input type="color" value={themeColor}
+                onChange={e => setThemeColor(e.target.value)}
+                onBlur={e => apiUpdateSystemSetting('theme_color', e.target.value).catch(() => {})}
+                className="w-10 h-10 rounded-xl border border-white/10 bg-white/5 cursor-pointer p-0.5"/>
+              <span className="text-sm font-mono text-muted-foreground">{themeColor}</span>
+            </div>
+          </div>
+
+          {/* Logo Upload */}
+          <div>
+            <label className="text-xs text-muted-foreground mb-1.5 block">App Logo</label>
+            {appLogoBase64 && (
+              <img src={appLogoBase64} alt="App logo" className="w-16 h-16 object-contain rounded-xl bg-white/5 border border-white/10 p-2 mb-2"/>
+            )}
+            <input type="file" accept="image/*" onChange={e => {
+              const file = e.target.files?.[0]; if (!file) return;
+              const reader = new FileReader();
+              reader.onload = ev => {
+                const b64 = ev.target?.result as string;
+                setAppLogoBase64(b64);
+                apiUpdateSystemSetting('app_logo_base64', b64).catch(() => {});
+              };
+              reader.readAsDataURL(file);
+            }} className="text-xs text-muted-foreground file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:bg-primary/20 file:text-primary file:text-xs file:font-medium"/>
+          </div>
+        </div>
+      )}
+
+      {/* Referral & Commission — super admin only */}
+      {isSuperAdmin && (
+        <div className="bg-[#0D1F3C] rounded-2xl border border-white/[0.06] p-5 space-y-4">
+          <h3 className="text-sm font-semibold flex items-center gap-2"><Gift className="w-4 h-4 text-green-400"/>Referral & Commission</h3>
+          {[
+            { key: 'referral_bonus_amount', label: 'Referral Bonus (₦)', type: 'number', placeholder: '0', value: referralBonus, setter: setReferralBonus },
+            { key: 'commission_percent',    label: 'Commission (%)',     type: 'number', placeholder: '0', value: commissionPct, setter: setCommissionPct },
+            { key: 'max_referral_bonus',    label: 'Max Referral Bonus (₦)', type: 'number', placeholder: '0', value: maxReferralBonus, setter: setMaxReferralBonus },
+          ].map(f => (
+            <div key={f.key}>
+              <label className="text-xs text-muted-foreground mb-1.5 block">{f.label}</label>
+              <input
+                type={f.type}
+                value={f.value}
+                placeholder={f.placeholder}
+                onChange={e => f.setter(e.target.value)}
+                onBlur={e => apiUpdateSystemSetting(f.key, e.target.value).catch(() => {})}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-primary/50"
+              />
+            </div>
+          ))}
         </div>
       )}
 

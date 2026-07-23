@@ -152,6 +152,12 @@ router.post('/session', async (req: Request, res: Response): Promise<void> => {
         targetType: 'session',
         ip:         clientIp(req),
       });
+      db.execute(sql`
+        INSERT INTO admin_login_history (admin_id, admin_email, ip_address, user_agent, status, fail_reason)
+        VALUES (${account.id}, ${account.email}, ${clientIp(req)},
+                ${(req.headers['user-agent'] as string | undefined) ?? null},
+                'failed', 'Invalid PIN')
+      `).catch(() => {});
       res.status(401).json({ error: 'Invalid admin credentials.' });
       return;
     }
@@ -165,6 +171,13 @@ router.post('/session', async (req: Request, res: Response): Promise<void> => {
     req.session.isAdmin   = true;
     req.session.adminId   = account.id;
     req.session.adminRole = account.role;
+
+    db.execute(sql`
+      INSERT INTO admin_login_history (admin_id, admin_email, ip_address, user_agent, status)
+      VALUES (${account.id}, ${account.email}, ${clientIp(req)},
+              ${(req.headers['user-agent'] as string | undefined) ?? null},
+              'success')
+    `).catch(() => {});
 
     void auditLog({
       adminId:    account.id,

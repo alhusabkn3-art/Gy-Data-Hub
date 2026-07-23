@@ -1,17 +1,16 @@
 /**
  * /api/auth — Registration, login, logout, session restore, forgot-PIN.
  *
- * Forgot-PIN uses a two-step server-side OTP challenge:
- *   1. POST /api/auth/forgot-pin/request  — generates a 6-digit OTP, stores it
- *      hashed (bcrypt) in the DB with a 5-minute TTL, and returns it in the
- *      response body (in production this would be delivered via SMS; the caller
- *      should never display the OTP to the user in prod).
- *   2. POST /api/auth/forgot-pin/reset    — accepts phone + otp + newPin.
- *      Verifies the OTP against the stored hash and expiry before resetting.
- *      The OTP is single-use: it is cleared on first successful use.
+ * Security model:
+ *   - Session is regenerated on login to prevent session fixation attacks.
+ *   - All auth mutations are rate-limited at the app level (10 / 15 min).
+ *   - Forgot-PIN OTP is bcrypt-hashed in the DB with a 5-minute TTL.
+ *   - OTPs are single-use and cleared on first successful verification.
+ *   - Constant-time responses for non-existent accounts prevent enumeration.
+ *   - In production, the OTP is NOT returned in the response body (SMS delivery only).
  *
  * PIN hashes use bcryptjs (pure JS — bundles cleanly with esbuild).
- * All PIN hashes are never returned to callers.
+ * PIN hashes are never returned to callers.
  */
 import { Router, type Request, type Response } from 'express';
 import crypto from 'node:crypto';
@@ -27,8 +26,14 @@ const router = Router();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/** Strips all non-digit characters; enforces 10–11 digit length for Nigerian numbers */
 function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, '').slice(0, 11);
+}
+
+/** Basic RFC 5322-inspired email validation */
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
 }
 
 function genAccountNumber(): string {
@@ -36,8 +41,8 @@ function genAccountNumber(): string {
 }
 
 function genReferralCode(firstName: string): string {
-  return 'GY-' + firstName.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4) +
-    Math.floor(Math.random() * 900 + 100);
+  const safe = firstName.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4) || 'GY';
+  return 'GY-' + safe + Math.floor(Math.random() * 900 + 100);
 }
 
 /** Shape returned to the frontend — never includes any PIN hash */
@@ -71,14 +76,14 @@ async function loadFullSession(userId: string) {
     .from(transactionsTable)
     .where(eq(transactionsTable.userId, userId))
     .orderBy(transactionsTable.createdAt);
-  transactions.reverse(); // newest first
+  transactions.reverse();
 
   const notifications = await db
     .select()
     .from(notificationsTable)
     .where(eq(notificationsTable.userId, userId))
     .orderBy(notificationsTable.createdAt);
-  notifications.reverse(); // newest first
+  notifications.reverse();
 
   return {
     user:          safeUser(user),
@@ -87,6 +92,16 @@ async function loadFullSession(userId: string) {
     notifications,
     preferences:   (prefRow?.preferences ?? {}) as Record<string, unknown>,
   };
+}
+
+/** Wraps session.regenerate in a Promise for use with async/await. */
+function regenerateSession(req: Request): Promise<void> {
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
 }
 
 // ── GET /api/auth/check-username?username=... ─────────────────────────────────
@@ -118,20 +133,41 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     res.status(400).json({ error: 'name, phone, email, loginPin, and username are required.' });
     return;
   }
+
+  // Name validation
+  const trimmedName = name.trim();
+  if (trimmedName.length < 2 || trimmedName.length > 100) {
+    res.status(400).json({ error: 'name must be between 2 and 100 characters.' });
+    return;
+  }
+
+  // Email validation
+  const trimmedEmail = email.trim().toLowerCase();
+  if (!isValidEmail(trimmedEmail)) {
+    res.status(400).json({ error: 'Please enter a valid email address.' });
+    return;
+  }
+
+  // PIN validation
   if (!/^\d{6}$/.test(loginPin)) {
     res.status(400).json({ error: 'loginPin must be exactly 6 digits.' });
     return;
   }
 
+  // Username validation
   const normalizedUsername = username.toLowerCase().trim();
   if (!/^[a-z]{4,15}$/.test(normalizedUsername)) {
     res.status(400).json({ error: 'username must be 4–15 letters only (A–Z), no numbers or symbols.' });
     return;
   }
 
+  // Phone validation
   const normalizedPhone = normalizePhone(phone);
+  if (normalizedPhone.length < 10 || normalizedPhone.length > 11) {
+    res.status(400).json({ error: 'Please enter a valid Nigerian phone number (10–11 digits).' });
+    return;
+  }
 
-  // Check phone uniqueness
   const [existingPhone] = await db
     .select({ id: usersTable.id })
     .from(usersTable)
@@ -142,7 +178,6 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  // Check username uniqueness
   const [existingUsername] = await db
     .select({ id: usersTable.id })
     .from(usersTable)
@@ -153,17 +188,17 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  const parts     = name.trim().split(' ');
+  const parts     = trimmedName.split(/\s+/);
   const firstName = parts[0]!;
   const lastName  = parts.slice(1).join(' ');
   const pinHash   = await hashPin(loginPin);
 
   const [newUser] = await db.insert(usersTable).values({
-    name:          name.trim(),
+    name:          trimmedName,
     firstName,
     lastName,
     username:      normalizedUsername,
-    email:         email.trim().toLowerCase(),
+    email:         trimmedEmail,
     phone:         normalizedPhone,
     loginPinHash:  pinHash,
     accountNumber: genAccountNumber(),
@@ -188,6 +223,14 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     read:   false,
   }).returning();
 
+  // ── Session fixation prevention: regenerate before setting userId ─────────
+  try {
+    await regenerateSession(req);
+  } catch (err) {
+    logger.error({ err }, 'Session regeneration failed on register');
+    res.status(500).json({ error: 'Session error. Please try again.' });
+    return;
+  }
   req.session.userId = newUser.id;
 
   logger.info({ userId: newUser.id, phone: normalizedPhone }, 'New user registered');
@@ -223,6 +266,15 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
   const pinOk = await verifyPin(loginPin, user.loginPinHash);
   if (!pinOk) {
     res.status(401).json({ error: 'wrong_pin' });
+    return;
+  }
+
+  // ── Session fixation prevention: regenerate session ID before storing user ─
+  try {
+    await regenerateSession(req);
+  } catch (err) {
+    logger.error({ err }, 'Session regeneration failed on login');
+    res.status(500).json({ error: 'Session error. Please try again.' });
     return;
   }
 
@@ -267,7 +319,6 @@ router.get('/me', async (req: Request, res: Response): Promise<void> => {
 });
 
 // ── GET /api/auth/check-phone?phone=... ──────────────────────────────────────
-// Note: check-username is declared above /register for route ordering
 router.get('/check-phone', async (req: Request, res: Response): Promise<void> => {
   const phone = req.query['phone'];
   if (!phone || typeof phone !== 'string') {
@@ -285,13 +336,9 @@ router.get('/check-phone', async (req: Request, res: Response): Promise<void> =>
 
 // ── POST /api/auth/forgot-pin/request ────────────────────────────────────────
 //
-// Step 1 of the two-step PIN-reset flow.
 // Generates a 6-digit OTP, stores it hashed in the DB with a 5-minute TTL.
-//
-// In production this OTP would be delivered via SMS; in development the OTP is
-// returned in the response body so callers (e.g. a test suite or the dev UI)
-// can proceed without an SMS gateway.  Production callers should NOT expose
-// this field to the end user — it will be removed once SMS is wired up.
+// In production: OTP is NOT returned in the response (must be delivered via SMS).
+// In development: OTP is returned in response body for testing.
 router.post('/forgot-pin/request', async (req: Request, res: Response): Promise<void> => {
   const { phone } = req.body as { phone?: string };
 
@@ -306,10 +353,8 @@ router.post('/forgot-pin/request', async (req: Request, res: Response): Promise<
     .from(usersTable)
     .where(eq(usersTable.phone, normalizedPhone));
 
-  // Always return 200 even when the phone isn't found — don't leak account existence
-  // from this unauthenticated endpoint.
+  // Always return 200 — don't reveal account existence from this unauthenticated endpoint
   if (!user) {
-    // Constant-time response so timing attacks can't enumerate accounts
     await new Promise(r => setTimeout(r, 200 + Math.random() * 200));
     res.json({
       message: 'If an account with this number exists, a code has been sent.',
@@ -318,9 +363,7 @@ router.post('/forgot-pin/request', async (req: Request, res: Response): Promise<
     return;
   }
 
-  // Preserve a Customer Care–approved reset OTP if one is still valid.
-  // CC-generated OTPs have a 1-hour window (> 5 min remaining means it wasn't
-  // issued by self-service), so don't overwrite it with a fresh 5-minute code.
+  // Preserve a Customer Care–approved reset OTP if one is still valid (> 5 min remaining)
   if (
     user.resetOtpHash &&
     user.resetOtpExpiry &&
@@ -328,15 +371,14 @@ router.post('/forgot-pin/request', async (req: Request, res: Response): Promise<
   ) {
     res.json({
       message: 'If an account with this number exists, a code has been sent.',
-      ...(process.env['NODE_ENV'] !== 'production' ? { devNote: 'CC-approved reset OTP already active — use the code given by Customer Care' } : {}),
+      ...(process.env['NODE_ENV'] !== 'production' ? { devNote: 'CC-approved reset OTP already active' } : {}),
     });
     return;
   }
 
-  // Generate a cryptographically random 6-digit OTP
   const otpDigits = (crypto.randomInt(0, 1_000_000)).toString().padStart(6, '0');
   const otpHash   = await hashPin(otpDigits);
-  const expiry    = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+  const expiry    = new Date(Date.now() + 5 * 60 * 1000);
 
   await db.update(usersTable)
     .set({ resetOtpHash: otpHash, resetOtpExpiry: expiry, updatedAt: new Date() })
@@ -344,19 +386,14 @@ router.post('/forgot-pin/request', async (req: Request, res: Response): Promise<
 
   logger.info({ userId: user.id }, 'PIN reset OTP issued');
 
+  // TODO: Deliver OTP via SMS gateway in production
   res.json({
     message: 'If an account with this number exists, a code has been sent.',
-    // In development only — remove once an SMS gateway is wired up
     ...(process.env['NODE_ENV'] !== 'production' ? { otp: otpDigits } : {}),
   });
 });
 
 // ── POST /api/auth/forgot-pin/reset ──────────────────────────────────────────
-//
-// Step 2 of the two-step PIN-reset flow.
-// Requires: phone, otp (6-digit code from step 1), newPin (6 digits).
-// Verifies the OTP against the stored bcrypt hash and checks the expiry.
-// Clears the OTP fields after successful verification (single-use).
 router.post('/forgot-pin/reset', async (req: Request, res: Response): Promise<void> => {
   const { phone, otp, newPin } = req.body as {
     phone?: string; otp?: string; newPin?: string;
@@ -372,12 +409,8 @@ router.post('/forgot-pin/reset', async (req: Request, res: Response): Promise<vo
   }
 
   const normalizedPhone = normalizePhone(phone);
-  const [user] = await db
-    .select()
-    .from(usersTable)
-    .where(eq(usersTable.phone, normalizedPhone));
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.phone, normalizedPhone));
 
-  // Generic error — don't reveal whether the phone exists or the OTP is wrong
   const badRequest = async () => {
     await new Promise(r => setTimeout(r, 200 + Math.random() * 200));
     res.status(400).json({ error: 'invalid_or_expired' });
@@ -387,30 +420,21 @@ router.post('/forgot-pin/reset', async (req: Request, res: Response): Promise<vo
     await badRequest(); return;
   }
 
-  // Check expiry
   if (new Date() > user.resetOtpExpiry) {
-    // Clear the expired OTP to avoid it lingering in the DB
     await db.update(usersTable)
       .set({ resetOtpHash: null, resetOtpExpiry: null })
       .where(eq(usersTable.id, user.id));
     await badRequest(); return;
   }
 
-  // Verify OTP
   const otpOk = await verifyPin(otp, user.resetOtpHash);
   if (!otpOk) {
     await badRequest(); return;
   }
 
-  // OTP is valid — reset PIN and clear OTP fields (single-use)
   const newPinHash = await hashPin(newPin);
   await db.update(usersTable)
-    .set({
-      loginPinHash:   newPinHash,
-      resetOtpHash:   null,
-      resetOtpExpiry: null,
-      updatedAt:      new Date(),
-    })
+    .set({ loginPinHash: newPinHash, resetOtpHash: null, resetOtpExpiry: null, updatedAt: new Date() })
     .where(eq(usersTable.id, user.id));
 
   logger.info({ userId: user.id }, 'PIN reset via OTP challenge');

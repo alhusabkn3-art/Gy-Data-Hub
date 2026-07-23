@@ -1,14 +1,10 @@
 import express, { type Express } from 'express';
 import cors from 'cors';
 import pinoHttp from 'pino-http';
-import session from 'express-session';
-import connectPg from 'connect-pg-simple';
 import rateLimit from 'express-rate-limit';
-import { pool } from '@workspace/db';
 import router from './routes/index.js';
 import { logger } from './lib/logger.js';
-
-const PgStore = connectPg(session);
+import { sessionMiddleware } from './lib/session-store.js';
 
 const app: Express = express();
 
@@ -29,50 +25,53 @@ app.use(
 // Trust first proxy (Replit reverse proxy / Vite dev proxy)
 app.set('trust proxy', 1);
 
-app.use(cors({
-  origin: true,      // reflect request origin
-  credentials: true, // allow cookies
-}));
+// ── CORS ───────────────────────────────────────────────────────────────────────
+// In production, restrict to explicitly listed origins via CORS_ORIGINS env var.
+// In development, reflect any origin for convenience.
+const rawOrigins = process.env['CORS_ORIGINS'];
+const allowedOrigins = rawOrigins ? rawOrigins.split(',').map((o) => o.trim()).filter(Boolean) : null;
 
-// Capture the raw request body before JSON parsing so the Monnify webhook
-// handler can verify HMAC-SHA512 signatures against the exact original bytes.
-app.use(express.json({
-  verify: (req: express.Request & { rawBody?: string }, _res, buf) => {
-    req.rawBody = buf.toString('utf8');
-  },
-}));
-app.use(express.urlencoded({ extended: true }));
-
-// ── Session ────────────────────────────────────────────────────────────────
 app.use(
-  session({
-    store: new PgStore({
-      pool,
-      tableName: 'session',
-      // Table is created via DB migration — createTableIfMissing is
-      // unreliable in bundled (esbuild) output because connect-pg-simple
-      // reads its SQL file with a relative fs path that breaks after bundling.
-    }),
-    secret: (() => {
-      const s = process.env['SESSION_SECRET'];
-      if (!s) throw new Error('SESSION_SECRET env var is required but not set.');
-      return s;
-    })(),
-    resave: false,
-    saveUninitialized: false,
-    name: 'gyd_sid',
-    cookie: {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env['NODE_ENV'] === 'production',
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-    },
+  cors({
+    origin:
+      process.env['NODE_ENV'] === 'production' && allowedOrigins && allowedOrigins.length > 0
+        ? (origin, callback) => {
+            // Allow server-to-server requests (no Origin header) and listed origins
+            if (!origin || allowedOrigins.includes(origin)) {
+              callback(null, true);
+            } else {
+              logger.warn({ origin }, 'CORS: rejected request from unlisted origin');
+              callback(new Error('Not allowed by CORS policy.'));
+            }
+          }
+        : true, // reflect any origin in development
+    credentials: true,
   }),
 );
 
-// ── Rate Limiting ──────────────────────────────────────────────────────────
+logger.info(
+  { mode: process.env['NODE_ENV'], allowedOrigins: allowedOrigins ?? 'all (dev)' },
+  'CORS configured',
+);
 
-// Auth: strict — 10 attempts per 15 minutes per IP
+// ── Raw body capture for HMAC signature verification ─────────────────────────
+// Monnify and WhatsApp webhooks verify signatures against the exact raw bytes.
+app.use(
+  express.json({
+    verify: (req: express.Request & { rawBody?: string }, _res, buf) => {
+      req.rawBody = buf.toString('utf8');
+    },
+  }),
+);
+app.use(express.urlencoded({ extended: true }));
+
+// ── Session ────────────────────────────────────────────────────────────────────
+// Imported from lib/session-store so Socket.io can share the same middleware.
+app.use(sessionMiddleware);
+
+// ── Rate Limiting ──────────────────────────────────────────────────────────────
+
+// Auth mutations: 10 attempts per 15 minutes per IP (login, register, forgot-pin)
 app.use(
   '/api/auth',
   rateLimit({
@@ -81,7 +80,7 @@ app.use(
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many attempts. Please try again in 15 minutes.' },
-    skip: (req) => req.method === 'GET', // only throttle mutations
+    skip: (req) => req.method === 'GET',
   }),
 );
 
@@ -94,6 +93,18 @@ app.use(
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many purchase requests. Please slow down.' },
+  }),
+);
+
+// Check PIN: strict — 10 per 15 min (prevent brute-force of authenticated PIN)
+app.use(
+  '/api/user/check-pin',
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many PIN attempts. Please try again in 15 minutes.' },
   }),
 );
 

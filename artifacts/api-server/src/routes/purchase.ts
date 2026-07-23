@@ -164,8 +164,10 @@ async function validateDataPrice(planCode: string, network: string, submittedPri
 
     return { valid: true, sellingPrice, costPrice };
   } catch (err) {
-    logger.warn({ err, planCode }, 'Price validation DB lookup failed — allowing purchase');
-    return { valid: true, sellingPrice: submittedPrice, costPrice: submittedPrice };
+    // FAIL CLOSED — if we cannot verify the price, block the purchase.
+    // Never silently allow a purchase at an unverified price.
+    logger.error({ err, planCode }, 'Price validation DB lookup failed — blocking purchase (fail-closed)');
+    return { valid: false, error: 'Price verification is temporarily unavailable. Please try again in a moment.' };
   }
 }
 

@@ -21,6 +21,7 @@
  */
 import { Router, type Request, type Response } from 'express';
 import { eq, and } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { db } from '@workspace/db';
 import { walletsTable, transactionsTable } from '@workspace/db/schema';
 import * as ck from '../lib/clubkonnect.js';
@@ -101,7 +102,72 @@ async function handleIdempotency(
 }
 
 const router = Router();
+
+// ── GET /api/purchase/pricing — Public: active pricing rules for frontend ─────
+// No auth required — the frontend uses these to display current plan prices.
+router.get('/pricing', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const rows = await db.execute(sql`
+      SELECT
+        service_type, provider, network, plan_id, plan_name,
+        selling_price, enabled
+      FROM pricing_rules
+      WHERE enabled = true
+      ORDER BY service_type, provider, network, plan_name
+    `);
+    res.json({ pricing: rows.rows });
+  } catch (err) {
+    logger.error({ err }, 'GET /purchase/pricing failed');
+    res.status(500).json({ error: 'Failed to load pricing.' });
+  }
+});
+
 router.use(requireAuth);
+
+// ── Price validation helper ────────────────────────────────────────────────────
+// Looks up the active selling price for a data plan by planCode + network.
+// Returns { valid: true, sellingPrice, costPrice } or { valid: false, error }.
+async function validateDataPrice(planCode: string, network: string, submittedPrice: number): Promise<
+  | { valid: true; sellingPrice: number; costPrice: number }
+  | { valid: false; error: string; expectedPrice?: number }
+> {
+  try {
+    const [rule] = await db.execute<{
+      selling_price: string;
+      cost_price: string;
+      enabled: boolean;
+    }>(sql`
+      SELECT selling_price, cost_price, enabled
+      FROM pricing_rules
+      WHERE plan_id = ${planCode}
+        AND (network = ${network.toUpperCase()} OR provider = ${network.toUpperCase()})
+        AND service_type = 'data'
+      LIMIT 1
+    `);
+
+    if (!rule) {
+      // No pricing rule configured — allow purchase (unmanaged plan)
+      return { valid: true, sellingPrice: submittedPrice, costPrice: submittedPrice };
+    }
+
+    if (!rule.enabled) {
+      return { valid: false, error: 'This data plan is currently unavailable.' };
+    }
+
+    const sellingPrice = Number(rule.selling_price);
+    const costPrice    = Number(rule.cost_price);
+
+    // Allow ±₦1 tolerance to account for floating-point rounding on the client.
+    if (Math.abs(sellingPrice - submittedPrice) > 1) {
+      return { valid: false, error: 'price_mismatch', expectedPrice: sellingPrice };
+    }
+
+    return { valid: true, sellingPrice, costPrice };
+  } catch (err) {
+    logger.warn({ err, planCode }, 'Price validation DB lookup failed — allowing purchase');
+    return { valid: true, sellingPrice: submittedPrice, costPrice: submittedPrice };
+  }
+}
 
 // ── POST /api/purchase/airtime ────────────────────────────────────────────────
 // Body: { network, phone, amount }
@@ -288,10 +354,27 @@ router.post('/data', async (req: Request, res: Response): Promise<void> => {
   const userId         = req.session.userId!;
   const idempotencyKey = (req.headers['idempotency-key'] ?? '') as string;
 
+  // ── Price validation against admin-configured pricing rules ──────────────
+  const priceCheck = await validateDataPrice(planCode!, network!, numericAmount);
+  if (!priceCheck.valid) {
+    if (priceCheck.error === 'price_mismatch') {
+      res.status(409).json({
+        error: 'price_mismatch',
+        message: `Plan price has changed. Expected ₦${priceCheck.expectedPrice?.toLocaleString()}.`,
+        expectedPrice: priceCheck.expectedPrice,
+      });
+    } else {
+      res.status(400).json({ error: priceCheck.error });
+    }
+    return;
+  }
+  const confirmedAmount = priceCheck.sellingPrice;
+  const costPrice       = priceCheck.costPrice;
+
   // ── Idempotency check: return existing result for duplicate requests ───────
   if (idempotencyKey) {
     try {
-      const handled = await handleIdempotency(res, userId, idempotencyKey, { network, phone, amount: numericAmount, planName: planName ?? planCode });
+      const handled = await handleIdempotency(res, userId, idempotencyKey, { network, phone, amount: confirmedAmount, planName: planName ?? planCode });
       if (handled) return;
     } catch (err) {
       logger.error({ err, idempotencyKey }, 'Idempotency check failed — proceeding with fresh request');
@@ -315,28 +398,28 @@ router.post('/data', async (req: Request, res: Response): Promise<void> => {
       if (!wallet) throw Object.assign(new Error('Wallet not found'), { code: 'NOT_FOUND' });
 
       const current = parseFloat(wallet.balance);
-      if (current < numericAmount) {
+      if (current < confirmedAmount) {
         throw Object.assign(new Error('Insufficient funds'), { code: 'INSUFFICIENT_FUNDS' });
       }
 
-      const nb = (current - numericAmount).toFixed(2);
+      const nb = (current - confirmedAmount).toFixed(2);
       await tx.update(walletsTable)
         .set({ balance: nb, updatedAt: new Date() })
         .where(eq(walletsTable.userId, userId));
 
-      const [txn] = await tx.insert(transactionsTable).values({
-        userId,
-        type:          'data',
-        service:       'Data',
-        provider:      network.toUpperCase(),
-        amount:        numericAmount.toFixed(2),
-        status:        'pending',
-        description:   `${network.toUpperCase()} ${planName ?? planCode}`,
-        paymentMethod: 'Wallet',
-        reference:     requestId,
-      }).returning();
+      // Insert transaction with cost_price for profitability tracking
+      const [txn] = await tx.execute(sql`
+        INSERT INTO transactions
+          (user_id, type, service, provider, amount, cost_price, status, description, payment_method, reference)
+        VALUES
+          (${userId}::uuid, 'data', 'Data', ${network!.toUpperCase()},
+           ${confirmedAmount.toFixed(2)}, ${costPrice.toFixed(2)},
+           'pending', ${`${network!.toUpperCase()} ${planName ?? planCode}`},
+           'Wallet', ${requestId})
+        RETURNING id
+      `);
 
-      return { txnId: txn!.id, newBalance: nb };
+      return { txnId: (txn as unknown as { id: string }).id, newBalance: nb };
     });
 
     txnId      = result.txnId;
@@ -371,7 +454,7 @@ router.post('/data', async (req: Request, res: Response): Promise<void> => {
       .set({ status: 'success', description: `${network.toUpperCase()} ${resolvedPlanName}` })
       .where(eq(transactionsTable.id, txnId));
 
-    logger.info({ userId, requestId, amount: numericAmount, planCode }, 'Data purchase succeeded');
+    logger.info({ userId, requestId, amount: confirmedAmount, planCode }, 'Data purchase succeeded');
 
     await createNotification(userId, {
       type:  'transaction',
@@ -387,7 +470,7 @@ router.post('/data', async (req: Request, res: Response): Promise<void> => {
       txnId,
       network,
       phone,
-      amount:    numericAmount,
+      amount:    confirmedAmount,
       planName:  resolvedPlanName,
       vendorStatus: vendorResult['status'],
     });
@@ -401,7 +484,7 @@ router.post('/data', async (req: Request, res: Response): Promise<void> => {
         .for('update');
 
       if (wallet) {
-        const restored = (parseFloat(wallet.balance) + numericAmount).toFixed(2);
+        const restored = (parseFloat(wallet.balance) + confirmedAmount).toFixed(2);
         await tx.update(walletsTable)
           .set({ balance: restored, updatedAt: new Date() })
           .where(eq(walletsTable.userId, userId));

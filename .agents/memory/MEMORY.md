@@ -6,3 +6,4 @@
 - [Super Admin RBAC architecture](super-admin-rbac.md) — admin_accounts + admin_audit_logs tables; requireSuperAdmin middleware; bcryptjs; session stores adminId+adminRole; auto-seeds from env vars.
 - [Enterprise admin panel build](enterprise-admin-panel.md) — 11-module upgrade pattern; 5 new pages + 6 enhanced; backend appended to admin-super.ts; no Drizzle schema files for new tables.
 - [Customer Care System](customer-care-arch.md) — CC role, support_tickets + support_audit_logs tables, OTP identity verification, PIN reset approval, forgot-pin/request OTP preservation.
+- [Backend hardening — all gaps filled](backend-hardening.md) — Socket.io, rate limiting, WhatsApp webhook, AI support, finance role, pricing audit, price enforcement, support inbox, in-app chat — see topic file for full inventory.

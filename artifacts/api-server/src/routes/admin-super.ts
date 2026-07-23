@@ -1408,23 +1408,78 @@ router.get('/pricing', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
+// ── Helper: insert pricing audit log entry ────────────────────────────────────
+async function pricingAuditLog(params: {
+  adminId: string;
+  adminEmail: string;
+  action: 'create' | 'update' | 'bulk_update' | 'delete';
+  pricingRuleId?: string;
+  serviceType?: string;
+  planName?: string;
+  provider?: string;
+  oldSellingPrice?: number;
+  newSellingPrice?: number;
+  oldCostPrice?: number;
+  newCostPrice?: number;
+  oldEnabled?: boolean;
+  newEnabled?: boolean;
+  reason?: string;
+  ip?: string;
+}): Promise<void> {
+  try {
+    const adminNameRow = await db.execute<{ name: string }>(sql`SELECT name FROM admin_accounts WHERE id = ${params.adminId}::uuid LIMIT 1`);
+    const adminName = (adminNameRow as unknown as { name: string }[])[0]?.name ?? params.adminEmail;
+    await db.execute(sql`
+      INSERT INTO pricing_audit_logs
+        (pricing_rule_id, admin_id, admin_name, admin_email, action,
+         service_type, plan_name, provider,
+         old_selling_price, new_selling_price, old_cost_price, new_cost_price,
+         old_enabled, new_enabled, reason, ip)
+      VALUES
+        (${params.pricingRuleId ?? null}, ${params.adminId}::uuid, ${adminName}, ${params.adminEmail}, ${params.action},
+         ${params.serviceType ?? null}, ${params.planName ?? null}, ${params.provider ?? null},
+         ${params.oldSellingPrice ?? null}, ${params.newSellingPrice ?? null},
+         ${params.oldCostPrice ?? null}, ${params.newCostPrice ?? null},
+         ${params.oldEnabled ?? null}, ${params.newEnabled ?? null},
+         ${params.reason ?? null}, ${params.ip ?? null})
+    `);
+  } catch (err) {
+    logger.error({ err }, 'Failed to insert pricing audit log');
+  }
+}
+
 router.post('/pricing', async (req: Request, res: Response): Promise<void> => {
   const adminId = req.session.adminId!;
   const adminEmail = await getAdminEmail(adminId);
-  const { serviceType, provider, network, planId, planName, costPrice, sellingPrice, markupPercent, enabled } =
+  const { serviceType, provider, network, planId, planName, costPrice, sellingPrice, markupPercent, enabled, reason } =
     req.body as Record<string,unknown>;
   if (!serviceType || !provider || !planName) { res.status(400).json({ error: 'serviceType, provider, and planName are required.' }); return; }
   try {
     const r = await db.execute(sql`
-      INSERT INTO pricing_rules (service_type, provider, network, plan_id, plan_name, cost_price, selling_price, markup_percent, enabled, updated_by)
+      INSERT INTO pricing_rules (service_type, provider, network, plan_id, plan_name, cost_price, selling_price, markup_percent, enabled, updated_by, reason, updated_by_name, effective_date)
       VALUES (${String(serviceType)}, ${String(provider)}, ${network ? String(network) : null},
               ${planId ? String(planId) : null}, ${String(planName)},
               ${Number(costPrice??0)}, ${Number(sellingPrice??0)}, ${Number(markupPercent??0)},
-              ${enabled !== false}, ${adminId})
+              ${enabled !== false}, ${adminId}::uuid,
+              ${reason ? String(reason) : null},
+              ${(await db.execute<{name:string}>(sql`SELECT name FROM admin_accounts WHERE id=${adminId}::uuid LIMIT 1`) as unknown as {name:string}[])[0]?.name ?? null},
+              CURRENT_DATE)
       RETURNING *
     `);
     const x = r.rows[0] as Record<string,unknown>;
     void auditLog({ adminId, adminEmail, action: 'create_pricing_rule', targetLabel: String(planName) });
+    void pricingAuditLog({
+      adminId, adminEmail, action: 'create',
+      pricingRuleId: String(x['id']),
+      serviceType: String(serviceType),
+      planName: String(planName),
+      provider: String(provider),
+      newSellingPrice: Number(sellingPrice??0),
+      newCostPrice: Number(costPrice??0),
+      newEnabled: enabled !== false,
+      reason: reason ? String(reason) : undefined,
+      ip: req.ip,
+    });
     res.json({
       id: String(x['id']), serviceType: String(x['service_type']??''), provider: String(x['provider']??''),
       network: x['network'] ? String(x['network']) : null, planId: x['plan_id'] ? String(x['plan_id']) : null,
@@ -1441,20 +1496,43 @@ router.post('/pricing', async (req: Request, res: Response): Promise<void> => {
 router.patch('/pricing/bulk', async (req: Request, res: Response): Promise<void> => {
   const adminId = req.session.adminId!;
   const adminEmail = await getAdminEmail(adminId);
-  const { rules } = req.body as { rules: { id: string; sellingPrice?: number; costPrice?: number; markupPercent?: number; enabled?: boolean }[] };
+  const { rules, reason } = req.body as { rules: { id: string; sellingPrice?: number; costPrice?: number; markupPercent?: number; enabled?: boolean }[]; reason?: string };
   if (!Array.isArray(rules)) { res.status(400).json({ error: 'rules must be an array.' }); return; }
   let updated = 0;
   for (const rule of rules) {
     try {
+      // Fetch old values for audit
+      const [old] = await db.execute<{ selling_price: string; cost_price: string; enabled: boolean; service_type: string; plan_name: string; provider: string }>(
+        sql`SELECT selling_price, cost_price, enabled, service_type, plan_name, provider FROM pricing_rules WHERE id = ${rule.id} LIMIT 1`
+      );
       await db.execute(sql`
         UPDATE pricing_rules SET
           selling_price = COALESCE(${rule.sellingPrice !== undefined ? rule.sellingPrice : null}, selling_price),
           cost_price = COALESCE(${rule.costPrice !== undefined ? rule.costPrice : null}, cost_price),
           markup_percent = COALESCE(${rule.markupPercent !== undefined ? rule.markupPercent : null}, markup_percent),
           enabled = COALESCE(${rule.enabled !== undefined ? rule.enabled : null}, enabled),
-          updated_by = ${adminId}, updated_at = NOW()
+          updated_by = ${adminId}::uuid, updated_at = NOW(),
+          reason = ${reason ?? null},
+          effective_date = CURRENT_DATE
         WHERE id = ${rule.id}
       `);
+      if (old) {
+        void pricingAuditLog({
+          adminId, adminEmail, action: 'bulk_update',
+          pricingRuleId: rule.id,
+          serviceType: old.service_type,
+          planName: old.plan_name,
+          provider: old.provider,
+          oldSellingPrice: Number(old.selling_price),
+          newSellingPrice: rule.sellingPrice ?? Number(old.selling_price),
+          oldCostPrice: Number(old.cost_price),
+          newCostPrice: rule.costPrice ?? Number(old.cost_price),
+          oldEnabled: old.enabled,
+          newEnabled: rule.enabled ?? old.enabled,
+          reason,
+          ip: req.ip,
+        });
+      }
       updated++;
     } catch (err) {
       logger.error({ err, ruleId: rule.id }, 'bulk update failed for rule');
@@ -1468,8 +1546,14 @@ router.patch('/pricing/:id', async (req: Request, res: Response): Promise<void> 
   const adminId = req.session.adminId!;
   const adminEmail = await getAdminEmail(adminId);
   const { id } = req.params as { id: string };
-  const { sellingPrice, costPrice, markupPercent, enabled, planName } = req.body as Record<string,unknown>;
+  const { sellingPrice, costPrice, markupPercent, enabled, planName, reason } = req.body as Record<string,unknown>;
   try {
+    // Fetch old values for audit
+    const [old] = await db.execute<{ selling_price: string; cost_price: string; enabled: boolean; service_type: string; plan_name: string; provider: string }>(
+      sql`SELECT selling_price, cost_price, enabled, service_type, plan_name, provider FROM pricing_rules WHERE id = ${id} LIMIT 1`
+    );
+    const adminNameRow = await db.execute<{name:string}>(sql`SELECT name FROM admin_accounts WHERE id=${adminId}::uuid LIMIT 1`);
+    const adminName = (adminNameRow as unknown as {name:string}[])[0]?.name ?? adminEmail;
     await db.execute(sql`
       UPDATE pricing_rules SET
         selling_price = COALESCE(${sellingPrice !== undefined ? Number(sellingPrice) : null}, selling_price),
@@ -1477,13 +1561,33 @@ router.patch('/pricing/:id', async (req: Request, res: Response): Promise<void> 
         markup_percent = COALESCE(${markupPercent !== undefined ? Number(markupPercent) : null}, markup_percent),
         enabled = COALESCE(${enabled !== undefined ? Boolean(enabled) : null}, enabled),
         plan_name = COALESCE(${planName ? String(planName) : null}, plan_name),
-        updated_by = ${adminId}, updated_at = NOW()
+        updated_by = ${adminId}::uuid, updated_at = NOW(),
+        reason = ${reason ? String(reason) : null},
+        updated_by_name = ${adminName},
+        effective_date = CURRENT_DATE
       WHERE id = ${id}
     `);
     const r = await db.execute(sql`SELECT * FROM pricing_rules WHERE id=${id} LIMIT 1`);
     if (!r.rows.length) { res.status(404).json({ error: 'Pricing rule not found.' }); return; }
     const x = r.rows[0] as Record<string,unknown>;
     void auditLog({ adminId, adminEmail, action: 'update_pricing_rule', targetId: id });
+    if (old) {
+      void pricingAuditLog({
+        adminId, adminEmail, action: 'update',
+        pricingRuleId: id,
+        serviceType: old.service_type,
+        planName: old.plan_name,
+        provider: old.provider,
+        oldSellingPrice: Number(old.selling_price),
+        newSellingPrice: sellingPrice !== undefined ? Number(sellingPrice) : Number(old.selling_price),
+        oldCostPrice: Number(old.cost_price),
+        newCostPrice: costPrice !== undefined ? Number(costPrice) : Number(old.cost_price),
+        oldEnabled: old.enabled,
+        newEnabled: enabled !== undefined ? Boolean(enabled) : old.enabled,
+        reason: reason ? String(reason) : undefined,
+        ip: req.ip,
+      });
+    }
     res.json({
       id: String(x['id']), serviceType: String(x['service_type']??''), provider: String(x['provider']??''),
       network: x['network'] ? String(x['network']) : null, planId: x['plan_id'] ? String(x['plan_id']) : null,
@@ -1502,8 +1606,24 @@ router.delete('/pricing/:id', async (req: Request, res: Response): Promise<void>
   const adminEmail = await getAdminEmail(adminId);
   const { id } = req.params as { id: string };
   try {
+    const [old] = await db.execute<{ selling_price: string; cost_price: string; enabled: boolean; service_type: string; plan_name: string; provider: string }>(
+      sql`SELECT selling_price, cost_price, enabled, service_type, plan_name, provider FROM pricing_rules WHERE id = ${id} LIMIT 1`
+    );
     await db.execute(sql`DELETE FROM pricing_rules WHERE id=${id}`);
     void auditLog({ adminId, adminEmail, action: 'delete_pricing_rule', targetId: id });
+    if (old) {
+      void pricingAuditLog({
+        adminId, adminEmail, action: 'delete',
+        pricingRuleId: id,
+        serviceType: old.service_type,
+        planName: old.plan_name,
+        provider: old.provider,
+        oldSellingPrice: Number(old.selling_price),
+        oldCostPrice: Number(old.cost_price),
+        oldEnabled: old.enabled,
+        ip: req.ip,
+      });
+    }
     res.json({ ok: true });
   } catch (err) {
     logger.error({ err }, 'DELETE /pricing/:id failed');

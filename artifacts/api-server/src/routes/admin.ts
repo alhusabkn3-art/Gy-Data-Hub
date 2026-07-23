@@ -588,14 +588,20 @@ router.get('/transactions', async (req: Request, res: Response): Promise<void> =
     const search = String(req.query['search'] ?? '').trim();
     const status = String(req.query['status'] ?? 'all');
     const type   = String(req.query['type']   ?? 'all');
+    const phone  = String(req.query['phone']  ?? '').trim();
+    const from   = req.query['from'] as string | undefined;
+    const to     = req.query['to']   as string | undefined;
     const page   = Math.max(1, Number(req.query['page']  ?? 1));
     const limit  = Math.min(100, Math.max(1, Number(req.query['limit'] ?? 50)));
     const offset = (page - 1) * limit;
 
     let cond = sql`1=1`;
     if (search)           cond = sql`${cond} AND (u.name ILIKE ${`%${search}%`} OR t.reference ILIKE ${`%${search}%`} OR t.provider ILIKE ${`%${search}%`})`;
+    if (phone)            cond = sql`${cond} AND u.phone ILIKE ${`%${phone}%`}`;
     if (status !== 'all') cond = sql`${cond} AND t.status = ${status}`;
     if (type   !== 'all') cond = sql`${cond} AND t.type   = ${type}`;
+    if (from)             cond = sql`${cond} AND t.created_at >= ${from}::timestamptz`;
+    if (to)               cond = sql`${cond} AND t.created_at <= ${to}::timestamptz + interval '1 day'`;
 
     const [countRes, rowRes] = await Promise.all([
       db.execute(sql`

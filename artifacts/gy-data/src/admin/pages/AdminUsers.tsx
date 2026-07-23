@@ -19,7 +19,7 @@ type FilterKYC    = 'all' | 'verified' | 'pending' | 'unverified' | 'failed';
 // ── Send Message modal ────────────────────────────────────────────────────────
 
 function SendMessageModal({ user, onClose }: { user: AdminUser; onClose: () => void }) {
-  const { addAnnouncement } = useAdminContext();
+  const { sendTargetedNotification } = useAdminContext();
   const [subject, setSubject] = useState('');
   const [body,    setBody]    = useState('');
   const [sending, setSending] = useState(false);
@@ -33,18 +33,19 @@ function SendMessageModal({ user, onClose }: { user: AdminUser; onClose: () => v
     if (Object.keys(e).length > 0) return;
 
     setSending(true);
-    await new Promise(r => setTimeout(r, 700));
-
-    // Store as a targeted announcement so it appears in Notifications history
-    addAnnouncement({
-      title:  subject.trim(),
-      body:   `[To: ${user.name} · ${user.phone}] ${body.trim()}`,
-      target: 'all',
-      status: 'sent',
-    });
-
-    toast.success(`Message sent to ${user.name}.`);
-    onClose();
+    try {
+      const result = await sendTargetedNotification([user.id], subject.trim(), body.trim());
+      if (result.ok) {
+        toast.success(`Message sent to ${user.name}.`);
+        onClose();
+      } else {
+        toast.error(result.error ?? 'Failed to send message.');
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to send message.');
+    } finally {
+      setSending(false);
+    }
   };
 
   return (

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import {
   Users, ArrowLeftRight, TrendingUp, Clock,
   UserCheck, AlertCircle, CheckCircle, XCircle, RefreshCw,
@@ -109,7 +110,9 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const [extData, setExtData] = useState<DashboardExtended | null>(null);
 
   useEffect(() => {
-    apiGetDashboardExtended().then(setExtData).catch(console.error);
+    apiGetDashboardExtended()
+      .then(setExtData)
+      .catch((err: unknown) => toast.error(err instanceof Error ? err.message : 'Failed to load dashboard analytics'));
   }, []);
 
   const recentTxns = transactions.slice(0, 8);

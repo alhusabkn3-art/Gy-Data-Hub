@@ -244,6 +244,10 @@ export default function AdminSettings() {
         if (settings['referral_bonus_amount']?.value) setReferralBonus(settings['referral_bonus_amount'].value);
         if (settings['commission_percent']?.value)    setCommissionPct(settings['commission_percent'].value);
         if (settings['max_referral_bonus']?.value)    setMaxReferralBonus(settings['max_referral_bonus'].value);
+        if (settings['email_alerts']?.value)      setEmailAlerts(settings['email_alerts'].value !== 'false');
+        if (settings['sms_alerts']?.value)        setSmsAlerts(settings['sms_alerts'].value === 'true');
+        if (settings['debug_mode']?.value)        setDebugMode(settings['debug_mode'].value === 'true');
+        if (settings['admin_2fa']?.value)         setTwoFactor(settings['admin_2fa'].value === 'true');
       })
       .catch(() => { /* silent — will use local defaults */ })
       .finally(() => setSettingsLoading(false));
@@ -328,9 +332,12 @@ export default function AdminSettings() {
           <Bell className="w-4 h-4 text-primary" />
           <h2 className="font-bold text-sm">Notifications</h2>
         </div>
-        <ToggleRow label="Email Alerts" description="Receive admin alerts via email" value={emailAlerts} onChange={setEmailAlerts} />
-        <ToggleRow label="SMS Alerts"   description="Receive SMS for critical events" value={smsAlerts}   onChange={setSmsAlerts} />
-        <ToggleRow label="Debug Mode"   description="Log verbose debug information"  value={debugMode}   onChange={setDebugMode} />
+        <ToggleRow label="Email Alerts" description="Receive admin alerts via email" value={emailAlerts}
+          onChange={v => { setEmailAlerts(v); apiUpdateSystemSetting('email_alerts', String(v)).catch(() => toast.error('Failed to save Email Alerts setting')); }} />
+        <ToggleRow label="SMS Alerts"   description="Receive SMS for critical events" value={smsAlerts}
+          onChange={v => { setSmsAlerts(v);   apiUpdateSystemSetting('sms_alerts',   String(v)).catch(() => toast.error('Failed to save SMS Alerts setting')); }} />
+        <ToggleRow label="Debug Mode"   description="Log verbose debug information"  value={debugMode}
+          onChange={v => { setDebugMode(v);   apiUpdateSystemSetting('debug_mode',   String(v)).catch(() => toast.error('Failed to save Debug Mode setting')); }} />
       </div>
 
       {/* Security */}
@@ -339,7 +346,8 @@ export default function AdminSettings() {
           <Lock className="w-4 h-4 text-primary" />
           <h2 className="font-bold text-sm">Security</h2>
         </div>
-        <ToggleRow label="Two-Factor Authentication" description="Require OTP in addition to PIN" value={twoFactor} onChange={setTwoFactor} />
+        <ToggleRow label="Two-Factor Authentication" description="Require OTP in addition to PIN" value={twoFactor}
+          onChange={v => { setTwoFactor(v); apiUpdateSystemSetting('admin_2fa', String(v)).catch(() => toast.error('Failed to save 2FA setting')); }} />
       </div>
 
       {/* App configuration — super admin only */}

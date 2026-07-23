@@ -284,6 +284,7 @@ interface TwoFATabProps {
 }
 
 function TwoFATab({ enabled, setupAt, loading, onRefresh }: TwoFATabProps) {
+  const { adminEmail } = useAdminContext();
   const [setupData, setSetupData] = useState<{ secret: string; qrDataUrl: string } | null>(null);
   const [token, setToken] = useState('');
   const [showSecret, setShowSecret] = useState(false);
@@ -374,15 +375,25 @@ function TwoFATab({ enabled, setupAt, loading, onRefresh }: TwoFATabProps) {
             </button>
           ) : (
             <div className="space-y-4">
-              {/* QR placeholder note */}
-              <div className="bg-white/5 rounded-xl p-4 flex flex-col items-center gap-2 border border-white/10">
-                <div className="w-32 h-32 bg-white/10 rounded-xl flex items-center justify-center">
-                  <Monitor className="w-10 h-10 text-muted-foreground/50" />
-                </div>
-                <p className="text-xs text-muted-foreground text-center">
-                  Scan this QR code with your authenticator app
-                </p>
-              </div>
+              {/* QR Code — generated from TOTP URI via qrserver.com */}
+              {(() => {
+                const totpUri = `otpauth://totp/GYDATAAdmin:${encodeURIComponent(adminEmail)}?secret=${setupData.secret}&issuer=GYDATAAdmin`;
+                const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(totpUri)}`;
+                return (
+                  <div className="bg-white rounded-xl p-4 flex flex-col items-center gap-2">
+                    <img
+                      src={qrSrc}
+                      alt="TOTP QR Code"
+                      width={160}
+                      height={160}
+                      className="w-40 h-40 rounded"
+                    />
+                    <p className="text-xs text-gray-500 text-center">
+                      Scan with Google Authenticator or Authy
+                    </p>
+                  </div>
+                );
+              })()}
 
               {/* Secret key */}
               <div>

@@ -590,8 +590,9 @@ export default function FinancePage() {
     try {
       const data = await apiGetFundingStats();
       setStats(data);
-    } catch { /* silent */ }
-    finally { setStatsLoading(false); }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load funding stats');
+    } finally { setStatsLoading(false); }
   }
 
   async function loadPending() {
@@ -599,8 +600,9 @@ export default function FinancePage() {
     try {
       const { requests } = await apiGetFundingRequests({ status: 'pending' });
       setPending(requests);
-    } catch { /* silent */ }
-    finally { setPendingLoading(false); }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load pending requests');
+    } finally { setPendingLoading(false); }
   }
 
   async function loadAll(page = 1, append = false) {
@@ -610,8 +612,9 @@ export default function FinancePage() {
       setAllRequests(prev => append ? [...prev, ...requests] : requests);
       setAllTotal(total);
       setAllPage(page);
-    } catch { /* silent */ }
-    finally { setAllLoading(false); }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load funding requests');
+    } finally { setAllLoading(false); }
   }
 
   async function loadHistory(page = 1, append = false) {
@@ -621,8 +624,9 @@ export default function FinancePage() {
       setHistoryData(prev => append ? [...prev, ...requests] : requests);
       setHistoryTotal(total);
       setHistoryPage(page);
-    } catch { /* silent */ }
-    finally { setHistoryLoading(false); }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load funding history');
+    } finally { setHistoryLoading(false); }
   }
 
   useEffect(() => {

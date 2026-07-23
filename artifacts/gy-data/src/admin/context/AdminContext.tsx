@@ -165,7 +165,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     try {
       const res = await adminApi('/api/admin/stats');
       if (res.ok) setStats(await res.json() as AdminStats);
-    } catch { /* silent */ }
+    } catch (err) { console.warn('refreshStats failed:', err); }
     finally { setStatsLoading(false); }
   }
 
@@ -174,7 +174,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     try {
       const res = await adminApi('/api/admin/revenue/weekly');
       if (res.ok) setWeeklyRevenue(await res.json() as WeeklyRevenue[]);
-    } catch { /* silent */ }
+    } catch (err) { console.warn('fetchWeeklyRevenue failed:', err); }
     finally { setRevenueLoading(false); }
   }
 
@@ -183,7 +183,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     try {
       const res = await adminApi('/api/admin/services');
       if (res.ok) setServicesData(await res.json() as ServiceBreakdown[]);
-    } catch { /* silent */ }
+    } catch (err) { console.warn('fetchServices failed:', err); }
     finally { setServicesLoading(false); }
   }
 
@@ -202,7 +202,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
         setUsers(data.users);
         setUsersTotal(data.total);
       }
-    } catch { /* silent */ }
+    } catch (err) { console.warn('fetchUsers failed:', err); }
     finally { setUsersLoading(false); }
   }
 
@@ -221,7 +221,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
         setTransactions(data.transactions);
         setTxnsTotal(data.total);
       }
-    } catch { /* silent */ }
+    } catch (err) { console.warn('fetchTransactions failed:', err); }
     finally { setTxnsLoading(false); }
   }
 
@@ -247,7 +247,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
           isSuperAdmin: a.role === 'super_admin',
         })));
       }
-    } catch { /* silent */ }
+    } catch (err) { console.warn('fetchAdminAccounts failed:', err); }
     finally { setAdminAccountsLoading(false); }
   }
 
@@ -264,7 +264,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
         setAuditLogs(data.logs);
         setAuditLogsTotal(data.total);
       }
-    } catch { /* silent */ }
+    } catch (err) { console.warn('fetchAuditLogs failed:', err); }
     finally { setAuditLogsLoading(false); }
   }
 

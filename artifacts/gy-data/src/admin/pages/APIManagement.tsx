@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
+// @ts-ignore — sonner is always available
+import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Cpu, RefreshCw, Eye, EyeOff, CheckCircle2, XCircle, AlertCircle,
@@ -398,8 +400,8 @@ export default function APIManagement() {
     try {
       const res = await apiGetApiConfigs();
       setConfigs(res.apis);
-    } catch {
-      /* silent */
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load API configurations');
     } finally {
       setLoadingConfigs(false);
     }
@@ -420,8 +422,8 @@ export default function APIManagement() {
       setErrorTotal(res.total);
       setErrorPages(res.pages);
       setErrorPage(page);
-    } catch {
-      /* silent */
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load error logs');
     } finally {
       setLoadingErrors(false);
     }
@@ -440,8 +442,8 @@ export default function APIManagement() {
       setTxTotal(res.total);
       setTxPages(res.pages);
       setTxPage(page);
-    } catch {
-      /* silent */
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load transaction logs');
     } finally {
       setLoadingTx(false);
     }
@@ -479,8 +481,8 @@ export default function APIManagement() {
         }),
       );
       setLatencyMap(newLatency);
-    } catch {
-      /* silent */
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'API status check failed');
     } finally {
       setCheckingStatus(false);
     }

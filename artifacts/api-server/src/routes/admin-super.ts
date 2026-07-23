@@ -1269,17 +1269,17 @@ router.patch('/staff/:id', async (req: Request, res: Response): Promise<void> =>
   try {
     await db.execute(sql`
       UPDATE staff_members SET
-        name = COALESCE(${name ? String(name) : null}, name),
-        email = COALESCE(${email !== undefined ? (email ? String(email) : null) : undefined}, email),
-        phone = COALESCE(${phone !== undefined ? (phone ? String(phone) : null) : undefined}, phone),
-        role = COALESCE(${role ? String(role) : null}, role),
-        rank = COALESCE(${rank ? String(rank) : null}, rank),
-        salary = COALESCE(${salary !== undefined ? Number(salary) : null}, salary),
-        salary_payment_day = COALESCE(${salaryPaymentDay !== undefined ? Number(salaryPaymentDay) : null}, salary_payment_day),
-        department = COALESCE(${department !== undefined ? (department ? String(department) : null) : undefined}, department),
-        status = COALESCE(${status ? String(status) : null}, status),
-        permissions = COALESCE(${permissions !== undefined ? JSON.stringify(permissions) : null}::jsonb, permissions),
-        notes = COALESCE(${notes !== undefined ? (notes ? String(notes) : null) : undefined}, notes),
+        name               = COALESCE(${name        != null ? String(name)       : null}, name),
+        email              = COALESCE(${email       !== undefined ? (email       ? String(email)      : null) : null}, email),
+        phone              = COALESCE(${phone       !== undefined ? (phone       ? String(phone)      : null) : null}, phone),
+        role               = COALESCE(${role        != null ? String(role)       : null}, role),
+        rank               = COALESCE(${rank        != null ? String(rank)       : null}, rank),
+        salary             = COALESCE(${salary      !== undefined ? Number(salary)                          : null}, salary),
+        salary_payment_day = COALESCE(${salaryPaymentDay !== undefined ? Number(salaryPaymentDay)           : null}, salary_payment_day),
+        department         = COALESCE(${department  !== undefined ? (department  ? String(department) : null) : null}, department),
+        status             = COALESCE(${status      != null ? String(status)     : null}, status),
+        permissions        = COALESCE(${permissions !== undefined ? JSON.stringify(permissions ?? [])       : null}::jsonb, permissions),
+        notes              = COALESCE(${notes       !== undefined ? (notes       ? String(notes)      : null) : null}, notes),
         updated_at = NOW()
       WHERE id = ${id}
     `);

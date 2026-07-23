@@ -12,6 +12,7 @@ import {
   type StaffMember, type StaffAttendanceRecord, type StaffActivityEntry,
 } from '../utils/adminApi';
 import { fmtNaira } from '../utils/format';
+import { toast } from 'sonner';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -478,8 +479,8 @@ export default function StaffManagement() {
     try {
       const res = await apiGetStaff();
       setStaff(res.staff);
-    } catch {
-      /* silent */
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load staff');
     } finally {
       setLoadingStaff(false);
     }
@@ -494,7 +495,8 @@ export default function StaffManagement() {
     try {
       const res = await apiGetStaffAttendance(attendanceStaffId, attendanceMonth);
       setAttendance(res.attendance);
-    } catch {
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load attendance');
       setAttendance([]);
     } finally {
       setLoadingAttendance(false);
@@ -510,7 +512,8 @@ export default function StaffManagement() {
     try {
       const res = await apiGetStaffActivityLogs(activityStaffId);
       setActivityLogs(res.logs);
-    } catch {
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load activity logs');
       setActivityLogs([]);
     } finally {
       setLoadingActivity(false);

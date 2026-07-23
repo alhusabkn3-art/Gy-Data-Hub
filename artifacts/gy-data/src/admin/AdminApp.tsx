@@ -21,6 +21,7 @@ import APIManagement from './pages/APIManagement';
 import PricingManagement from './pages/PricingManagement';
 import SecurityPage from './pages/SecurityPage';
 import FinancePage from './pages/FinancePage';
+import CustomerCarePanel from './pages/CustomerCarePanel';
 
 type AdminPage =
   | 'dashboard'
@@ -40,20 +41,30 @@ type AdminPage =
   | 'apiManagement'
   | 'pricing'
   | 'security'
-  | 'finance';
+  | 'finance'
+  | 'customerCare';
 
 const SUPER_ONLY_PAGES: AdminPage[] = [
   'adminManagement', 'auditLogs', 'walletManagement', 'reversals', 'reports', 'integrations',
   'apiManagement', 'pricing', 'security', 'finance',
 ];
 
+// Pages accessible by customer_care role
+const CC_PAGES: AdminPage[] = ['customerCare', 'dashboard'];
+
 function AdminDashboardApp() {
-  const [activePage, setActivePage] = useState<AdminPage>('dashboard');
-  const { isSuperAdmin } = useAdminContext();
+  const { isSuperAdmin, adminRole } = useAdminContext();
+  const [activePage, setActivePage] = useState<AdminPage>(
+    () => adminRole === 'customer_care' ? 'customerCare' : 'dashboard',
+  );
 
   const navigate = (p: string) => {
     if (SUPER_ONLY_PAGES.includes(p as AdminPage) && !isSuperAdmin) {
-      setActivePage('dashboard');
+      setActivePage(adminRole === 'customer_care' ? 'customerCare' : 'dashboard');
+      return;
+    }
+    if (adminRole === 'customer_care' && !CC_PAGES.includes(p as AdminPage)) {
+      setActivePage('customerCare');
       return;
     }
     setActivePage(p as AdminPage);
@@ -79,6 +90,7 @@ function AdminDashboardApp() {
       case 'pricing':         return <PricingManagement />;
       case 'security':        return <SecurityPage />;
       case 'finance':         return <FinancePage />;
+      case 'customerCare':    return <CustomerCarePanel />;
       default:                return <AdminDashboard onNavigate={navigate} />;
     }
   };

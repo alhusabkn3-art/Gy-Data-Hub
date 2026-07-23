@@ -7,7 +7,7 @@ declare module 'express-session' {
     /** Admin session flags */
     isAdmin:   boolean;
     adminId:   string;
-    adminRole: 'super_admin' | 'admin';
+    adminRole: 'super_admin' | 'admin' | 'customer_care';
   }
 }
 

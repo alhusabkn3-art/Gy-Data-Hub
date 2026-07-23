@@ -5,7 +5,7 @@ import {
   Grid3X3, Bell, Settings, LogOut, Menu, X, Shield, ChevronRight,
   UserCog, User, Lock, ChevronDown, ScrollText, Crown,
   RotateCcw, BarChart2, Plug, WalletCards,
-  Users2, Banknote, Cpu, Tags, ShieldCheck,
+  Users2, Banknote, Cpu, Tags, ShieldCheck, Headset,
 } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { ROLE_LABELS } from '../data/adminMockData';
@@ -23,6 +23,7 @@ const BASE_NAV = [
   { id: 'notifications',    label: 'Announcements',       icon: Bell,            superOnly: false },
   { id: 'settings',         label: 'Settings',            icon: Settings,        superOnly: false },
   { id: 'staff',            label: 'Staff Management',    icon: Users2,          superOnly: false },
+  { id: 'customerCare',     label: 'Customer Care',       icon: Headset,         superOnly: false },
   // ── Super Admin only ──
   { id: 'walletManagement', label: 'Wallet Management',   icon: WalletCards,     superOnly: true  },
   { id: 'finance',          label: 'Finance',             icon: Banknote,        superOnly: true  },

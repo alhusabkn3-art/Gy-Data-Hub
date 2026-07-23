@@ -94,7 +94,7 @@ export interface Announcement {
 // ── Admin account management ──────────────────────────────────────────────────
 // AdminRole is enforced server-side; the frontend uses it for UI gating only.
 
-export type AdminRole = 'super_admin' | 'admin';
+export type AdminRole = 'super_admin' | 'admin' | 'customer_care';
 
 export interface AdminAccount {
   id:          string;
@@ -122,13 +122,15 @@ export interface AuditLogEntry {
 }
 
 export const ROLE_LABELS: Record<AdminRole, string> = {
-  super_admin: 'Super Admin',
-  admin:       'Admin',
+  super_admin:    'Super Admin',
+  admin:          'Admin',
+  customer_care:  'Customer Care',
 };
 
 export const ROLE_COLORS: Record<AdminRole, { bg: string; text: string; border: string }> = {
-  super_admin: { bg: 'rgba(234,179,8,0.12)',  text: '#CA8A04', border: 'rgba(234,179,8,0.3)' },
-  admin:       { bg: 'rgba(59,130,246,0.12)', text: '#3B82F6', border: 'rgba(59,130,246,0.3)' },
+  super_admin:   { bg: 'rgba(234,179,8,0.12)',   text: '#CA8A04', border: 'rgba(234,179,8,0.3)'   },
+  admin:         { bg: 'rgba(59,130,246,0.12)',  text: '#3B82F6', border: 'rgba(59,130,246,0.3)'  },
+  customer_care: { bg: 'rgba(20,184,166,0.12)',  text: '#14B8A6', border: 'rgba(20,184,166,0.3)'  },
 };
 
 export const ROLE_PERMISSIONS: Record<AdminRole, string[]> = {
@@ -136,7 +138,8 @@ export const ROLE_PERMISSIONS: Record<AdminRole, string[]> = {
     'Dashboard', 'Users', 'Transactions', 'Wallet', 'Services',
     'Announcements', 'Admin Management', 'Audit Logs', 'Settings',
   ],
-  admin: ['Dashboard', 'Users', 'Transactions', 'Wallet', 'Services', 'Announcements'],
+  admin:         ['Dashboard', 'Users', 'Transactions', 'Wallet', 'Services', 'Announcements'],
+  customer_care: ['Customer Care'],
 };
 
 // ── Announcements — starts empty; created by admin at runtime ─────────────────

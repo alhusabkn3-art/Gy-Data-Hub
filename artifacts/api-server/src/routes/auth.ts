@@ -302,7 +302,7 @@ router.post('/forgot-pin/request', async (req: Request, res: Response): Promise<
 
   const normalizedPhone = normalizePhone(phone);
   const [user] = await db
-    .select({ id: usersTable.id })
+    .select({ id: usersTable.id, resetOtpHash: usersTable.resetOtpHash, resetOtpExpiry: usersTable.resetOtpExpiry })
     .from(usersTable)
     .where(eq(usersTable.phone, normalizedPhone));
 
@@ -314,6 +314,21 @@ router.post('/forgot-pin/request', async (req: Request, res: Response): Promise<
     res.json({
       message: 'If an account with this number exists, a code has been sent.',
       ...(process.env['NODE_ENV'] !== 'production' ? { devNote: 'phone not found' } : {}),
+    });
+    return;
+  }
+
+  // Preserve a Customer Care–approved reset OTP if one is still valid.
+  // CC-generated OTPs have a 1-hour window (> 5 min remaining means it wasn't
+  // issued by self-service), so don't overwrite it with a fresh 5-minute code.
+  if (
+    user.resetOtpHash &&
+    user.resetOtpExpiry &&
+    new Date(user.resetOtpExpiry).getTime() > Date.now() + 5 * 60 * 1000
+  ) {
+    res.json({
+      message: 'If an account with this number exists, a code has been sent.',
+      ...(process.env['NODE_ENV'] !== 'production' ? { devNote: 'CC-approved reset OTP already active — use the code given by Customer Care' } : {}),
     });
     return;
   }

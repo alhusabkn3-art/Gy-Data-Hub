@@ -1,6 +1,6 @@
 import { pgTable, uuid, text, timestamp, pgEnum } from 'drizzle-orm/pg-core';
 
-export const adminRoleEnum   = pgEnum('admin_role',           ['super_admin', 'admin']);
+export const adminRoleEnum   = pgEnum('admin_role',           ['super_admin', 'admin', 'customer_care']);
 export const adminStatusEnum = pgEnum('admin_account_status', ['active', 'disabled']);
 
 /**

@@ -16,8 +16,9 @@ function initials(name: string) {
 }
 
 const AVATAR_COLORS: Record<AdminRole, { bg: string; text: string }> = {
-  super_admin: { bg: '#7C2D12', text: '#FBBF24' },
-  admin:       { bg: '#1E3A5F', text: '#60A5FA' },
+  super_admin:   { bg: '#7C2D12', text: '#FBBF24' },
+  admin:         { bg: '#1E3A5F', text: '#60A5FA' },
+  customer_care: { bg: '#0D3D3A', text: '#14B8A6' },
 };
 
 function Skeleton({ className }: { className?: string }) {

@@ -5,9 +5,9 @@
 -- guards that swallow duplicate-object errors.
 --
 -- Steps to provision a new environment:
---   1. Set DATABASE_URL in Replit Secrets.
+--   1. Set DATABASE_URL in the deployment environment.
 --   2. psql "$DATABASE_URL" -f db/bootstrap.sql
---   3. Set SESSION_SECRET in Replit Secrets.
+--   3. Set SESSION_SECRET in the deployment environment.
 --   4. Start the API server.
 
 -- ── Enum types ────────────────────────────────────────────────────────────────
@@ -39,6 +39,18 @@ DO $$ BEGIN
   -- pgEnum name: notif_type (from notifTypeEnum in schema/notifications.ts)
   -- Values: transaction | promo | system | security
   CREATE TYPE notif_type AS ENUM ('transaction', 'promo', 'system', 'security');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE admin_role AS ENUM (
+    'super_admin', 'admin', 'customer_care', 'finance', 'supervisor', 'technical_support'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE admin_account_status AS ENUM ('active', 'disabled');
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -105,6 +117,36 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 -- Idempotent migration: adds ref_id to existing tables
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS ref_id text;
+
+-- ── admin accounts ───────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS admin_accounts (
+  id                  UUID                  NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  name                TEXT                  NOT NULL,
+  email               TEXT                  NOT NULL UNIQUE,
+  role                admin_role            NOT NULL DEFAULT 'admin',
+  pin_hash            TEXT                  NOT NULL,
+  status              admin_account_status  NOT NULL DEFAULT 'active',
+  created_by          UUID,
+  finance_permissions JSONB                 NOT NULL DEFAULT '[]'::jsonb,
+  last_login_at       TIMESTAMP,
+  created_at          TIMESTAMP             NOT NULL DEFAULT NOW(),
+  updated_at          TIMESTAMP             NOT NULL DEFAULT NOW()
+);
+ALTER TABLE admin_accounts ADD COLUMN IF NOT EXISTS finance_permissions jsonb NOT NULL DEFAULT '[]'::jsonb;
+
+-- ── admin audit logs ─────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+  id           UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  admin_id     UUID        NOT NULL REFERENCES admin_accounts(id) ON DELETE CASCADE,
+  admin_email  TEXT        NOT NULL,
+  action       TEXT        NOT NULL,
+  target_type  TEXT,
+  target_id    TEXT,
+  target_label TEXT,
+  details      JSONB,
+  ip           TEXT,
+  created_at   TIMESTAMP   NOT NULL DEFAULT NOW()
+);
 
 -- ── session (connect-pg-simple) ───────────────────────────────────────────────
 -- createTableIfMissing is unreliable in esbuild-bundled output (fs path breaks).

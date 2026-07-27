@@ -153,31 +153,31 @@ async function handleInboundMessage(
   logger.info({ waId, msgId, msgType }, 'Inbound WhatsApp message');
 
   // ── Deduplication: prevent double-processing on Meta retries ─────────────
-  const [existingMsg] = await db.execute<{ id: string }>(sql`
+  const existingMsg = (await db.execute<{ id: string }>(sql`
     SELECT id FROM messages WHERE whatsapp_msg_id = ${msgId} LIMIT 1
-  `);
+  `)).rows[0];
   if (existingMsg) {
     logger.debug({ msgId }, 'Duplicate WhatsApp message — skipping (already processed)');
     return;
   }
 
   // ── Find or create conversation ───────────────────────────────────────────
-  let [conv] = await db.execute<{ id: string; ai_handled: boolean; status: string; human_claimed_at: string | null }>(sql`
+  let conv = (await db.execute<{ id: string; ai_handled: boolean; status: string; human_claimed_at: string | null }>(sql`
     SELECT id, ai_handled, status, human_claimed_at FROM conversations WHERE whatsapp_wa_id = ${waId} LIMIT 1
-  `);
+  `)).rows[0];
 
   if (!conv) {
-    const [user] = await db.execute<{ id: string; name: string }>(sql`
+    const user = (await db.execute<{ id: string; name: string }>(sql`
       SELECT id, name FROM users WHERE phone = ${waId} OR phone = ${'234' + waId.slice(1)} LIMIT 1
-    `);
-    const [newConv] = await db.execute<{ id: string; ai_handled: boolean; status: string; human_claimed_at: string | null }>(sql`
+    `)).rows[0];
+    const newConv = (await db.execute<{ id: string; ai_handled: boolean; status: string; human_claimed_at: string | null }>(sql`
       INSERT INTO conversations
         (channel, status, customer_id, customer_name, customer_phone, whatsapp_wa_id, ai_handled)
       VALUES
         ('whatsapp', 'open', ${user?.id ?? null}, ${profileName ?? user?.name ?? 'WhatsApp User'},
          ${waId}, ${waId}, true)
       RETURNING id, ai_handled, status, human_claimed_at
-    `);
+    `)).rows[0];
     conv = newConv!;
   }
 
@@ -213,10 +213,10 @@ async function handleInboundMessage(
   }
 
   // ── Check message count for auto-escalation ───────────────────────────────
-  const [msgCount] = await db.execute<{ count: string }>(sql`
+  const msgCount = (await db.execute<{ count: string }>(sql`
     SELECT COUNT(*)::text AS count FROM messages
     WHERE conversation_id = ${conv.id} AND sender_type = 'user'
-  `);
+  `)).rows[0];
   const userMsgCount = parseInt(msgCount?.count ?? '0');
 
   // Auto-escalate after 6 unanswered user messages in a conversation
@@ -249,11 +249,11 @@ async function escalateConversation(conversationId: string, waId: string, reason
 
 async function sendAiReply(conversationId: string, waId: string, userMessage: string): Promise<void> {
   try {
-    const history = await db.execute<{ content: string; sender_type: string }>(sql`
+    const history = (await db.execute<{ content: string; sender_type: string }>(sql`
       SELECT content, sender_type FROM messages
       WHERE conversation_id = ${conversationId}
       ORDER BY created_at DESC LIMIT 10
-    `);
+    `)).rows;
 
     const aiHistory = history.reverse().map((m) => ({
       role: m.sender_type === 'user' ? 'user' as const : 'assistant' as const,

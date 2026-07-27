@@ -41,7 +41,6 @@ export const sessionMiddleware = session({
 const REQUIRED_VARS = [
   'SESSION_SECRET',
   'DATABASE_URL',
-  'PORT',
 ];
 
 const REQUIRED_FOR_PAYMENTS = [
@@ -62,7 +61,7 @@ const OPTIONAL_VARS = [
   { key: 'WHATSAPP_BUSINESS_ACCOUNT_ID',      desc: 'WhatsApp Business account ID' },
   { key: 'WHATSAPP_WEBHOOK_VERIFY_TOKEN',     desc: 'WhatsApp webhook verify token' },
   { key: 'WHATSAPP_APP_SECRET',               desc: 'WhatsApp app secret for signature verification' },
-  { key: 'OPENAI_API_KEY',                    desc: 'OpenAI API key (uses Replit proxy if absent)' },
+  { key: 'OPENAI_API_KEY',                    desc: 'OpenAI API key for AI support (optional)' },
   { key: 'CORS_ORIGINS',                      desc: 'Comma-separated allowed CORS origins (production)' },
   { key: 'ADMIN_EMAIL',                       desc: 'Bootstrap super-admin email' },
   { key: 'ADMIN_PIN',                         desc: 'Bootstrap super-admin PIN (min 6 digits, change after first login)' },

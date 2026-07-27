@@ -1,6 +1,6 @@
 # GY DATA — Required Environment Variables
 
-All secrets must be set in **Replit Secrets** (never in source code or `.env` files).
+All secrets must be set in the deployment environment (never in source code or committed `.env` files).
 
 ---
 
@@ -9,8 +9,8 @@ All secrets must be set in **Replit Secrets** (never in source code or `.env` fi
 | Variable | Description | Example |
 |---|---|---|
 | `SESSION_SECRET` | Random secret for signing session cookies. Use at least 32 random characters. | `openssl rand -base64 32` |
-| `DATABASE_URL` | PostgreSQL connection string. Provided automatically by Replit's built-in PostgreSQL. | `postgresql://user:pass@host:5432/db` |
-| `PORT` | TCP port the API server listens on. Provided automatically by Replit. | `8080` |
+| `DATABASE_URL` | PostgreSQL connection string for the application database. | `postgresql://user:pass@host:5432/db` |
+| `PORT` | TCP port the API server listens on. Defaults to `5000` when not provided. | `8080` |
 
 ---
 
@@ -47,7 +47,7 @@ Without these, WhatsApp messaging is unavailable. **In production, `WHATSAPP_APP
 | `WHATSAPP_ACCESS_TOKEN` | Meta Graph API permanent access token | Meta Developer Console → App → WhatsApp → API Setup |
 | `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp Business phone number ID | Meta Developer Console → App → WhatsApp → API Setup |
 | `WHATSAPP_BUSINESS_ACCOUNT_ID` | WhatsApp Business Account (WABA) ID | Meta Business Manager → WhatsApp Accounts |
-| `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | A secret string YOU choose, configured in both Replit Secrets and the Meta webhook settings | Any random string, e.g. `openssl rand -hex 16` |
+| `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | A secret string YOU choose, configured in both the deployment environment and Meta webhook settings | Any random string, e.g. `openssl rand -hex 16` |
 | `WHATSAPP_APP_SECRET` | App secret for HMAC-SHA256 webhook signature verification | Meta Developer Console → App → Settings → Basic → App Secret |
 
 ---
@@ -56,7 +56,7 @@ Without these, WhatsApp messaging is unavailable. **In production, `WHATSAPP_APP
 
 | Variable | Description | Default |
 |---|---|---|
-| `OPENAI_API_KEY` | OpenAI API key. If absent, uses Replit's AI proxy (free, rate-limited). | Uses Replit AI proxy |
+| `OPENAI_API_KEY` | OpenAI API key used by the AI support assistant. | Disabled unless configured |
 | `CORS_ORIGINS` | Comma-separated list of allowed frontend origins in production. | All origins allowed (set this in production!) |
 | `ADMIN_EMAIL` | Bootstrap super-admin email. Only used on first startup. | `admin@gydata.ng` |
 | `ADMIN_PIN` | Bootstrap super-admin PIN (6 digits). **Change immediately after first login.** Must not be `125125`. | None (seeding disabled if missing or insecure) |
@@ -73,5 +73,5 @@ Before going live, verify:
 - [ ] `CORS_ORIGINS` is set to your production frontend domain
 - [ ] `WHATSAPP_APP_SECRET` is set (mandatory in production)
 - [ ] `MONNIFY_BASE_URL` is set to `https://api.monnify.com` (not sandbox)
-- [ ] All secrets are stored in Replit Secrets, not in code or `.env` files
+- [ ] All secrets are stored in the deployment environment, not in code or committed `.env` files
 - [ ] After first login as super admin, change the PIN via the admin panel

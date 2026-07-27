@@ -22,7 +22,7 @@ app.use(
   }),
 );
 
-// Trust first proxy (Replit reverse proxy / Vite dev proxy)
+// Trust the first reverse proxy hop when running behind a load balancer.
 app.set('trust proxy', 1);
 
 // ── CORS ───────────────────────────────────────────────────────────────────────

@@ -1995,12 +1995,12 @@ router.post('/finance/funding-requests/:id/reject', async (req: Request, res: Re
 // ── GET /admin/finance/accounts — list finance staff with their permissions ───
 router.get('/finance/accounts', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const rows = await db.execute<Record<string, unknown>>(sql`
+    const rows = (await db.execute<Record<string, unknown>>(sql`
       SELECT id, name, email, role, status, finance_permissions, last_login_at, created_at
       FROM admin_accounts
       WHERE role = 'finance'
       ORDER BY name ASC
-    `);
+    `)).rows;
     res.json({ accounts: rows });
   } catch (err) {
     logger.error({ err }, 'GET /finance/accounts failed');
@@ -2012,12 +2012,12 @@ router.get('/finance/accounts', async (_req: Request, res: Response): Promise<vo
 router.get('/finance/accounts/:id/permissions', async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params as { id: string };
   try {
-    const [account] = await db.execute<{
+    const account = (await db.execute<{
       id: string; name: string; email: string; role: string; finance_permissions: string[] | null;
     }>(sql`
       SELECT id, name, email, role, finance_permissions
       FROM admin_accounts WHERE id = ${id}::uuid LIMIT 1
-    `);
+    `)).rows[0];
     if (!account) { res.status(404).json({ error: 'Account not found.' }); return; }
     res.json({
       id: account.id,
@@ -2048,9 +2048,9 @@ router.patch('/finance/accounts/:id/permissions', async (req: Request, res: Resp
   };
 
   try {
-    const [account] = await db.execute<{
+    const account = (await db.execute<{
       id: string; name: string; role: string; finance_permissions: string[] | null;
-    }>(sql`SELECT id, name, role, finance_permissions FROM admin_accounts WHERE id = ${id}::uuid LIMIT 1`);
+    }>(sql`SELECT id, name, role, finance_permissions FROM admin_accounts WHERE id = ${id}::uuid LIMIT 1`)).rows[0];
 
     if (!account) { res.status(404).json({ error: 'Account not found.' }); return; }
     if (account.role !== 'finance') {

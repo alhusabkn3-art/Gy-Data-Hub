@@ -29,7 +29,7 @@ function requireCredentials(_req: Request, res: Response, next: NextFunction): v
   if (!process.env['CLUBKONNECT_USER_ID'] || !process.env['CLUBKONNECT_API_KEY']) {
     res.status(503).json({
       error: 'ClubKonnect credentials not configured.',
-      hint:  'Add CLUBKONNECT_USER_ID and CLUBKONNECT_API_KEY as Replit Secrets.',
+      hint:  'Add CLUBKONNECT_USER_ID and CLUBKONNECT_API_KEY to the deployment environment.',
     });
     return;
   }

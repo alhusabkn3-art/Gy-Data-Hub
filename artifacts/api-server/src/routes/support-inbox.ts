@@ -180,8 +180,14 @@ router.post('/conversations/:id/messages', async (req: Request, res: Response): 
       return;
     }
 
-    const conv = (await db.execute<{ id: string; channel: string; customer_phone: string; whatsapp_wa_id: string }>(sql`
-      SELECT id, channel, customer_phone, whatsapp_wa_id FROM conversations WHERE id = ${id}::uuid
+    const conv = (await db.execute<{
+      id: string;
+      channel: string;
+      customer_id: string | null;
+      customer_phone: string;
+      whatsapp_wa_id: string;
+    }>(sql`
+      SELECT id, channel, customer_id, customer_phone, whatsapp_wa_id FROM conversations WHERE id = ${id}::uuid
     `)).rows[0];
     if (!conv) { res.status(404).json({ error: 'Conversation not found.' }); return; }
 

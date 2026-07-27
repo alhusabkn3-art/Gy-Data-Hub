@@ -1,6 +1,13 @@
-import { pgTable, uuid, text, timestamp, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, pgEnum, jsonb } from 'drizzle-orm/pg-core';
 
-export const adminRoleEnum   = pgEnum('admin_role',           ['super_admin', 'admin', 'customer_care']);
+export const adminRoleEnum   = pgEnum('admin_role', [
+  'super_admin',
+  'admin',
+  'customer_care',
+  'finance',
+  'supervisor',
+  'technical_support',
+]);
 export const adminStatusEnum = pgEnum('admin_account_status', ['active', 'disabled']);
 
 /**
@@ -18,6 +25,7 @@ export const adminAccountsTable = pgTable('admin_accounts', {
   role:        adminRoleEnum('role').notNull().default('admin'),
   pinHash:     text('pin_hash').notNull(),
   status:      adminStatusEnum('status').notNull().default('active'),
+  financePermissions: jsonb('finance_permissions').$type<string[]>().notNull().default([]),
   /** UUID of the admin who created this account (NULL for the bootstrapped super admin) */
   createdBy:   uuid('created_by'),
   lastLoginAt: timestamp('last_login_at'),

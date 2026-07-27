@@ -11,8 +11,7 @@ import { normalizeCKStatus } from './lib/clubkonnect.js';
 // ── Startup validation ─────────────────────────────────────────────────────────
 validateEnv();
 
-const rawPort = process.env['PORT'];
-if (!rawPort) throw new Error('PORT environment variable is required.');
+const rawPort = process.env['PORT'] ?? '5000';
 const port = Number(rawPort);
 if (Number.isNaN(port) || port <= 0) throw new Error(`Invalid PORT: "${rawPort}"`);
 
@@ -85,9 +84,9 @@ io.on('connection', (socket) => {
       if (sess.isAdmin) {
         void socket.join(`conversation:${conversationId}`);
       } else if (sess.userId) {
-        const [conv] = await db.execute<{ customer_id: string | null }>(
+        const conv = (await db.execute<{ customer_id: string | null }>(
           sql`SELECT customer_id FROM conversations WHERE id = ${conversationId}::uuid LIMIT 1`,
-        );
+        )).rows[0];
         if (conv?.customer_id === sess.userId) {
           void socket.join(`conversation:${conversationId}`);
         }
@@ -115,7 +114,7 @@ io.on('connection', (socket) => {
 //
 async function recoverStuckTransactions(): Promise<void> {
   try {
-    const rawRows = await db.execute<{
+    const queryResult = await db.execute<{
       id: string; user_id: string; amount: string; reference: string; type: string;
     }>(sql`
       SELECT id, user_id, amount, reference, type

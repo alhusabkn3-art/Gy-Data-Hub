@@ -30,9 +30,9 @@ export async function financialAuditLog(params: FinancialAuditParams): Promise<v
     let adminName  = params.adminName;
     let adminEmail = params.adminEmail;
     if (!adminName || !adminEmail) {
-      const [row] = await db.execute<{ name: string; email: string }>(
+      const row = (await db.execute<{ name: string; email: string }>(
         sql`SELECT name, email FROM admin_accounts WHERE id = ${params.adminId}::uuid LIMIT 1`
-      );
+      )).rows[0];
       adminName  = adminName  ?? row?.name  ?? 'Unknown';
       adminEmail = adminEmail ?? row?.email ?? 'Unknown';
     }

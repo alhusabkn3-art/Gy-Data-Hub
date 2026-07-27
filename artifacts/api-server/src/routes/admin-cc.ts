@@ -181,7 +181,7 @@ router.get('/cc/search', async (req: Request, res: Response): Promise<void> => {
     const customers = (result.rows as Record<string, unknown>[]).map(safeCustomer);
 
     void ccAudit({
-      adminId: req.session.adminId,
+      adminId: req.session.adminId!,
       action:  'customer_searched',
       details: { query: q, resultsFound: customers.length },
       ip:      clientIp(req),
@@ -283,7 +283,7 @@ router.post('/cc/tickets', async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    const staffName   = await getStaffName(req.session.adminId);
+    const staffName   = await getStaffName(req.session.adminId!);
     let ticketNumber  = genTicketNumber();
     const collision   = await db.execute(sql`SELECT id FROM support_tickets WHERE ticket_number = ${ticketNumber} LIMIT 1`);
     if (collision.rows.length) ticketNumber = genTicketNumber();
@@ -294,14 +294,14 @@ router.post('/cc/tickets', async (req: Request, res: Response): Promise<void> =>
          status, assigned_staff_id, assigned_staff_name, notes)
       VALUES (
         ${ticketNumber}, ${cust.id}, ${cust.phone}, ${cust.name},
-        ${reason}, 'open', ${req.session.adminId}, ${staffName}, ${notes || null}
+        ${reason}, 'open', ${req.session.adminId!}, ${staffName}, ${notes || null}
       )
       RETURNING id, ticket_number, status, created_at
     `);
     const ticket = insertR.rows[0] as { id: string; ticket_number: string; status: string; created_at: unknown };
 
     void ccAudit({
-      adminId:    req.session.adminId,
+      adminId:    req.session.adminId!,
       ticketId:   ticket.id,
       customerId: cust.id,
       action:     'ticket_created',
@@ -319,7 +319,7 @@ router.post('/cc/tickets', async (req: Request, res: Response): Promise<void> =>
 // ── GET /api/admin/cc/tickets/:id ─────────────────────────────────────────────
 
 router.get('/cc/tickets/:id', async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const { id } = req.params as { id: string };
   try {
     const tR = await db.execute(sql`SELECT * FROM support_tickets WHERE id = ${id} LIMIT 1`);
     if (!tR.rows.length) { res.status(404).json({ error: 'Ticket not found.' }); return; }
@@ -341,7 +341,7 @@ router.get('/cc/tickets/:id', async (req: Request, res: Response): Promise<void>
     `);
 
     void ccAudit({
-      adminId:    req.session.adminId,
+      adminId:    req.session.adminId!,
       ticketId:   id,
       customerId: String(raw['customer_id']),
       action:     'ticket_viewed',
@@ -361,7 +361,7 @@ router.get('/cc/tickets/:id', async (req: Request, res: Response): Promise<void>
 // ── PATCH /api/admin/cc/tickets/:id ──────────────────────────────────────────
 
 router.patch('/cc/tickets/:id', async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const { id } = req.params as { id: string };
   const { notes, status } = req.body as { notes?: string; status?: string };
 
   const LOCKED   = ['resolved', 'closed'];
@@ -390,7 +390,7 @@ router.patch('/cc/tickets/:id', async (req: Request, res: Response): Promise<voi
     `);
 
     void ccAudit({
-      adminId:  req.session.adminId,
+      adminId:  req.session.adminId!,
       ticketId: id,
       action:   'ticket_updated',
       details:  { fields: { notes: notes !== undefined, status } },
@@ -407,7 +407,7 @@ router.patch('/cc/tickets/:id', async (req: Request, res: Response): Promise<voi
 // ── POST /api/admin/cc/tickets/:id/send-otp ───────────────────────────────────
 
 router.post('/cc/tickets/:id/send-otp', async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const { id } = req.params as { id: string };
   try {
     const tR = await db.execute(sql`
       SELECT id, customer_id, customer_phone, status,
@@ -463,7 +463,7 @@ router.post('/cc/tickets/:id/send-otp', async (req: Request, res: Response): Pro
     `);
 
     void ccAudit({
-      adminId:    req.session.adminId,
+      adminId:    req.session.adminId!,
       ticketId:   id,
       customerId: t.customer_id,
       action:     'otp_sent',
@@ -492,7 +492,7 @@ router.post('/cc/tickets/:id/send-otp', async (req: Request, res: Response): Pro
 // ── POST /api/admin/cc/tickets/:id/verify-otp ─────────────────────────────────
 
 router.post('/cc/tickets/:id/verify-otp', async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const { id } = req.params as { id: string };
   const { otp } = req.body as { otp?: string };
 
   if (!otp || !/^\d{6}$/.test(otp)) {
@@ -531,7 +531,7 @@ router.post('/cc/tickets/:id/verify-otp', async (req: Request, res: Response): P
         UPDATE support_tickets SET otp_attempts = ${attempts}, updated_at = NOW() WHERE id = ${id}
       `);
       void ccAudit({
-        adminId:    req.session.adminId,
+        adminId:    req.session.adminId!,
         ticketId:   id,
         customerId: t.customer_id,
         action:     'otp_verification_failed',
@@ -556,7 +556,7 @@ router.post('/cc/tickets/:id/verify-otp', async (req: Request, res: Response): P
       WHERE id = ${id}
     `);
     void ccAudit({
-      adminId:    req.session.adminId,
+      adminId:    req.session.adminId!,
       ticketId:   id,
       customerId: t.customer_id,
       action:     'identity_verified',
@@ -574,7 +574,7 @@ router.post('/cc/tickets/:id/verify-otp', async (req: Request, res: Response): P
 // ── POST /api/admin/cc/tickets/:id/approve-reset ──────────────────────────────
 
 router.post('/cc/tickets/:id/approve-reset', async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const { id } = req.params as { id: string };
   const { confirm } = req.body as { confirm?: boolean };
   if (!confirm) {
     res.status(400).json({ error: '{ confirm: true } is required to approve a PIN reset.' });
@@ -631,7 +631,7 @@ router.post('/cc/tickets/:id/approve-reset', async (req: Request, res: Response)
     `);
 
     void ccAudit({
-      adminId:    req.session.adminId,
+      adminId:    req.session.adminId!,
       ticketId:   id,
       customerId: t.customer_id,
       action:     'pin_reset_approved',

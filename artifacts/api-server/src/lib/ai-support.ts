@@ -1,5 +1,5 @@
 /**
- * AI Support Assistant — OpenAI GPT-4o via Replit AI Integrations proxy.
+ * AI Support Assistant — OpenAI GPT-4o via the standard OpenAI API.
  *
  * Provides automated first-response for customer support conversations.
  * Strictly prohibited from revealing internal system details, making
@@ -101,11 +101,11 @@ let client: OpenAI | null = null;
 
 function getClient(): OpenAI {
   if (!client) {
-    const apiKey  = process.env['OPENAI_API_KEY'] ?? 'replit';
-    const baseURL = process.env['OPENAI_API_KEY']
-      ? undefined
-      : 'https://replit-openai-proxy.replit.com/v1';
-    client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+    const apiKey = process.env['OPENAI_API_KEY'];
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY is required for AI support.');
+    }
+    client = new OpenAI({ apiKey });
   }
   return client;
 }

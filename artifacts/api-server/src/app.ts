@@ -65,6 +65,14 @@ app.use(
 );
 app.use(express.urlencoded({ extended: true }));
 
+// ── Body safety guard ─────────────────────────────────────────────────────────
+// Requests with no Content-Type (e.g. curl with no -H) leave req.body undefined.
+// Destructuring undefined throws a TypeError, so default to {} here once globally.
+app.use((req, _res, next) => {
+  if (req.body === undefined) req.body = {};
+  next();
+});
+
 // ── Session ────────────────────────────────────────────────────────────────────
 // Imported from lib/session-store so Socket.io can share the same middleware.
 app.use(sessionMiddleware);

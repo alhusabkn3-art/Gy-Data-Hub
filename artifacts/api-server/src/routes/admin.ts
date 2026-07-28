@@ -25,10 +25,17 @@ import { logger } from '../lib/logger.js';
 const router = Router();
 
 // ── Env-var bootstrap credentials ────────────────────────────────────────────
-// Used only to seed the first super-admin account into the DB.
-// After seeding, all logins validate against the DB hash.
+// Used only to seed the first super-admin account into the DB on first boot.
+// Set ADMIN_EMAIL and ADMIN_PIN as Replit Secrets (not env vars) so they are
+// never stored in tracked config files. After the account is seeded, these
+// vars are no longer needed — all logins validate against the stored hash.
 const BOOTSTRAP_EMAIL = (process.env['ADMIN_EMAIL'] ?? 'admin@gyd.com').toLowerCase();
-const BOOTSTRAP_PIN   =  process.env['ADMIN_PIN']   ?? '125125';
+const BOOTSTRAP_PIN   =  process.env['ADMIN_PIN']   ?? '';
+
+// Minimum PIN length for bootstrap seeding. The interactive PIN-change API
+// enforces 6 digits; we enforce the same here so a weak bootstrap PIN cannot
+// persist into production.
+const MIN_BOOTSTRAP_PIN_LENGTH = 4;
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 
@@ -98,6 +105,19 @@ async function ensureSuperAdmin(): Promise<void> {
     .limit(1);
 
   if (existing.length === 0) {
+    // Enforce PIN policy before seeding — reject a missing or too-short PIN so
+    // a deployment never starts with no or a trivially-guessable super-admin PIN.
+    if (!BOOTSTRAP_PIN || BOOTSTRAP_PIN.length < MIN_BOOTSTRAP_PIN_LENGTH) {
+      const msg = `ADMIN_PIN is not set or is too short (minimum ${MIN_BOOTSTRAP_PIN_LENGTH} digits). ` +
+        'Set ADMIN_PIN as a Replit Secret before the server can seed the super-admin account.';
+      if (process.env['NODE_ENV'] === 'production') {
+        throw new Error(msg);
+      } else {
+        logger.warn(msg + ' Skipping super-admin seeding in development.');
+        return;
+      }
+    }
+
     const pinHash = await hashPin(BOOTSTRAP_PIN);
     await db.insert(adminAccountsTable).values({
       name:    'Super Admin',
@@ -563,9 +583,15 @@ router.patch('/users/:id/status', async (req: Request, res: Response): Promise<v
 
     if (!updated) { res.status(404).json({ error: 'User not found.' }); return; }
 
+    const actorEmailForStatus = (await db
+      .select({ email: adminAccountsTable.email })
+      .from(adminAccountsTable)
+      .where(eq(adminAccountsTable.id, req.session.adminId!))
+      .limit(1))[0]?.email ?? 'unknown';
+
     void auditLog({
       adminId:     req.session.adminId!,
-      adminEmail:  req.session.adminId!, // resolved below
+      adminEmail:  actorEmailForStatus,
       action:      'user_status_changed',
       targetType:  'user',
       targetId:    id,
@@ -789,7 +815,8 @@ router.patch('/admins/:id', requireSuperAdmin, async (req: Request, res: Respons
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (name?.trim())  updates['name']  = name.trim();
     if (email?.trim()) updates['email'] = email.trim().toLowerCase();
-    if (role === 'admin') updates['role'] = 'admin';
+    const validRoles = ['admin', 'customer_care', 'finance', 'supervisor', 'technical_support'];
+    if (role && validRoles.includes(role)) updates['role'] = role;
 
     const [updated] = await db
       .update(adminAccountsTable)

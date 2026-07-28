@@ -185,9 +185,10 @@ CREATE INDEX IF NOT EXISTS idx_admin_sessions_admin_id ON admin_sessions (admin_
 -- createTableIfMissing is unreliable in esbuild-bundled output (fs path breaks).
 -- This table must exist before the API server starts.
 CREATE TABLE IF NOT EXISTS session (
-  sid    VARCHAR      NOT NULL COLLATE "default" PRIMARY KEY DEFERRABLE INITIALLY IMMEDIATE,
+  sid    VARCHAR      NOT NULL COLLATE "default",
   sess   JSON         NOT NULL,
-  expire TIMESTAMP(6) NOT NULL
+  expire TIMESTAMP(6) NOT NULL,
+  CONSTRAINT session_pkey PRIMARY KEY (sid)
 );
 CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON session (expire);
 

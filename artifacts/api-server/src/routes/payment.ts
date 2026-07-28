@@ -31,6 +31,16 @@ import { getIo } from '../lib/socket.js';
 
 const router = Router();
 
+// ── Monnify payment status sets ───────────────────────────────────────────────
+// PAID_STATUSES:          wallet should be credited (credit the expected amount even if OVERPAID)
+// TERMINAL_FAIL_STATUSES: transaction is permanently over — mark failed in DB
+// Anything else (PENDING, PARTIALLY_PAID, PENDING_AUTHORIZATION …) → stay pending,
+// keep polling / wait for another webhook.
+const MONNIFY_PAID_STATUSES          = new Set(['PAID', 'OVERPAID']);
+const MONNIFY_TERMINAL_FAIL_STATUSES = new Set([
+  'FAILED', 'EXPIRED', 'CANCELLED', 'ABANDONED', 'REVERSED',
+]);
+
 // ── POST /api/payment/monnify/initialize ─────────────────────────────────────
 // Requires user session. Creates a pending transaction then calls Monnify to
 // get a checkout URL. Returns the URL so the frontend can open it.
@@ -163,8 +173,10 @@ router.get('/monnify/status/:reference', requireAuth, async (req: Request, res: 
   try {
     const verification   = await monnify.verifyTransaction(monnifyRef);
     const expectedAmount = parseFloat(txn.amount);
-    const isPaid         = verification.paymentStatus === 'PAID';
-    const amountOk       = Math.abs(verification.amountPaid - expectedAmount) < 0.01;
+    // PAID and OVERPAID both count as successful — credit the expected amount only
+    const isPaid         = MONNIFY_PAID_STATUSES.has(verification.paymentStatus);
+    const amountOk       = Math.abs(verification.amountPaid - expectedAmount) < 0.01 ||
+                           verification.amountPaid >= expectedAmount;  // OVERPAID: amountPaid > expected
 
     if (isPaid && amountOk) {
       const { newBalance } = await creditWallet(userId, txn.id, expectedAmount, reference, monnifyRef);
@@ -172,7 +184,7 @@ router.get('/monnify/status/:reference', requireAuth, async (req: Request, res: 
       return;
     }
 
-    const terminalFail = ['FAILED', 'EXPIRED', 'CANCELLED', 'REVERSED'].includes(verification.paymentStatus);
+    const terminalFail = MONNIFY_TERMINAL_FAIL_STATUSES.has(verification.paymentStatus);
     if (terminalFail) {
       await db.execute(sql`
         UPDATE transactions
@@ -183,6 +195,7 @@ router.get('/monnify/status/:reference', requireAuth, async (req: Request, res: 
       return;
     }
 
+    // PENDING, PARTIALLY_PAID, PENDING_AUTHORIZATION — keep polling
     res.json({ status: 'pending', reference, paymentStatus: verification.paymentStatus });
   } catch (err) {
     logger.error({ err, reference }, 'Monnify status check error');
@@ -243,14 +256,25 @@ router.post('/monnify/webhook', async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    if (paymentStatus !== 'PAID') {
-      await db.execute(sql`
-        UPDATE transactions
-        SET status = 'failed', updated_at = NOW(),
-            metadata = metadata || ${JSON.stringify({ webhookStatus: paymentStatus })}::jsonb
-        WHERE id = ${txn.id}::uuid
-      `);
-      logger.info({ paymentReference, paymentStatus }, 'Monnify webhook: non-PAID — marked failed');
+    // Only PAID and OVERPAID trigger a credit attempt.
+    // Terminal failures flip the record to 'failed'.
+    // Everything else (PENDING, PARTIALLY_PAID, PENDING_AUTHORIZATION …) is left
+    // as-is so the next webhook or the frontend polling can finish the job.
+    if (!MONNIFY_PAID_STATUSES.has(paymentStatus ?? '')) {
+      if (MONNIFY_TERMINAL_FAIL_STATUSES.has(paymentStatus ?? '')) {
+        await db.execute(sql`
+          UPDATE transactions
+          SET status = 'failed', updated_at = NOW(),
+              metadata = metadata || ${JSON.stringify({ webhookStatus: paymentStatus })}::jsonb
+          WHERE id = ${txn.id}::uuid
+        `);
+        logger.info({ paymentReference, paymentStatus }, 'Monnify webhook: terminal failure — marked failed');
+      } else {
+        logger.info(
+          { paymentReference, paymentStatus },
+          'Monnify webhook: non-terminal, non-paid status — leaving as pending',
+        );
+      }
       return;
     }
 
@@ -264,7 +288,7 @@ router.post('/monnify/webhook', async (req: Request, res: Response): Promise<voi
 
     const verification = await monnify.verifyTransaction(monnifyRef);
 
-    if (verification.paymentStatus !== 'PAID') {
+    if (!MONNIFY_PAID_STATUSES.has(verification.paymentStatus)) {
       logger.warn(
         { paymentReference, verifiedStatus: verification.paymentStatus },
         'Monnify webhook: server verification returned non-PAID — skipping credit',
@@ -347,10 +371,10 @@ async function creditWallet(
     // reference must be unique: append '-credit' suffix
     await tx.execute(sql`
       INSERT INTO wallet_ledger
-        (user_id, type, amount, balance_before, balance_after,
+        (user_id, wallet_id, type, amount, balance_before, balance_after,
          reference, related_transaction_id, reason)
       VALUES
-        (${userId}::uuid, 'wallet_fund', ${amount.toFixed(2)},
+        (${userId}::uuid, ${wallet.id}::uuid, 'wallet_fund', ${amount.toFixed(2)},
          ${balanceBefore}, ${newBalance},
          ${reference + '-credit'}, ${txnId}::uuid,
          'Wallet funded via Monnify payment')

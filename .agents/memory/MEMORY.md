@@ -1,4 +1,5 @@
 - [Session table must be created manually](session-table-manual.md) — connect-pg-simple's createTableIfMissing breaks in esbuild bundles; create via raw SQL; PK on session.sid must be non-deferrable or ON CONFLICT upserts silently fail.
+- [user_preferences table absent from bootstrap.sql](user-preferences-missing.md) — missing table makes every correct-PIN login return 500; loadFullSession now has try/catch guard; table added to bootstrap.sql.
 - [Admin backend architecture](admin-backend-arch.md) — session-based admin auth, dual-check login flow, Drizzle dynamic SQL pattern, loading/skeleton state design.
 - [bcrypt vs bcryptjs in api-server](bcryptjs-bundling.md) — use bcryptjs (pure JS) not bcrypt (native); bcrypt is in esbuild externals list so it won't bundle.
 - [Drizzle schema type exports](drizzle-schema-exports.md) — api-server tsc needs db package built first (tsc --build on lib/db) before schema named exports resolve.

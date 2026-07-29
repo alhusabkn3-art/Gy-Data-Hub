@@ -68,8 +68,15 @@ async function loadFullSession(userId: string) {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
   if (!user) return null;
 
-  const [wallet]  = await db.select().from(walletsTable).where(eq(walletsTable.userId, userId));
-  const [prefRow] = await db.select().from(userPreferencesTable).where(eq(userPreferencesTable.userId, userId));
+  const [wallet] = await db.select().from(walletsTable).where(eq(walletsTable.userId, userId));
+
+  // Preferences are non-critical — a missing table or row must never block login.
+  let prefRow: typeof userPreferencesTable.$inferSelect | undefined;
+  try {
+    [prefRow] = await db.select().from(userPreferencesTable).where(eq(userPreferencesTable.userId, userId));
+  } catch (err) {
+    logger.warn({ err, userId }, 'user_preferences query failed — returning empty preferences');
+  }
 
   const transactions = await db
     .select()
@@ -260,6 +267,17 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 
   if (!user) {
     res.status(401).json({ error: 'no_account' });
+    return;
+  }
+
+  // ── Account status check ─────────────────────────────────────────────────
+  if (user.status !== 'active') {
+    res.status(401).json({
+      error:   user.status === 'suspended' ? 'account_suspended' : 'account_closed',
+      message: user.status === 'suspended'
+        ? 'Your account has been suspended. Please contact support.'
+        : 'This account has been closed.',
+    });
     return;
   }
 

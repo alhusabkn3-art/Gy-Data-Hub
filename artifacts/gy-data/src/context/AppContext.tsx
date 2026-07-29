@@ -98,7 +98,7 @@ interface AppContextType {
   activeTab: string;
 
   /** Login by phone + PIN. */
-  login: (phone: string, pin: string) => Promise<'success' | 'no_account' | 'wrong_pin'>;
+  login: (phone: string, pin: string) => Promise<'success' | 'no_account' | 'wrong_pin' | 'account_suspended' | 'account_closed'>;
   logout: () => Promise<void>;
   /** Register and auto-login. */
   register: (name: string, phone: string, email: string, pin: string, username: string) => Promise<'success' | 'phone_taken' | 'username_taken' | 'error'>;
@@ -178,7 +178,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   // ── Auth ──────────────────────────────────────────────────────────────────
-  const login = async (phone: string, pin: string): Promise<'success' | 'no_account' | 'wrong_pin'> => {
+  const login = async (phone: string, pin: string): Promise<'success' | 'no_account' | 'wrong_pin' | 'account_suspended' | 'account_closed'> => {
     try {
       const res = await api('/auth/login', {
         method: 'POST',
@@ -186,7 +186,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       });
       if (res.status === 401) {
         const body = await res.json() as { error: string };
-        return body.error === 'no_account' ? 'no_account' : 'wrong_pin';
+        if (body.error === 'no_account')         return 'no_account';
+        if (body.error === 'account_suspended')  return 'account_suspended';
+        if (body.error === 'account_closed')     return 'account_closed';
+        return 'wrong_pin';
       }
       if (!res.ok) return 'wrong_pin';
       const data = await res.json() as {

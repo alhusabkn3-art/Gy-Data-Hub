@@ -108,7 +108,18 @@ interface AdminAppProps {
 }
 
 export default function AdminApp({ superAdminMode = false }: AdminAppProps) {
-  const { isAdminLoggedIn, isSuperAdmin } = useAdminContext();
+  const { isAdminLoggedIn, isAdminLoading, isSuperAdmin } = useAdminContext();
+
+  // Show nothing while the session cookie check is in flight — this prevents
+  // the login screen from flashing on page reload when the admin is already
+  // authenticated.
+  if (isAdminLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   if (!isAdminLoggedIn) {
     return superAdminMode ? <SuperAdminLoginScreen /> : <AdminLoginScreen />;

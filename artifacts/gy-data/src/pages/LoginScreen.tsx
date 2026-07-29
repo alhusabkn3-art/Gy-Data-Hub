@@ -314,14 +314,29 @@ export default function LoginScreen() {
         setPin('');
         setIsError(false);
         setIsLoggingIn(false);
-        setPinActive(false);          // collapse numpad, let user fix the phone number
+        setPinActive(false);
         phoneInputRef.current?.focus();
       }, 1400);
+    } else if (result === 'account_suspended') {
+      toast.error('Account suspended. Please contact support.', { duration: 5000 });
+      setTimeout(() => {
+        setPin('');
+        setIsError(false);
+        setIsLoggingIn(false);
+        setPinActive(false);
+      }, 1800);
+    } else if (result === 'account_closed') {
+      toast.error('This account has been closed.', { duration: 5000 });
+      setTimeout(() => {
+        setPin('');
+        setIsError(false);
+        setIsLoggingIn(false);
+        setPinActive(false);
+      }, 1800);
     } else {
       toast.error('Incorrect PIN. Please try again.');
       setPin('');
       setIsLoggingIn(false);
-      // keep pinActive true so the numpad stays visible for re-entry
     }
   }, [isLoggingIn, login, phone, pin, phoneValid]);
 

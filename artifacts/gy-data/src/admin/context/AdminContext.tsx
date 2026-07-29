@@ -7,7 +7,7 @@
  * Role-based access is enforced server-side. The frontend uses adminRole for
  * UI gating only — every protected action is independently checked by the API.
  */
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import {
   adminAnnouncements as seedAnnouncements,
   AdminUser,
@@ -42,6 +42,7 @@ export function adminApi(path: string, opts: RequestInit = {}): Promise<Response
 interface AdminContextType {
   // Auth
   isAdminLoggedIn: boolean;
+  isAdminLoading:  boolean;  // true while initial session check is in flight
   adminEmail:      string;
   adminRole:       AdminRole;
   isSuperAdmin:    boolean;
@@ -118,6 +119,7 @@ const AdminContext = createContext<AdminContextType | undefined>(undefined);
 export const AdminProvider = ({ children }: { children: ReactNode }) => {
   // Auth
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+  const [isAdminLoading,  setIsAdminLoading]  = useState(true);   // stays true until session check resolves
   const [adminEmail,      setAdminEmail]      = useState('');
   const [adminRole,       setAdminRole]       = useState<AdminRole>('admin');
   const [currentAdminId,  setCurrentAdminId]  = useState('');
@@ -451,11 +453,55 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // ── Session restoration on mount ─────────────────────────────────────────
+  // Checks the backend session cookie on first load so admins stay logged in
+  // across page refreshes without having to re-enter credentials.
+  useEffect(() => {
+    adminApi('/api/admin/me')
+      .then(async res => {
+        if (!res.ok) return;
+        const data = await res.json() as {
+          id: string; name: string; email: string;
+          role: AdminRole; status: string;
+        };
+        if (!data.id) return;
+        const role = data.role ?? 'admin';
+        setIsAdminLoggedIn(true);
+        setAdminEmail(data.email);
+        setAdminRole(role);
+        setCurrentAdminId(data.id);
+        // Fire background data fetches — same set adminLogin triggers
+        const fetches: Promise<void>[] = [
+          adminApi('/api/admin/stats').then(r => r.ok ? r.json().then(d => setStats(d as AdminStats)) : undefined).catch(() => undefined),
+          adminApi('/api/admin/revenue/weekly').then(r => r.ok ? r.json().then(d => setWeeklyRevenue(d as WeeklyRevenue[])) : undefined).catch(() => undefined),
+          adminApi('/api/admin/services').then(r => r.ok ? r.json().then(d => setServicesData(d as ServiceBreakdown[])) : undefined).catch(() => undefined),
+          adminApi('/api/admin/users?limit=50').then(r => r.ok ? r.json().then((d: { users: AdminUser[]; total: number }) => { setUsers(d.users); setUsersTotal(d.total); }) : undefined).catch(() => undefined),
+          adminApi('/api/admin/transactions?limit=50').then(r => r.ok ? r.json().then((d: { transactions: AdminTransaction[]; total: number }) => { setTransactions(d.transactions); setTxnsTotal(d.total); }) : undefined).catch(() => undefined),
+        ];
+        if (role === 'super_admin') {
+          fetches.push(
+            adminApi('/api/admin/admins').then(r => r.ok ? r.json().then((d: { admins: Array<{ id: string; name: string; email: string; role: AdminRole; status: 'active' | 'disabled'; lastLoginAt: string | null; createdAt: string }> }) => {
+              setAdminAccounts(d.admins.map(a => ({
+                id: a.id, name: a.name, email: a.email, role: a.role, status: a.status,
+                createdAt: new Date(a.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                lastLogin: a.lastLoginAt ? new Date(a.lastLoginAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never',
+                isSuperAdmin: a.role === 'super_admin',
+              })));
+            }) : undefined).catch(() => undefined),
+            adminApi('/api/admin/audit-logs?limit=50').then(r => r.ok ? r.json().then((d: { logs: AuditLogEntry[]; total: number }) => { setAuditLogs(d.logs); setAuditLogsTotal(d.total); }) : undefined).catch(() => undefined),
+          );
+        }
+        void Promise.all(fetches);
+      })
+      .catch(() => {})
+      .finally(() => setIsAdminLoading(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Context value ─────────────────────────────────────────────────────────
 
   return (
     <AdminContext.Provider value={{
-      isAdminLoggedIn, adminEmail, adminRole, isSuperAdmin, currentAdminId,
+      isAdminLoggedIn, isAdminLoading, adminEmail, adminRole, isSuperAdmin, currentAdminId,
       adminLogin, adminLogout,
       api: adminApi,
       stats, statsLoading, refreshStats,

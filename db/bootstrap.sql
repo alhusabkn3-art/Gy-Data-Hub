@@ -123,6 +123,16 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS ref_id text;
 
+-- ── user_preferences ──────────────────────────────────────────────────────────
+-- Stores per-user app settings (theme, hidden balance, etc.) as a JSONB blob.
+CREATE TABLE IF NOT EXISTS user_preferences (
+  id           UUID         NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id      UUID         NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  preferences  JSONB        NOT NULL DEFAULT '{}',
+  updated_at   TIMESTAMP    NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_user_preferences_user_id ON user_preferences (user_id);
+
 -- ── admin accounts ────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS admin_accounts (
   id                  UUID                 NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,

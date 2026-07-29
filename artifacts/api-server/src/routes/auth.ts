@@ -26,9 +26,20 @@ const router = Router();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Strips all non-digit characters; enforces 10–11 digit length for Nigerian numbers */
-function normalizePhone(phone: string): string {
-  return phone.replace(/\D/g, '').slice(0, 11);
+/**
+ * Normalises a Nigerian phone number to the local 11-digit format (08XXXXXXXXX).
+ *
+ *  080xxxxxxxx   →  08012345678  (already local — pass through)
+ *  2348012345678 →  08012345678  (drop 234, prepend 0)
+ * +2348012345678 →  08012345678  (strip +, drop 234, prepend 0)
+ */
+function normalizePhone(raw: string): string {
+  let digits = raw.replace(/\D/g, '');
+  // +234XXXXXXXXXX or 234XXXXXXXXXX (13 digits) → 0XXXXXXXXXX (11 digits)
+  if (digits.startsWith('234') && digits.length === 13) {
+    digits = '0' + digits.slice(3);
+  }
+  return digits.slice(0, 11);
 }
 
 /** Basic RFC 5322-inspired email validation */

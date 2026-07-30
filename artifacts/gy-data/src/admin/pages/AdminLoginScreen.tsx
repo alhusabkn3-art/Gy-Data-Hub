@@ -1,16 +1,16 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Eye, EyeOff, Shield, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Zap, Loader2, ShieldCheck } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { toast } from 'sonner';
 
 export default function AdminLoginScreen() {
   const { adminLogin } = useAdminContext();
-  const [email, setEmail] = useState('');
-  const [pin, setPin] = useState('');
+  const [email, setEmail]     = useState('');
+  const [pin, setPin]         = useState('');
   const [showPin, setShowPin] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [shake, setShake] = useState(false);
+  const [shake, setShake]     = useState(false);
 
   const handleLogin = async () => {
     if (!email || !pin) {
@@ -34,89 +34,171 @@ export default function AdminLoginScreen() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      {/* Subtle grid background */}
+    <div
+      className="min-h-screen w-full flex items-center justify-center px-5 py-10"
+      style={{
+        background: 'linear-gradient(150deg, #050E1F 0%, #081426 40%, #0D1F3C 100%)',
+      }}
+    >
+      {/* Dot-grid texture */}
       <div
-        className="fixed inset-0 opacity-[0.03] pointer-events-none"
+        className="fixed inset-0 pointer-events-none"
         style={{
-          backgroundImage: 'linear-gradient(#3B82F6 1px, transparent 1px), linear-gradient(90deg, #3B82F6 1px, transparent 1px)',
-          backgroundSize: '40px 40px',
+          backgroundImage: 'radial-gradient(circle, rgba(59,130,246,0.12) 1px, transparent 1px)',
+          backgroundSize: '32px 32px',
         }}
       />
 
+      {/* Glow blobs */}
+      <div
+        className="fixed top-[-15%] left-[-10%] w-[500px] h-[500px] rounded-full pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(37,99,235,0.12) 0%, transparent 70%)' }}
+      />
+      <div
+        className="fixed bottom-[-15%] right-[-10%] w-[500px] h-[500px] rounded-full pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.10) 0%, transparent 70%)' }}
+      />
+
       <motion.div
-        initial={{ opacity: 0, y: 24 }}
+        initial={{ opacity: 0, y: 28 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="w-full max-w-sm"
+        transition={{ duration: 0.45, ease: 'easeOut' }}
+        className="relative w-full max-w-sm"
       >
-        {/* Logo */}
-        <div className="flex flex-col items-center mb-10">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-4 shadow-[0_0_40px_rgba(59,130,246,0.15)]">
-            <Shield className="w-8 h-8 text-primary" />
+        {/* Brand mark */}
+        <div className="flex flex-col items-center mb-12">
+          <div
+            className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5"
+            style={{
+              background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)',
+              boxShadow: '0 0 48px rgba(37,99,235,0.40), 0 8px 24px rgba(0,0,0,0.4)',
+            }}
+          >
+            <Zap className="w-8 h-8 text-white" fill="white" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">GY DATA Admin</h1>
-          <p className="text-muted-foreground text-sm mt-1">Restricted access — authorised personnel only</p>
+          <h1
+            className="text-3xl font-extrabold tracking-tight"
+            style={{ color: '#EEF2FF', letterSpacing: '-0.02em' }}
+          >
+            GY DATA
+          </h1>
+          <p className="text-sm mt-1.5" style={{ color: 'rgba(148,163,184,0.8)' }}>
+            Admin portal — authorised access only
+          </p>
         </div>
 
-        {/* Form Card */}
+        {/* Fields — no card wrapper */}
         <motion.div
           animate={shake ? { x: [0, -10, 10, -10, 10, 0] } : {}}
           transition={{ duration: 0.4 }}
-          className="bg-card border border-border rounded-2xl p-6 shadow-xl"
+          className="space-y-5"
         >
-          <div className="space-y-4">
-            <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 block">
-                Admin Email
-              </label>
-              <input
-                type="email"
-                placeholder="Admin email address"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                className="w-full bg-background border-2 border-border focus:border-primary rounded-xl h-12 px-4 text-sm outline-none transition-colors"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 block">
-                Admin PIN
-              </label>
-              <div className="relative">
-                <input
-                  type={showPin ? 'text' : 'password'}
-                  placeholder="Enter your PIN"
-                  value={pin}
-                  onChange={e => setPin(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                  className="w-full bg-background border-2 border-border focus:border-primary rounded-xl h-12 px-4 pr-12 text-sm outline-none transition-colors tracking-widest font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPin(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
-                >
-                  {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            <button
-              onClick={handleLogin}
-              disabled={isLoading}
-              className="w-full h-12 bg-primary hover:bg-primary/90 text-white rounded-xl font-bold text-sm mt-2 flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed shadow-[0_4px_20px_rgba(59,130,246,0.3)]"
+          {/* Email */}
+          <div>
+            <label
+              className="block text-[11px] font-bold uppercase tracking-widest mb-2"
+              style={{ color: 'rgba(148,163,184,0.7)' }}
             >
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              {isLoading ? 'Authenticating…' : 'Sign In to Admin'}
-            </button>
+              Admin Email
+            </label>
+            <input
+              type="email"
+              placeholder="Enter admin email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleLogin()}
+              className="w-full h-13 rounded-xl px-4 text-sm outline-none transition-all"
+              style={{
+                height: '52px',
+                background: 'rgba(255,255,255,0.05)',
+                border: '1.5px solid rgba(59,130,246,0.18)',
+                color: '#E2E8F0',
+              }}
+              onFocus={e => {
+                e.currentTarget.style.border = '1.5px solid rgba(59,130,246,0.55)';
+                e.currentTarget.style.background = 'rgba(255,255,255,0.07)';
+              }}
+              onBlur={e => {
+                e.currentTarget.style.border = '1.5px solid rgba(59,130,246,0.18)';
+                e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+              }}
+            />
           </div>
+
+          {/* PIN */}
+          <div>
+            <label
+              className="block text-[11px] font-bold uppercase tracking-widest mb-2"
+              style={{ color: 'rgba(148,163,184,0.7)' }}
+            >
+              Admin PIN
+            </label>
+            <div className="relative">
+              <input
+                type={showPin ? 'text' : 'password'}
+                placeholder="Enter your PIN"
+                value={pin}
+                onChange={e => setPin(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                className="w-full rounded-xl px-4 pr-12 text-sm outline-none transition-all tracking-widest font-mono"
+                style={{
+                  height: '52px',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1.5px solid rgba(59,130,246,0.18)',
+                  color: '#E2E8F0',
+                }}
+                onFocus={e => {
+                  e.currentTarget.style.border = '1.5px solid rgba(59,130,246,0.55)';
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.07)';
+                }}
+                onBlur={e => {
+                  e.currentTarget.style.border = '1.5px solid rgba(59,130,246,0.18)';
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPin(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 transition-colors"
+                style={{ color: 'rgba(148,163,184,0.6)' }}
+              >
+                {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Submit */}
+          <button
+            onClick={handleLogin}
+            disabled={isLoading}
+            className="w-full rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed text-white"
+            style={{
+              height: '52px',
+              marginTop: '8px',
+              background: isLoading
+                ? 'rgba(37,99,235,0.6)'
+                : 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)',
+              boxShadow: '0 4px 24px rgba(37,99,235,0.38)',
+            }}
+          >
+            {isLoading
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <ShieldCheck className="w-4 h-4" />}
+            {isLoading ? 'Authenticating…' : 'Sign In to Admin'}
+          </button>
         </motion.div>
 
-        <p className="text-center text-xs text-muted-foreground mt-6">
+        {/* Divider */}
+        <div className="my-8" style={{ borderTop: '1px solid rgba(59,130,246,0.10)' }} />
+
+        {/* Footer links */}
+        <p className="text-center text-xs" style={{ color: 'rgba(148,163,184,0.5)' }}>
           Customer app?{' '}
-          <a href="/" className="text-primary hover:underline">
+          <a
+            href="/"
+            className="hover:underline transition-colors"
+            style={{ color: 'rgba(99,130,246,0.8)' }}
+          >
             Back to GY DATA
           </a>
         </p>

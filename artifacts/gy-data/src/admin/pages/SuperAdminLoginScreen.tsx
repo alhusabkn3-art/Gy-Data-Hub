@@ -43,134 +43,179 @@ export default function SuperAdminLoginScreen() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4"
+    <div
+      className="min-h-screen w-full flex items-center justify-center px-5 py-10"
       style={{
-        background: 'linear-gradient(160deg, #1a0a00 0%, #2d1600 35%, #3d2000 65%, #1a0a00 100%)',
+        background: 'linear-gradient(150deg, #150800 0%, #1F0E00 40%, #2C1500 100%)',
       }}
     >
-      {/* Subtle amber grid */}
+      {/* Dot-grid texture */}
       <div
-        className="fixed inset-0 opacity-[0.04] pointer-events-none"
+        className="fixed inset-0 pointer-events-none"
         style={{
-          backgroundImage: 'linear-gradient(#F59E0B 1px, transparent 1px), linear-gradient(90deg, #F59E0B 1px, transparent 1px)',
-          backgroundSize: '40px 40px',
+          backgroundImage: 'radial-gradient(circle, rgba(245,158,11,0.10) 1px, transparent 1px)',
+          backgroundSize: '32px 32px',
         }}
       />
 
+      {/* Glow blobs */}
+      <div
+        className="fixed top-[-15%] right-[-10%] w-[520px] h-[520px] rounded-full pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(217,119,6,0.12) 0%, transparent 70%)' }}
+      />
+      <div
+        className="fixed bottom-[-15%] left-[-10%] w-[520px] h-[520px] rounded-full pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(180,83,9,0.10) 0%, transparent 70%)' }}
+      />
+
       <motion.div
-        initial={{ opacity: 0, y: 24 }}
+        initial={{ opacity: 0, y: 28 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="w-full max-w-sm"
+        transition={{ duration: 0.45, ease: 'easeOut' }}
+        className="relative w-full max-w-sm"
       >
-        {/* Logo */}
-        <div className="flex flex-col items-center mb-10">
+        {/* Brand mark */}
+        <div className="flex flex-col items-center mb-12">
           <div
-            className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+            className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5"
             style={{
               background: 'linear-gradient(135deg, #D97706 0%, #B45309 100%)',
-              boxShadow: '0 0 40px rgba(217,119,6,0.35)',
+              boxShadow: '0 0 48px rgba(217,119,6,0.45), 0 8px 24px rgba(0,0,0,0.45)',
             }}
           >
             <Crown className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-amber-100">GY DATA Super Admin</h1>
-          <p className="text-amber-400/60 text-sm mt-1">Elevated access — authorised personnel only</p>
+          <h1
+            className="text-3xl font-extrabold tracking-tight"
+            style={{ color: '#FEF3C7', letterSpacing: '-0.02em' }}
+          >
+            GY DATA
+          </h1>
+          <p className="text-sm mt-1.5" style={{ color: 'rgba(252,211,77,0.55)' }}>
+            Super Admin portal — elevated access
+          </p>
         </div>
 
-        {/* Form card */}
+        {/* Fields — no card wrapper */}
         <motion.div
           animate={shake ? { x: [0, -10, 10, -10, 10, 0] } : {}}
           transition={{ duration: 0.4 }}
-          className="rounded-2xl p-6 shadow-2xl"
-          style={{
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(245,158,11,0.25)',
-            backdropFilter: 'blur(12px)',
-          }}
+          className="space-y-5"
         >
-          <div className="space-y-4">
-            {/* Email */}
-            <div>
-              <label className="text-xs font-semibold text-amber-400/80 uppercase tracking-wider mb-2 block">
-                Super Admin Email
-              </label>
-              <input
-                type="email"
-                placeholder="Super admin email address"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                className="w-full rounded-xl h-12 px-4 text-sm outline-none transition-all text-amber-50 placeholder-amber-100/30"
-                style={{
-                  background: 'rgba(255,255,255,0.06)',
-                  border: '2px solid rgba(245,158,11,0.2)',
-                }}
-                onFocus={e => (e.currentTarget.style.border = '2px solid rgba(245,158,11,0.6)')}
-                onBlur={e => (e.currentTarget.style.border = '2px solid rgba(245,158,11,0.2)')}
-              />
-            </div>
-
-            {/* PIN */}
-            <div>
-              <label className="text-xs font-semibold text-amber-400/80 uppercase tracking-wider mb-2 block">
-                Super Admin PIN
-              </label>
-              <div className="relative">
-                <input
-                  type={showPin ? 'text' : 'password'}
-                  placeholder="Enter your PIN"
-                  value={pin}
-                  onChange={e => setPin(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                  className="w-full rounded-xl h-12 px-4 pr-12 text-sm outline-none transition-all tracking-widest font-mono text-amber-50 placeholder-amber-100/30"
-                  style={{
-                    background: 'rgba(255,255,255,0.06)',
-                    border: '2px solid rgba(245,158,11,0.2)',
-                  }}
-                  onFocus={e => (e.currentTarget.style.border = '2px solid rgba(245,158,11,0.6)')}
-                  onBlur={e => (e.currentTarget.style.border = '2px solid rgba(245,158,11,0.2)')}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPin(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors p-1"
-                  style={{ color: 'rgba(245,158,11,0.5)' }}
-                >
-                  {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            {/* Submit */}
-            <button
-              onClick={handleLogin}
-              disabled={isLoading}
-              className="w-full h-12 rounded-xl font-bold text-sm mt-2 flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed text-white"
-              style={{
-                background: isLoading
-                  ? 'rgba(217,119,6,0.6)'
-                  : 'linear-gradient(135deg, #D97706 0%, #B45309 100%)',
-                boxShadow: '0 4px 20px rgba(217,119,6,0.35)',
-              }}
+          {/* Email */}
+          <div>
+            <label
+              className="block text-[11px] font-bold uppercase tracking-widest mb-2"
+              style={{ color: 'rgba(252,211,77,0.55)' }}
             >
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crown className="w-4 h-4" />}
-              {isLoading ? 'Authenticating…' : 'Sign In as Super Admin'}
-            </button>
+              Super Admin Email
+            </label>
+            <input
+              type="email"
+              placeholder="Super admin email address"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleLogin()}
+              className="w-full rounded-xl px-4 text-sm outline-none transition-all"
+              style={{
+                height: '52px',
+                background: 'rgba(255,255,255,0.04)',
+                border: '1.5px solid rgba(245,158,11,0.20)',
+                color: '#FEF3C7',
+              }}
+              onFocus={e => {
+                e.currentTarget.style.border = '1.5px solid rgba(245,158,11,0.60)';
+                e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+              }}
+              onBlur={e => {
+                e.currentTarget.style.border = '1.5px solid rgba(245,158,11,0.20)';
+                e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+              }}
+            />
           </div>
+
+          {/* PIN */}
+          <div>
+            <label
+              className="block text-[11px] font-bold uppercase tracking-widest mb-2"
+              style={{ color: 'rgba(252,211,77,0.55)' }}
+            >
+              Super Admin PIN
+            </label>
+            <div className="relative">
+              <input
+                type={showPin ? 'text' : 'password'}
+                placeholder="Enter your PIN"
+                value={pin}
+                onChange={e => setPin(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                className="w-full rounded-xl px-4 pr-12 text-sm outline-none transition-all tracking-widest font-mono"
+                style={{
+                  height: '52px',
+                  background: 'rgba(255,255,255,0.04)',
+                  border: '1.5px solid rgba(245,158,11,0.20)',
+                  color: '#FEF3C7',
+                }}
+                onFocus={e => {
+                  e.currentTarget.style.border = '1.5px solid rgba(245,158,11,0.60)';
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+                }}
+                onBlur={e => {
+                  e.currentTarget.style.border = '1.5px solid rgba(245,158,11,0.20)';
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPin(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 transition-colors"
+                style={{ color: 'rgba(245,158,11,0.50)' }}
+              >
+                {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Submit */}
+          <button
+            onClick={handleLogin}
+            disabled={isLoading}
+            className="w-full rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed text-white"
+            style={{
+              height: '52px',
+              marginTop: '8px',
+              background: isLoading
+                ? 'rgba(217,119,6,0.55)'
+                : 'linear-gradient(135deg, #D97706 0%, #B45309 100%)',
+              boxShadow: '0 4px 24px rgba(217,119,6,0.38)',
+            }}
+          >
+            {isLoading
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <Crown className="w-4 h-4" />}
+            {isLoading ? 'Authenticating…' : 'Sign In as Super Admin'}
+          </button>
         </motion.div>
 
         {/* Security notice */}
-        <div className="mt-4 flex items-start gap-2 px-1">
-          <ShieldAlert className="w-3.5 h-3.5 text-amber-500/50 mt-0.5 shrink-0" />
-          <p className="text-xs text-amber-500/50">
+        <div className="mt-8 flex items-start gap-2">
+          <ShieldAlert className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: 'rgba(245,158,11,0.40)' }} />
+          <p className="text-xs" style={{ color: 'rgba(245,158,11,0.40)' }}>
             This portal is for super administrators only. All access attempts are logged and audited.
           </p>
         </div>
 
-        <p className="text-center text-xs mt-4" style={{ color: 'rgba(245,158,11,0.4)' }}>
+        {/* Divider */}
+        <div className="my-6" style={{ borderTop: '1px solid rgba(245,158,11,0.08)' }} />
+
+        {/* Footer link */}
+        <p className="text-center text-xs" style={{ color: 'rgba(245,158,11,0.40)' }}>
           Regular admin?{' '}
-          <a href="/admin-login" className="hover:underline" style={{ color: 'rgba(245,158,11,0.7)' }}>
+          <a
+            href="/admin-login"
+            className="hover:underline transition-colors"
+            style={{ color: 'rgba(245,158,11,0.70)' }}
+          >
             Sign in here
           </a>
         </p>

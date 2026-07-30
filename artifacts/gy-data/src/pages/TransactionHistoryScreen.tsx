@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Wifi, Phone, Zap, Tv, ArrowDownLeft, ReceiptText, X, SearchX } from 'lucide-react';
+import { Search, Wifi, Phone, Zap, Tv, ArrowDownLeft, ReceiptText, X, SearchX, Gift } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { Transaction } from '../data/mockData';
 import TransactionReceipt from '../components/TransactionReceipt';
@@ -112,8 +112,8 @@ export default function TransactionHistoryScreen() {
               className="w-full flex items-center justify-between p-4 rounded-xl bg-card border border-border hover:bg-black/5 transition-colors text-left"
             >
               <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${getTxnColor(txn.type)}`}>
-                  {getTxnIcon(txn.type)}
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${getTxnColor(txn.type, txn.service)}`}>
+                  {getTxnIcon(txn.type, 'w-6 h-6', txn.service)}
                 </div>
                 <div>
                   <p className="font-semibold text-sm">{txn.service} • {txn.provider}</p>
@@ -121,7 +121,7 @@ export default function TransactionHistoryScreen() {
                 </div>
               </div>
               <div className="text-right">
-                <p className={`font-bold text-sm ${txn.type === 'wallet_fund' ? 'text-green-500' : ''}`}>
+                <p className={`font-bold text-sm ${(txn.type === 'wallet_fund') ? 'text-green-500' : ''}`}>
                   {txn.type === 'wallet_fund' ? '+' : '-'}₦{txn.amount.toLocaleString()}
                 </p>
                 <p className={`text-[10px] uppercase font-bold tracking-wider mt-1 ${
@@ -219,7 +219,8 @@ export default function TransactionHistoryScreen() {
   );
 }
 
-function getTxnColor(type: string) {
+function getTxnColor(type: string, service?: string) {
+  if (service === 'Cashback') return 'bg-green-500/20 text-green-500';
   switch (type) {
     case 'data':        return 'bg-blue-500/20 text-blue-500';
     case 'airtime':     return 'bg-orange-500/20 text-orange-500';
@@ -230,7 +231,8 @@ function getTxnColor(type: string) {
   }
 }
 
-function getTxnIcon(type: string, className = 'w-6 h-6') {
+function getTxnIcon(type: string, className = 'w-6 h-6', service?: string) {
+  if (service === 'Cashback') return <Gift className={className} />;
   switch (type) {
     case 'data':        return <Wifi className={className} />;
     case 'airtime':     return <Phone className={className} />;

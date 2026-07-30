@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Wifi, Zap, Tv, BookOpen, ArrowDownLeft, Target,
-  CheckCircle2, Clock, XCircle, Share2,
+  CheckCircle2, Clock, XCircle, Share2, Gift,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -17,6 +17,8 @@ export interface ReceiptData {
   status: 'success' | 'pending' | 'failed';
   txnId?: string;
   paymentMethod?: string;
+  /** Cashback credited to wallet (if any) — shown as a bonus row in the receipt */
+  cashbackAmount?: number;
 }
 
 // ── Network brand configs ────────────────────────────────────────────────────
@@ -50,16 +52,19 @@ const STATUS = {
 } as const;
 
 // ── Service icon fallbacks (non-network providers) ───────────────────────────
-function ServiceBadge({ type }: { type: string }) {
+function ServiceBadge({ type, service }: { type: string; service?: string }) {
   const cfg: Record<string, { bg: string; color: string; Icon: typeof Wifi }> = {
     electricity: { bg: '#FFFBEB', color: '#F59E0B', Icon: Zap },
     cable:       { bg: '#F5F3FF', color: '#8B5CF6', Icon: Tv },
     exam:        { bg: '#F0FDFA', color: '#14B8A6', Icon: BookOpen },
     wallet_fund: { bg: '#F0FDF4', color: '#10B981', Icon: ArrowDownLeft },
+    cashback:    { bg: '#F0FDF4', color: '#16A34A', Icon: Gift },
     betting:     { bg: '#FFF1F2', color: '#EF4444', Icon: Target },
     data:        { bg: '#EFF6FF', color: '#3B82F6', Icon: Wifi },
   };
-  const { bg, color, Icon } = cfg[type] ?? cfg.data;
+  // cashback wallet_fund transactions use service='Cashback'
+  const key = service === 'Cashback' ? 'cashback' : type;
+  const { bg, color, Icon } = cfg[key] ?? cfg.data;
   return (
     <div style={{
       width: 64, height: 64, borderRadius: 18,
@@ -73,9 +78,9 @@ function ServiceBadge({ type }: { type: string }) {
 }
 
 // ── Network logo badge ───────────────────────────────────────────────────────
-function ProviderBadge({ provider, type }: { provider: string; type: string }) {
+function ProviderBadge({ provider, type, service }: { provider: string; type: string; service?: string }) {
   const net = NETWORK[provider];
-  if (net) {
+  if (net && service !== 'Cashback') {
     return (
       <div style={{
         width: 64, height: 64, borderRadius: 18,
@@ -91,7 +96,7 @@ function ProviderBadge({ provider, type }: { provider: string; type: string }) {
       </div>
     );
   }
-  return <ServiceBadge type={type} />;
+  return <ServiceBadge type={type} service={service} />;
 }
 
 // ── Purchase value extractor ─────────────────────────────────────────────────
@@ -226,7 +231,7 @@ export default function TransactionReceipt({
             alignItems: 'center', textAlign: 'center',
             marginBottom: 20,
           }}>
-            <ProviderBadge provider={receipt.provider} type={receipt.type} />
+            <ProviderBadge provider={receipt.provider} type={receipt.type} service={receipt.service} />
             <p style={{
               marginTop: 11, marginBottom: 6,
               fontSize: 11, fontWeight: 700, color: '#9DB4CC',
@@ -255,6 +260,24 @@ export default function TransactionReceipt({
             />
             {receipt.paymentMethod && (
               <Row label="Paid via" value={receipt.paymentMethod} />
+            )}
+            {receipt.cashbackAmount != null && receipt.cashbackAmount > 0 && (
+              <div style={{
+                display: 'flex', justifyContent: 'space-between',
+                alignItems: 'center', gap: 16,
+                padding: '9px 12px',
+                borderRadius: 10,
+                background: '#F0FDF4',
+                border: '1px solid #BBF7D0',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Gift style={{ width: 13, height: 13, color: '#16A34A', flexShrink: 0 }} />
+                  <span style={{ fontSize: 12, color: '#15803D', fontWeight: 700 }}>Cashback Credited</span>
+                </div>
+                <span style={{ fontSize: 13, color: '#15803D', fontWeight: 800 }}>
+                  +₦{receipt.cashbackAmount.toLocaleString()}
+                </span>
+              </div>
             )}
           </div>
 

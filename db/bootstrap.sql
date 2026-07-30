@@ -495,3 +495,43 @@ CREATE INDEX IF NOT EXISTS idx_users_phone                ON users (phone);
 CREATE INDEX IF NOT EXISTS idx_users_status               ON users (status);
 CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_admin_id  ON admin_audit_logs (admin_id);
 CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_created   ON admin_audit_logs (created_at DESC);
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- CASHBACK SYSTEM
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Add cashback columns to pricing_rules (per-plan settings)
+ALTER TABLE pricing_rules ADD COLUMN IF NOT EXISTS cashback_enabled BOOLEAN      NOT NULL DEFAULT FALSE;
+ALTER TABLE pricing_rules ADD COLUMN IF NOT EXISTS cashback_type    TEXT         NOT NULL DEFAULT 'percentage';
+ALTER TABLE pricing_rules ADD COLUMN IF NOT EXISTS cashback_value   NUMERIC(10,2) NOT NULL DEFAULT 0;
+
+-- Global cashback on/off switch (exactly one row)
+CREATE TABLE IF NOT EXISTS cashback_settings (
+  id         UUID      NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  enabled    BOOLEAN   NOT NULL DEFAULT FALSE,
+  updated_by UUID      REFERENCES admin_accounts(id) ON DELETE SET NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+INSERT INTO cashback_settings (enabled)
+  SELECT false WHERE NOT EXISTS (SELECT 1 FROM cashback_settings);
+
+-- Audit trail: one row per cashback credit event
+CREATE TABLE IF NOT EXISTS cashback_transactions (
+  id             UUID          NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id        UUID          NOT NULL REFERENCES users(id)         ON DELETE CASCADE,
+  source_txn_id  UUID          NOT NULL REFERENCES transactions(id)  ON DELETE CASCADE,
+  wallet_txn_id  UUID                   REFERENCES transactions(id)  ON DELETE SET NULL,
+  amount         NUMERIC(15,2) NOT NULL,
+  cashback_type  TEXT          NOT NULL,   -- 'percentage' | 'fixed'
+  cashback_value NUMERIC(10,2) NOT NULL,   -- the rule value that was applied
+  network        TEXT,
+  plan_id        TEXT,
+  plan_name      TEXT,
+  reference      TEXT          UNIQUE,
+  created_at     TIMESTAMP     NOT NULL DEFAULT NOW(),
+  CONSTRAINT cashback_once_per_txn UNIQUE (source_txn_id)
+);
+CREATE INDEX IF NOT EXISTS idx_cashback_txns_user_id    ON cashback_transactions (user_id);
+CREATE INDEX IF NOT EXISTS idx_cashback_txns_created_at ON cashback_transactions (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cashback_txns_network    ON cashback_transactions (network);
+CREATE INDEX IF NOT EXISTS idx_cashback_txns_plan_id    ON cashback_transactions (plan_id);

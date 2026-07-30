@@ -123,7 +123,7 @@ interface AppContextType {
   /** @deprecated Use purchaseAirtime / purchaseData — they orchestrate wallet+vendor atomically on the server. */
   addTransaction: (transaction: Omit<Transaction, 'id' | 'date' | 'time'>) => Promise<boolean>;
   purchaseAirtime: (params: { network: string; phone: string; amount: number; idempotencyKey?: string }) => Promise<{ success: boolean; pending?: boolean; requestId?: string; balance?: number; error?: string }>;
-  purchaseData: (params: { network: string; phone: string; planCode: string; planName: string; planPrice: string; idempotencyKey?: string }) => Promise<{ success: boolean; pending?: boolean; requestId?: string; planName?: string; balance?: number; error?: string }>;
+  purchaseData: (params: { network: string; phone: string; planCode: string; planName: string; planPrice: string; idempotencyKey?: string }) => Promise<{ success: boolean; pending?: boolean; requestId?: string; planName?: string; balance?: number; error?: string; cashbackApplied?: boolean; cashbackAmount?: number }>;
   setActiveTab: (tab: string) => void;
   fundWallet: (amount: number) => Promise<boolean>;
   /** Refresh wallet balance and transaction list from the server. */
@@ -421,6 +421,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const data = await res.json() as {
         success: boolean; pending?: boolean;
         requestId?: string; planName?: string; balance?: string; txnId?: string; error?: string;
+        cashbackApplied?: boolean; cashbackAmount?: number;
       };
 
       if (res.ok && data.success) {
@@ -431,7 +432,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           setTransactions(rows.map(transformTransaction));
         }
         void refreshNotifications();
-        return { success: true, requestId: data.requestId, planName: data.planName, balance: data.balance ? parseFloat(data.balance) : undefined };
+        return {
+          success: true,
+          requestId: data.requestId,
+          planName: data.planName,
+          balance: data.balance ? parseFloat(data.balance) : undefined,
+          cashbackApplied: data.cashbackApplied,
+          cashbackAmount: data.cashbackAmount,
+        };
       }
       if (res.ok && data.pending) {
         return { success: false, pending: true, requestId: data.requestId, error: data.error };

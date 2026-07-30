@@ -38,6 +38,141 @@ import { logger } from '../lib/logger.js';
 import { createNotification } from '../lib/notifications.js';
 import { getIo } from '../lib/socket.js';
 
+// ── Cashback helper ───────────────────────────────────────────────────────────
+//
+// Called AFTER a successful data purchase to credit any eligible cashback.
+// Uses ON CONFLICT (source_txn_id) DO NOTHING as the idempotency guard so
+// duplicate calls (e.g. on idempotent replays) are safe.
+//
+async function applyCashbackIfEligible(opts: {
+  userId:          string;
+  sourceTxnId:     string;
+  requestId:       string;
+  planCode:        string;
+  network:         string;
+  planName:        string;
+  purchaseAmount:  number;
+}): Promise<{ applied: boolean; amount: number; newBalance: string }> {
+  // 1. Check global cashback switch
+  const globalResult = await db.execute(sql`SELECT enabled FROM cashback_settings LIMIT 1`);
+  const globalEnabled = globalResult.rows[0] && (globalResult.rows[0] as { enabled: boolean }).enabled;
+  if (!globalEnabled) return { applied: false, amount: 0, newBalance: '' };
+
+  // 2. Check per-plan cashback settings
+  const planResult = await db.execute<{
+    cashback_enabled: boolean;
+    cashback_type:    string;
+    cashback_value:   string;
+  }>(sql`
+    SELECT cashback_enabled, cashback_type, cashback_value
+    FROM pricing_rules
+    WHERE plan_id = ${opts.planCode}
+      AND (network = ${opts.network.toUpperCase()} OR provider = ${opts.network.toUpperCase()})
+      AND service_type = 'data'
+    LIMIT 1
+  `);
+
+  const rule = planResult.rows[0];
+  if (!rule || !rule.cashback_enabled) return { applied: false, amount: 0, newBalance: '' };
+
+  const cashbackType  = rule.cashback_type;
+  const cashbackValue = parseFloat(rule.cashback_value);
+
+  let cashbackAmount: number;
+  if (cashbackType === 'percentage') {
+    cashbackAmount = parseFloat((opts.purchaseAmount * cashbackValue / 100).toFixed(2));
+  } else {
+    cashbackAmount = parseFloat(cashbackValue.toFixed(2));
+  }
+  if (cashbackAmount <= 0) return { applied: false, amount: 0, newBalance: '' };
+
+  const cashbackRef = `${opts.requestId}-cashback`;
+
+  // 3. Insert cashback_transactions — ON CONFLICT prevents duplicates
+  const insertResult = await db.execute<{ id: string }>(sql`
+    INSERT INTO cashback_transactions
+      (user_id, source_txn_id, amount, cashback_type, cashback_value,
+       network, plan_id, plan_name, reference)
+    VALUES
+      (${opts.userId}::uuid, ${opts.sourceTxnId}::uuid,
+       ${cashbackAmount.toFixed(2)}, ${cashbackType}, ${cashbackValue.toFixed(2)},
+       ${opts.network.toUpperCase()}, ${opts.planCode}, ${opts.planName}, ${cashbackRef})
+    ON CONFLICT (source_txn_id) DO NOTHING
+    RETURNING id
+  `);
+
+  // If nothing was inserted, cashback already applied — skip
+  if (!insertResult.rows[0]) return { applied: false, amount: 0, newBalance: '' };
+
+  // 4. Credit wallet atomically
+  const { walletTxnId, newBalance } = await db.transaction(async (tx) => {
+    const [wallet] = await tx
+      .select().from(walletsTable)
+      .where(eq(walletsTable.userId, opts.userId))
+      .for('update');
+
+    if (!wallet) throw new Error('Wallet not found');
+
+    const balanceBefore = wallet.balance;
+    const newBal        = (parseFloat(balanceBefore) + cashbackAmount).toFixed(2);
+
+    await tx.update(walletsTable)
+      .set({ balance: newBal, updatedAt: new Date() })
+      .where(eq(walletsTable.userId, opts.userId));
+
+    // Wallet transaction record (type = wallet_fund, service = Cashback)
+    const cbTxnResult = await tx.execute<{ id: string }>(sql`
+      INSERT INTO transactions
+        (user_id, type, service, provider, amount, cost_price,
+         status, description, payment_method, reference, updated_at)
+      VALUES
+        (${opts.userId}::uuid, 'wallet_fund'::txn_type, 'Cashback',
+         ${opts.network.toUpperCase()}, ${cashbackAmount.toFixed(2)}, '0',
+         'success'::txn_status,
+         ${'Data Cashback – ' + opts.planName},
+         'Cashback', ${cashbackRef + '-txn'}, NOW())
+      RETURNING id
+    `);
+    const walletTxnId = cbTxnResult.rows[0].id;
+
+    // Wallet ledger entry
+    await tx.execute(sql`
+      INSERT INTO wallet_ledger
+        (user_id, type, amount, balance_before, balance_after,
+         reference, related_transaction_id, reason)
+      VALUES
+        (${opts.userId}::uuid, 'cashback', ${cashbackAmount.toFixed(2)},
+         ${balanceBefore}, ${newBal},
+         ${cashbackRef + '-ledger'}, ${walletTxnId}::uuid,
+         ${'Cashback for ' + opts.network.toUpperCase() + ' ' + opts.planName})
+      ON CONFLICT (reference) DO NOTHING
+    `);
+
+    return { walletTxnId, newBalance: newBal };
+  });
+
+  // 5. Link wallet transaction back to cashback record
+  await db.execute(sql`
+    UPDATE cashback_transactions
+    SET wallet_txn_id = ${walletTxnId}::uuid
+    WHERE reference   = ${cashbackRef}
+  `);
+
+  // 6. Real-time balance push
+  try { getIo().to(`user:${opts.userId}`).emit('wallet:updated', { balance: newBalance }); } catch { /* non-fatal */ }
+
+  // 7. Notification
+  await createNotification(opts.userId, {
+    type:  'transaction',
+    title: '🎁 Cashback Credited!',
+    body:  `₦${cashbackAmount.toLocaleString('en-NG')} cashback from your ${opts.network.toUpperCase()} data purchase has been added to your wallet.`,
+    refId: walletTxnId,
+  });
+
+  logger.info({ userId: opts.userId, cashbackAmount, planCode: opts.planCode, cashbackRef }, 'Cashback credited');
+  return { applied: true, amount: cashbackAmount, newBalance };
+}
+
 const router = Router();
 
 // ── Idempotency helper ────────────────────────────────────────────────────────
@@ -616,17 +751,42 @@ router.post('/data', async (req: Request, res: Response): Promise<void> => {
       refId: txnId,
     });
 
+    // ── Cashback (non-blocking — never fails the purchase) ───────────────
+    let cashbackApplied = false;
+    let cashbackAmount  = 0;
+    let finalBalance    = newBalance;
+    try {
+      const cb = await applyCashbackIfEligible({
+        userId,
+        sourceTxnId:    txnId,
+        requestId,
+        planCode,
+        network,
+        planName:        resolvedPlanName,
+        purchaseAmount:  confirmedAmount,
+      });
+      if (cb.applied) {
+        cashbackApplied = true;
+        cashbackAmount  = cb.amount;
+        finalBalance    = cb.newBalance;
+      }
+    } catch (cbErr) {
+      logger.error({ cbErr, txnId }, 'Cashback application failed — non-fatal, purchase still succeeded');
+    }
+
     res.json({
-      success:      true,
+      success:         true,
       requestId,
-      balance:      newBalance,
+      balance:         finalBalance,
       txnId,
       network,
-      phone:        cleanPhone,
-      amount:       confirmedAmount,
-      planName:     resolvedPlanName,
+      phone:           cleanPhone,
+      amount:          confirmedAmount,
+      planName:        resolvedPlanName,
       providerRef,
-      vendorStatus: vendorResult.status,
+      vendorStatus:    vendorResult.status,
+      cashbackApplied,
+      cashbackAmount:  cashbackApplied ? cashbackAmount : undefined,
     });
 
   } else if (normalizedStatus === 'pending') {

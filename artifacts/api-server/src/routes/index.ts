@@ -12,6 +12,7 @@ import supportInboxRouter from "./support-inbox.js";
 import paymentRouter from "./payment.js";
 import whatsappRouter from "./whatsapp.js";
 import supportChatRouter from "./support-chat.js";
+import cashbackRouter from "./cashback.js";
 
 const router: IRouter = Router();
 
@@ -30,6 +31,7 @@ router.use("/admin",               adminCCRouter);
 // would block customer_care staff from reaching support-inbox routes.
 router.use("/admin/support-inbox", supportInboxRouter);
 router.use("/admin",               adminFinanceRouter);
+router.use("/admin",               cashbackRouter);
 router.use("/admin",               adminSuperRouter);
 router.use("/payment",             paymentRouter);
 router.use("/whatsapp",            whatsappRouter);

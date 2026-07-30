@@ -6,7 +6,7 @@ import {
   UserCog, User, Lock, ChevronDown, ScrollText, Crown,
   RotateCcw, BarChart2, Plug, WalletCards,
   Users2, Banknote, Cpu, Tags, ShieldCheck, Headset,
-  Zap,
+  Zap, Gift,
 } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { ROLE_LABELS } from '../data/adminMockData';
@@ -29,6 +29,7 @@ const SUPER_NAV = [
   { id: 'walletManagement', label: 'Wallet Mgmt',      icon: WalletCards  },
   { id: 'finance',          label: 'Finance',           icon: Banknote     },
   { id: 'pricing',          label: 'Pricing',           icon: Tags         },
+  { id: 'cashback',         label: 'Cashback',          icon: Gift         },
   { id: 'apiManagement',    label: 'API Management',    icon: Cpu          },
   { id: 'reversals',        label: 'Reversals',         icon: RotateCcw    },
   { id: 'reports',          label: 'Reports',           icon: BarChart2    },
@@ -215,8 +216,8 @@ const PAGE_TITLES: Record<string, string> = {
   settings: 'Settings', adminManagement: 'Admin Management', auditLogs: 'Audit Logs',
   walletManagement: 'Wallet Management', reversals: 'Reversals & Refunds',
   reports: 'Financial Reports', integrations: 'API Integrations', staff: 'Staff Management',
-  apiManagement: 'API Management', pricing: 'Pricing', security: 'Security',
-  finance: 'Finance', customerCare: 'Customer Care',
+  apiManagement: 'API Management', pricing: 'Pricing', cashback: 'Cashback Management',
+  security: 'Security', finance: 'Finance', customerCare: 'Customer Care',
 };
 
 // ── Layout ────────────────────────────────────────────────────────────────────

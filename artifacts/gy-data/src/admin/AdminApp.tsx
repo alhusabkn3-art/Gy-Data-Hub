@@ -22,6 +22,7 @@ import PricingManagement from './pages/PricingManagement';
 import SecurityPage from './pages/SecurityPage';
 import FinancePage from './pages/FinancePage';
 import CustomerCarePanel from './pages/CustomerCarePanel';
+import CashbackManagement from './pages/CashbackManagement';
 
 type AdminPage =
   | 'dashboard'
@@ -40,13 +41,14 @@ type AdminPage =
   | 'staff'
   | 'apiManagement'
   | 'pricing'
+  | 'cashback'
   | 'security'
   | 'finance'
   | 'customerCare';
 
 const SUPER_ONLY_PAGES: AdminPage[] = [
   'adminManagement', 'auditLogs', 'walletManagement', 'reversals', 'reports', 'integrations',
-  'apiManagement', 'pricing', 'security', 'finance',
+  'apiManagement', 'pricing', 'cashback', 'security', 'finance',
 ];
 
 // Pages accessible by customer_care role
@@ -88,6 +90,7 @@ function AdminDashboardApp() {
       case 'staff':           return <StaffManagement />;
       case 'apiManagement':   return <APIManagement />;
       case 'pricing':         return <PricingManagement />;
+      case 'cashback':        return <CashbackManagement />;
       case 'security':        return <SecurityPage />;
       case 'finance':         return <FinancePage />;
       case 'customerCare':    return <CustomerCarePanel />;

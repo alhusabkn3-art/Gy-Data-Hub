@@ -21,6 +21,8 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import * as ck from '../lib/clubkonnect.js';
 import { normalizeCKStatus } from '../lib/clubkonnect.js';
 import { logger } from '../lib/logger.js';
+import { db } from '@workspace/db';
+import { sql } from 'drizzle-orm';
 
 const router = Router();
 
@@ -67,7 +69,50 @@ router.get('/data-plans', async (req: Request, res: Response): Promise<void> => 
   }
   try {
     const plans = await ck.getDataPlans(network);
-    res.json({ success: true, network, plans });
+
+    // Enrich plans with cashback data from pricing_rules
+    let enriched = plans;
+    try {
+      const cbResult = await db.execute(sql`
+        SELECT plan_id, cashback_enabled, cashback_type, cashback_value
+        FROM pricing_rules
+        WHERE service_type = 'data'
+          AND (network = ${network.toUpperCase()} OR provider = ${network.toUpperCase()})
+          AND cashback_enabled = true
+      `);
+      const globalResult = await db.execute(sql`SELECT enabled FROM cashback_settings LIMIT 1`);
+      const globalEnabled = globalResult.rows[0] && (globalResult.rows[0] as { enabled: boolean }).enabled;
+
+      if (globalEnabled && cbResult.rows.length > 0) {
+        const cbMap = new Map<string, { cashback_type: string; cashback_value: string }>();
+        for (const row of cbResult.rows) {
+          const r = row as { plan_id: string; cashback_type: string; cashback_value: string };
+          cbMap.set(r.plan_id, { cashback_type: r.cashback_type, cashback_value: r.cashback_value });
+        }
+        enriched = plans.map((p: Record<string, unknown>) => {
+          const cb = cbMap.get(p['DataPlan'] as string);
+          if (cb) {
+            const price = parseFloat(p['Price'] as string);
+            const val   = parseFloat(cb.cashback_value);
+            const amt   = cb.cashback_type === 'percentage'
+              ? (price * val / 100).toFixed(0)
+              : val.toFixed(0);
+            return {
+              ...p,
+              cashback_enabled: true,
+              cashback_type:    cb.cashback_type,
+              cashback_value:   cb.cashback_value,
+              cashback_amount:  amt,
+            };
+          }
+          return { ...p, cashback_enabled: false };
+        });
+      }
+    } catch (enrichErr) {
+      logger.warn({ enrichErr }, 'Cashback enrichment failed — returning plans without cashback info');
+    }
+
+    res.json({ success: true, network, plans: enriched });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     logger.error({ err, network }, 'ClubKonnect data-plans fetch failed');

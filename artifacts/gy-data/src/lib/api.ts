@@ -15,6 +15,11 @@ export interface DataPlan {
   DataPlanName: string;  // e.g. "1GB for 30 Days"
   DataPlanType: string;  // e.g. "SME" | "Direct"
   Price: string;         // Naira string e.g. "270.00"
+  // Cashback info — present when global cashback is on and this plan has cashback configured
+  cashback_enabled?: boolean;
+  cashback_type?: 'percentage' | 'fixed';
+  cashback_value?: string;
+  cashback_amount?: string;  // pre-calculated cashback in ₦ for display
 }
 
 export interface PurchaseResult {
@@ -22,6 +27,9 @@ export interface PurchaseResult {
   requestId: string;
   status?: string;
   ident?: string;
+  pending?: boolean;
+  error?: string;
+  balance?: string;
   // airtime
   amount?: string;
   network?: string;
@@ -29,6 +37,9 @@ export interface PurchaseResult {
   // data
   planName?: string;
   price?: string;
+  // cashback
+  cashbackApplied?: boolean;
+  cashbackAmount?: number;
 }
 
 // ── Core fetch wrapper ───────────────────────────────────────────────────────

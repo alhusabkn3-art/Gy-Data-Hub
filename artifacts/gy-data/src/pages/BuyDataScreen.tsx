@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronLeft, RefreshCw, AlertCircle } from 'lucide-react';
+import { ChevronLeft, RefreshCw, AlertCircle, Gift } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { useAppContext } from '../context/AppContext';
@@ -132,6 +132,7 @@ export default function BuyDataScreen() {
         status: 'success',
         txnId: result.requestId,
         paymentMethod: 'Wallet',
+        cashbackAmount: result.cashbackAmount,
       });
       setShowSuccess(true);
     } catch (err: unknown) {
@@ -257,7 +258,15 @@ export default function BuyDataScreen() {
                   >
                     <div className="text-left">
                       <p className="font-bold text-base">{p.DataPlanName}</p>
-                      <p className="text-xs text-muted-foreground">{p.DataPlanType}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <p className="text-xs text-muted-foreground">{p.DataPlanType}</p>
+                        {p.cashback_enabled && p.cashback_amount && parseFloat(p.cashback_amount) > 0 && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-green-500/15 border border-green-500/25 text-green-600 text-[10px] font-bold leading-none">
+                            <Gift className="w-2.5 h-2.5" />
+                            ₦{parseFloat(p.cashback_amount).toLocaleString()} Cashback
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <p className="font-bold text-primary text-lg">
                       ₦{parseFloat(p.Price).toLocaleString()}
@@ -290,6 +299,14 @@ export default function BuyDataScreen() {
               <span className="text-muted-foreground">Number</span>
               <span className="font-semibold">{phone}</span>
             </div>
+            {plan.cashback_enabled && plan.cashback_amount && parseFloat(plan.cashback_amount) > 0 && (
+              <div className="flex justify-between mb-2">
+                <span className="text-green-600 flex items-center gap-1 font-medium">
+                  <Gift className="w-3.5 h-3.5" /> Cashback
+                </span>
+                <span className="font-bold text-green-600">+₦{parseFloat(plan.cashback_amount).toLocaleString()}</span>
+              </div>
+            )}
             <div className="flex justify-between pt-2 border-t border-border mt-1">
               <span className="text-muted-foreground">Total</span>
               <span className="font-bold text-primary text-base">

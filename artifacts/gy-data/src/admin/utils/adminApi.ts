@@ -464,6 +464,57 @@ export async function apiSendStaffNotification(staffIds: string[], title: string
   return r.json() as Promise<{ sent: number }>;
 }
 
+// ── Cashback ──────────────────────────────────────────────────────────────────
+
+export interface CashbackPlan {
+  id: string; network: string | null; provider: string;
+  plan_id: string | null; plan_name: string | null; selling_price: string;
+  cashback_enabled: boolean; cashback_type: 'percentage' | 'fixed'; cashback_value: string;
+}
+export interface CashbackSettings { enabled: boolean; updatedAt?: string; }
+export interface CashbackReports {
+  period: { from: string; to: string };
+  totals: { total_count: string; total_amount: string; avg_amount: string; unique_users: string; unique_networks: string };
+  byDate: { day: string; count: string; total: string }[];
+  byNetwork: { network: string; count: string; total: string }[];
+  byPlan: { plan_name: string; network: string; count: string; total: string }[];
+  byUser: { user_id: string; user_name: string; user_phone: string; count: string; total: string }[];
+}
+
+export async function apiGetCashbackSettings(): Promise<CashbackSettings> {
+  const r = await adminApi('/api/admin/cashback/settings');
+  if (!r.ok) throw new Error((await r.json() as { error?: string }).error ?? 'Failed');
+  return r.json() as Promise<CashbackSettings>;
+}
+export async function apiUpdateCashbackSettings(enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> {
+  const r = await adminApi('/api/admin/cashback/settings', { method: 'PATCH', body: JSON.stringify({ enabled }) });
+  if (!r.ok) throw new Error((await r.json() as { error?: string }).error ?? 'Failed');
+  return r.json() as Promise<{ ok: boolean; enabled: boolean }>;
+}
+export async function apiGetCashbackPlans(network?: string): Promise<{ plans: CashbackPlan[] }> {
+  const qs = network ? `?network=${encodeURIComponent(network)}` : '';
+  const r = await adminApi(`/api/admin/cashback/plans${qs}`);
+  if (!r.ok) throw new Error((await r.json() as { error?: string }).error ?? 'Failed');
+  return r.json() as Promise<{ plans: CashbackPlan[] }>;
+}
+export async function apiUpdateCashbackPlan(id: string, data: { cashbackEnabled?: boolean; cashbackType?: 'percentage' | 'fixed'; cashbackValue?: number }): Promise<{ ok: boolean }> {
+  const r = await adminApi(`/api/admin/cashback/plans/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  if (!r.ok) throw new Error((await r.json() as { error?: string }).error ?? 'Failed');
+  return r.json() as Promise<{ ok: boolean }>;
+}
+export async function apiBulkUpdateCashbackPlans(network: string, data: { cashbackEnabled?: boolean; cashbackType?: 'percentage' | 'fixed'; cashbackValue?: number }): Promise<{ ok: boolean; updated: number }> {
+  const r = await adminApi('/api/admin/cashback/plans/bulk', { method: 'POST', body: JSON.stringify({ network, ...data }) });
+  if (!r.ok) throw new Error((await r.json() as { error?: string }).error ?? 'Failed');
+  return r.json() as Promise<{ ok: boolean; updated: number }>;
+}
+export async function apiGetCashbackReports(from?: string, to?: string): Promise<CashbackReports> {
+  const qs = new URLSearchParams();
+  if (from) qs.set('from', from); if (to) qs.set('to', to);
+  const r = await adminApi(`/api/admin/cashback/reports?${qs}`);
+  if (!r.ok) throw new Error((await r.json() as { error?: string }).error ?? 'Failed');
+  return r.json() as Promise<CashbackReports>;
+}
+
 // ── Client-side Export Utilities ─────────────────────────────────────────────
 export function exportToCsv(data: Record<string, unknown>[], filename: string): void {
   if (!data.length) return;

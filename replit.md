@@ -1,45 +1,60 @@
-# [Project name]
+# GY DATA
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
-
-## Run & Operate
-
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+A Nigerian data/airtime purchase platform. Users fund a wallet and use it to buy mobile data, airtime, electricity, cable TV, and other VTU (Value Top-Up) services.
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+| Layer | Tech |
+|---|---|
+| Frontend | React 19 + Vite 7 + Tailwind CSS v4 + shadcn/ui |
+| Backend | Express 5 + Socket.io + Pino logging |
+| Database | PostgreSQL via Drizzle ORM |
+| Monorepo | pnpm workspaces |
 
-## Where things live
+## Artifacts
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- **`artifacts/gy-data`** — React/Vite web app (preview path: `/`)
+- **`artifacts/api-server`** — Express API server (preview path: `/api`, port: `8080`)
 
-## Architecture decisions
+## Libraries
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- **`lib/db`** — Drizzle schema + postgres.js client
+- **`lib/api-zod`** — Zod validators shared between API and frontend
+- **`lib/api-spec`** — OpenAPI spec + Orval codegen config
+- **`lib/api-client-react`** — Auto-generated React Query hooks
 
-## Product
+## Running locally
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Dependencies are installed with `pnpm install` from the workspace root.
+
+Both workflows start automatically:
+- **API Server**: `PORT=8080 pnpm --filter @workspace/api-server run dev`
+- **Web**: `PORT=24579 pnpm --filter @workspace/gy-data run dev`
+
+## Database setup
+
+On a fresh environment, run:
+```bash
+psql "$DATABASE_URL" -f db/bootstrap.sql
+```
+
+Then start the API server — it seeds the super-admin account on first boot using `ADMIN_EMAIL` and `ADMIN_PIN` env vars.
+
+## Required environment variables
+
+See `artifacts/api-server/REQUIRED_ENV.md` for the full list.
+
+**Must-have to start:**
+- `SESSION_SECRET` — random 32+ char string
+- `DATABASE_URL` — PostgreSQL connection string
+
+**Optional (features disabled without them):**
+- `MONNIFY_*` — wallet funding via Monnify
+- `CLUBKONNECT_*` — data/airtime purchases
+- `WHATSAPP_*` — WhatsApp notifications
+- `OPENAI_API_KEY` — AI support assistant
+- `ADMIN_EMAIL` / `ADMIN_PIN` — super-admin bootstrap credentials
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
-
-## Gotchas
-
-_Populate as you build — sharp edges, "always run X before Y" rules._
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- Keep the existing monorepo structure — do not restructure or migrate to a different stack

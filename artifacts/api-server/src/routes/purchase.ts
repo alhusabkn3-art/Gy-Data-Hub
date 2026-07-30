@@ -41,8 +41,20 @@ import { getIo } from '../lib/socket.js';
 // ── Cashback helper ───────────────────────────────────────────────────────────
 //
 // Called AFTER a successful data purchase to credit any eligible cashback.
-// Uses ON CONFLICT (source_txn_id) DO NOTHING as the idempotency guard so
-// duplicate calls (e.g. on idempotent replays) are safe.
+//
+// Atomicity guarantee: the cashback_transactions audit row INSERT, wallet
+// balance update, transactions record, and wallet_ledger entry are all written
+// inside a SINGLE db.transaction().  wallet_txn_id is set to non-null only
+// after every write has committed, which serves as the "fully applied" flag.
+//
+// Idempotency / partial-state recovery:
+//   • New:          INSERT succeeds → proceed to credit (all in same tx).
+//   • Already done: INSERT conflicts AND existing row has wallet_txn_id set
+//                   → return applied:false (idempotent no-op).
+//   • Partial state: INSERT conflicts AND existing row has wallet_txn_id IS NULL
+//                   → previous tx crashed mid-flight; re-enter the credit block
+//                   using the existing audit-row id (still safe because wallet
+//                   balance was never updated in the failed attempt).
 //
 async function applyCashbackIfEligible(opts: {
   userId:          string;
@@ -53,12 +65,13 @@ async function applyCashbackIfEligible(opts: {
   planName:        string;
   purchaseAmount:  number;
 }): Promise<{ applied: boolean; amount: number; newBalance: string }> {
-  // 1. Check global cashback switch
+
+  // ── 1. Read-only pre-checks (outside the write transaction for efficiency) ──
+
   const globalResult = await db.execute(sql`SELECT enabled FROM cashback_settings LIMIT 1`);
   const globalEnabled = globalResult.rows[0] && (globalResult.rows[0] as { enabled: boolean }).enabled;
   if (!globalEnabled) return { applied: false, amount: 0, newBalance: '' };
 
-  // 2. Check per-plan cashback settings
   const planResult = await db.execute<{
     cashback_enabled: boolean;
     cashback_type:    string;
@@ -88,39 +101,73 @@ async function applyCashbackIfEligible(opts: {
 
   const cashbackRef = `${opts.requestId}-cashback`;
 
-  // 3. Insert cashback_transactions — ON CONFLICT prevents duplicates
-  const insertResult = await db.execute<{ id: string }>(sql`
-    INSERT INTO cashback_transactions
-      (user_id, source_txn_id, amount, cashback_type, cashback_value,
-       network, plan_id, plan_name, reference)
-    VALUES
-      (${opts.userId}::uuid, ${opts.sourceTxnId}::uuid,
-       ${cashbackAmount.toFixed(2)}, ${cashbackType}, ${cashbackValue.toFixed(2)},
-       ${opts.network.toUpperCase()}, ${opts.planCode}, ${opts.planName}, ${cashbackRef})
-    ON CONFLICT (source_txn_id) DO NOTHING
-    RETURNING id
-  `);
+  // ── 2. Single atomic transaction ─────────────────────────────────────────────
+  //    Order inside the tx:
+  //      a) INSERT cashback_transactions (or detect existing partial/complete row)
+  //      b) Lock wallet row (SELECT … FOR UPDATE)
+  //      c) Credit wallet balance
+  //      d) INSERT wallet transactions record
+  //      e) INSERT wallet_ledger entry
+  //      f) UPDATE cashback_transactions.wallet_txn_id  ← "fully applied" flag
+  //
+  //    Only when step (f) commits is cashback considered done.
+  //    If anything between (a) and (f) throws, Postgres rolls back ALL writes.
 
-  // If nothing was inserted, cashback already applied — skip
-  if (!insertResult.rows[0]) return { applied: false, amount: 0, newBalance: '' };
+  const txResult = await db.transaction(async (tx) => {
 
-  // 4. Credit wallet atomically
-  const { walletTxnId, newBalance } = await db.transaction(async (tx) => {
+    // (a) Try to claim this cashback slot
+    const insertResult = await tx.execute<{ id: string; wallet_txn_id: string | null }>(sql`
+      INSERT INTO cashback_transactions
+        (user_id, source_txn_id, amount, cashback_type, cashback_value,
+         network, plan_id, plan_name, reference)
+      VALUES
+        (${opts.userId}::uuid, ${opts.sourceTxnId}::uuid,
+         ${cashbackAmount.toFixed(2)}, ${cashbackType}, ${cashbackValue.toFixed(2)},
+         ${opts.network.toUpperCase()}, ${opts.planCode}, ${opts.planName}, ${cashbackRef})
+      ON CONFLICT (source_txn_id) DO NOTHING
+      RETURNING id, wallet_txn_id
+    `);
+
+    let cashbackRowId: string;
+
+    if (insertResult.rows[0]) {
+      // Fresh insert — proceed
+      cashbackRowId = insertResult.rows[0].id;
+    } else {
+      // Conflict: check whether the existing row is fully applied or a partial state
+      const existing = await tx.execute<{ id: string; wallet_txn_id: string | null }>(sql`
+        SELECT id, wallet_txn_id
+        FROM cashback_transactions
+        WHERE source_txn_id = ${opts.sourceTxnId}::uuid
+        LIMIT 1
+      `);
+      const row = existing.rows[0];
+      if (!row) return null; // should not happen, but be safe
+      if (row.wallet_txn_id !== null) {
+        // Already fully applied — idempotent no-op
+        return null;
+      }
+      // wallet_txn_id IS NULL → previous attempt crashed after INSERT but before
+      // wallet credit committed.  Reuse the existing audit row and re-attempt credit.
+      cashbackRowId = row.id;
+    }
+
+    // (b) Lock wallet
     const [wallet] = await tx
       .select().from(walletsTable)
       .where(eq(walletsTable.userId, opts.userId))
       .for('update');
-
-    if (!wallet) throw new Error('Wallet not found');
+    if (!wallet) throw new Error('Wallet not found during cashback credit');
 
     const balanceBefore = wallet.balance;
     const newBal        = (parseFloat(balanceBefore) + cashbackAmount).toFixed(2);
 
+    // (c) Credit wallet balance
     await tx.update(walletsTable)
       .set({ balance: newBal, updatedAt: new Date() })
       .where(eq(walletsTable.userId, opts.userId));
 
-    // Wallet transaction record (type = wallet_fund, service = Cashback)
+    // (d) Wallet transaction record (type = wallet_fund, service = Cashback)
     const cbTxnResult = await tx.execute<{ id: string }>(sql`
       INSERT INTO transactions
         (user_id, type, service, provider, amount, cost_price,
@@ -131,11 +178,13 @@ async function applyCashbackIfEligible(opts: {
          'success'::txn_status,
          ${'Data Cashback – ' + opts.planName},
          'Cashback', ${cashbackRef + '-txn'}, NOW())
+      ON CONFLICT (reference) DO UPDATE
+        SET updated_at = NOW()
       RETURNING id
     `);
     const walletTxnId = cbTxnResult.rows[0].id;
 
-    // Wallet ledger entry
+    // (e) Wallet ledger entry
     await tx.execute(sql`
       INSERT INTO wallet_ledger
         (user_id, type, amount, balance_before, balance_after,
@@ -148,20 +197,24 @@ async function applyCashbackIfEligible(opts: {
       ON CONFLICT (reference) DO NOTHING
     `);
 
+    // (f) Mark cashback row as fully applied ← "committed" flag
+    await tx.execute(sql`
+      UPDATE cashback_transactions
+      SET wallet_txn_id = ${walletTxnId}::uuid
+      WHERE id = ${cashbackRowId}::uuid
+    `);
+
     return { walletTxnId, newBalance: newBal };
   });
 
-  // 5. Link wallet transaction back to cashback record
-  await db.execute(sql`
-    UPDATE cashback_transactions
-    SET wallet_txn_id = ${walletTxnId}::uuid
-    WHERE reference   = ${cashbackRef}
-  `);
+  // Transaction returned null → already applied or skipped — not an error
+  if (!txResult) return { applied: false, amount: 0, newBalance: '' };
 
-  // 6. Real-time balance push
+  const { walletTxnId, newBalance } = txResult;
+
+  // ── 3. Post-commit side-effects (non-fatal — never fail the purchase) ────────
   try { getIo().to(`user:${opts.userId}`).emit('wallet:updated', { balance: newBalance }); } catch { /* non-fatal */ }
 
-  // 7. Notification
   await createNotification(opts.userId, {
     type:  'transaction',
     title: '🎁 Cashback Credited!',

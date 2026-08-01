@@ -36,13 +36,25 @@ router.use(requireSuperAdmin);
 
 router.get('/cashback/settings', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const result = await db.execute(sql`SELECT id, enabled, updated_at FROM cashback_settings LIMIT 1`);
-    const row = result.rows[0] as { id: string; enabled: boolean; updated_at: string } | undefined;
+    const result = await db.execute<{
+      id: string; enabled: boolean; updated_at: string;
+      min_transfer_amount: string; transfer_mode: string; eligible_services: unknown;
+    }>(sql`
+      SELECT id, enabled, updated_at, min_transfer_amount, transfer_mode, eligible_services
+      FROM cashback_settings LIMIT 1
+    `);
+    const row = result.rows[0];
     if (!row) {
-      res.json({ enabled: false });
+      res.json({ enabled: false, minTransferAmount: 100, transferMode: 'manual', eligibleServices: ['data'] });
       return;
     }
-    res.json({ enabled: row.enabled, updatedAt: row.updated_at });
+    res.json({
+      enabled:           row.enabled,
+      updatedAt:         row.updated_at,
+      minTransferAmount: parseFloat(row.min_transfer_amount ?? '100'),
+      transferMode:      row.transfer_mode ?? 'manual',
+      eligibleServices:  row.eligible_services ?? ['data'],
+    });
   } catch (err) {
     logger.error({ err }, 'GET /cashback/settings failed');
     res.status(500).json({ error: 'Failed to load cashback settings.' });
@@ -52,18 +64,44 @@ router.get('/cashback/settings', async (_req: Request, res: Response): Promise<v
 // ── PATCH /admin/cashback/settings ────────────────────────────────────────────
 
 router.patch('/cashback/settings', async (req: Request, res: Response): Promise<void> => {
-  const { enabled } = req.body as { enabled?: boolean };
-  if (typeof enabled !== 'boolean') {
-    res.status(400).json({ error: '"enabled" (boolean) is required.' });
+  const { enabled, minTransferAmount, transferMode, eligibleServices } = req.body as {
+    enabled?: boolean;
+    minTransferAmount?: number;
+    transferMode?: 'manual' | 'auto';
+    eligibleServices?: string[];
+  };
+
+  const hasAny = typeof enabled === 'boolean'
+    || typeof minTransferAmount === 'number'
+    || transferMode !== undefined
+    || eligibleServices !== undefined;
+
+  if (!hasAny) {
+    res.status(400).json({ error: 'At least one field is required: enabled, minTransferAmount, transferMode, eligibleServices.' });
     return;
   }
+  if (transferMode !== undefined && transferMode !== 'manual' && transferMode !== 'auto') {
+    res.status(400).json({ error: 'transferMode must be "manual" or "auto".' });
+    return;
+  }
+  if (typeof minTransferAmount === 'number' && (minTransferAmount < 0 || !Number.isFinite(minTransferAmount))) {
+    res.status(400).json({ error: 'minTransferAmount must be a non-negative number.' });
+    return;
+  }
+
   try {
     await db.execute(sql`
       UPDATE cashback_settings
-      SET enabled = ${enabled}, updated_by = ${req.session.adminId!}::uuid, updated_at = NOW()
+      SET
+        enabled             = ${typeof enabled === 'boolean' ? enabled : sql`enabled`},
+        min_transfer_amount = ${typeof minTransferAmount === 'number' ? minTransferAmount.toFixed(2) : sql`min_transfer_amount`},
+        transfer_mode       = ${transferMode ?? sql`transfer_mode`},
+        eligible_services   = ${eligibleServices !== undefined ? JSON.stringify(eligibleServices) : sql`eligible_services`}::jsonb,
+        updated_by          = ${req.session.adminId!}::uuid,
+        updated_at          = NOW()
     `);
-    logger.info({ adminId: req.session.adminId, enabled }, 'Cashback global setting updated');
-    res.json({ ok: true, enabled });
+    logger.info({ adminId: req.session.adminId, enabled, minTransferAmount, transferMode, eligibleServices }, 'Cashback global settings updated');
+    res.json({ ok: true, enabled, minTransferAmount, transferMode, eligibleServices });
   } catch (err) {
     logger.error({ err }, 'PATCH /cashback/settings failed');
     res.status(500).json({ error: 'Failed to update cashback settings.' });

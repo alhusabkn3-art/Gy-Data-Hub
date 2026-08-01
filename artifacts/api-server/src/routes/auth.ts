@@ -15,6 +15,7 @@
 import { Router, type Request, type Response } from 'express';
 import crypto from 'node:crypto';
 import { eq } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { db } from '@workspace/db';
 import {
   usersTable, walletsTable, transactionsTable, notificationsTable, userPreferencesTable,
@@ -232,6 +233,9 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
   }
 
   await db.insert(walletsTable).values({ userId: newUser.id, balance: '0' });
+  // Create cashback wallet (separate from main wallet)
+  await db.execute(sql`INSERT INTO cashback_wallets (user_id, balance) VALUES (${newUser.id}::uuid, 0)`);
+
 
   const [welcomeNotif] = await db.insert(notificationsTable).values({
     userId: newUser.id,

@@ -535,3 +535,39 @@ CREATE INDEX IF NOT EXISTS idx_cashback_txns_user_id    ON cashback_transactions
 CREATE INDEX IF NOT EXISTS idx_cashback_txns_created_at ON cashback_transactions (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_cashback_txns_network    ON cashback_transactions (network);
 CREATE INDEX IF NOT EXISTS idx_cashback_txns_plan_id    ON cashback_transactions (plan_id);
+
+-- ── Cashback wallet (separate from main wallet) ───────────────────────────────
+-- Added: each user has a dedicated cashback balance; cashback credits go here,
+-- not to the main wallet.  Users transfer to main wallet manually (or auto).
+ALTER TABLE cashback_settings
+  ADD COLUMN IF NOT EXISTS min_transfer_amount NUMERIC(15,2) NOT NULL DEFAULT 100,
+  ADD COLUMN IF NOT EXISTS transfer_mode        TEXT         NOT NULL DEFAULT 'manual',
+  ADD COLUMN IF NOT EXISTS eligible_services    JSONB        NOT NULL DEFAULT '["data"]'::jsonb;
+
+CREATE TABLE IF NOT EXISTS cashback_wallets (
+  id         UUID          NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id    UUID          NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  balance    NUMERIC(15,2) NOT NULL DEFAULT 0 CHECK (balance >= 0),
+  created_at TIMESTAMP     NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP     NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_cashback_wallets_user_id ON cashback_wallets (user_id);
+
+-- Backfill cashback_wallets for existing users
+INSERT INTO cashback_wallets (user_id, balance)
+SELECT u.id, 0 FROM users u
+WHERE NOT EXISTS (SELECT 1 FROM cashback_wallets cw WHERE cw.user_id = u.id);
+
+CREATE TABLE IF NOT EXISTS cashback_transfers (
+  id                 UUID          NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id            UUID          NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  cashback_wallet_id UUID          REFERENCES cashback_wallets(id) ON DELETE SET NULL,
+  amount             NUMERIC(15,2) NOT NULL,
+  balance_before     NUMERIC(15,2) NOT NULL,
+  balance_after      NUMERIC(15,2) NOT NULL,
+  main_txn_id        UUID          REFERENCES transactions(id) ON DELETE SET NULL,
+  mode               TEXT          NOT NULL DEFAULT 'manual',
+  created_at         TIMESTAMP     NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_cashback_transfers_user_id    ON cashback_transfers (user_id);
+CREATE INDEX IF NOT EXISTS idx_cashback_transfers_created_at ON cashback_transfers (created_at DESC);

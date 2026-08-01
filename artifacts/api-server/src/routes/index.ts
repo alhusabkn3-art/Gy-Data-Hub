@@ -13,6 +13,7 @@ import paymentRouter from "./payment.js";
 import whatsappRouter from "./whatsapp.js";
 import supportChatRouter from "./support-chat.js";
 import cashbackRouter from "./cashback.js";
+import cashbackUserRouter from "./cashback-user.js";
 
 const router: IRouter = Router();
 
@@ -32,6 +33,7 @@ router.use("/admin",               adminCCRouter);
 router.use("/admin/support-inbox", supportInboxRouter);
 router.use("/admin",               adminFinanceRouter);
 router.use("/admin",               cashbackRouter);
+router.use("/cashback",            cashbackUserRouter);
 router.use("/admin",               adminSuperRouter);
 router.use("/payment",             paymentRouter);
 router.use("/whatsapp",            whatsappRouter);

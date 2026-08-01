@@ -90,12 +90,15 @@ interface AppContextType {
   isLoading: boolean;          // true while initial session check is in flight
   user: User | null;
   balance: number;
+  cashbackBalance: number;
   balanceHidden: boolean;
   transactions: Transaction[];
   notifications: Notification[];
   unreadCount: number;
   settings: AppSettings;
   activeTab: string;
+  /** Cashback wallet settings from server */
+  cashbackSettings: { enabled: boolean; minTransferAmount: number; transferMode: 'manual' | 'auto' } | null;
 
   /** Login by phone + PIN. */
   login: (phone: string, pin: string) => Promise<'success' | 'no_account' | 'wrong_pin' | 'account_suspended' | 'account_closed'>;
@@ -128,6 +131,10 @@ interface AppContextType {
   fundWallet: (amount: number) => Promise<boolean>;
   /** Refresh wallet balance and transaction list from the server. */
   refreshWallet: () => Promise<void>;
+  /** Transfer cashback wallet balance to main wallet. */
+  transferCashback: (amount?: number) => Promise<{ ok: boolean; error?: string; transferred?: number; newMainBalance?: number; newCashbackBalance?: number }>;
+  /** Refresh cashback wallet balance from the server. */
+  refreshCashbackWallet: () => Promise<void>;
   /** Mark a single notification as read. */
   markNotificationRead: (id: string) => Promise<void>;
   /** Delete a single notification. */
@@ -140,15 +147,17 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
-  const [isLoggedIn,    setIsLoggedIn]    = useState(false);
-  const [isLoading,     setIsLoading]     = useState(true); // true until /me resolves
-  const [user,          setUser]          = useState<User | null>(null);
-  const [balance,       setBalance]       = useState(0);
-  const [balanceHidden, setBalanceHidden] = useState(false);
-  const [transactions,  setTransactions]  = useState<Transaction[]>([]);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [settings,      setSettings]      = useState(defaultSettings);
-  const [activeTab,     setActiveTab]     = useState('home');
+  const [isLoggedIn,       setIsLoggedIn]       = useState(false);
+  const [isLoading,        setIsLoading]        = useState(true); // true until /me resolves
+  const [user,             setUser]             = useState<User | null>(null);
+  const [balance,          setBalance]          = useState(0);
+  const [cashbackBalance,  setCashbackBalance]  = useState(0);
+  const [cashbackSettings, setCashbackSettings] = useState<{ enabled: boolean; minTransferAmount: number; transferMode: 'manual' | 'auto' } | null>(null);
+  const [balanceHidden,    setBalanceHidden]    = useState(false);
+  const [transactions,     setTransactions]     = useState<Transaction[]>([]);
+  const [notifications,    setNotifications]    = useState<Notification[]>([]);
+  const [settings,         setSettings]         = useState(defaultSettings);
+  const [activeTab,        setActiveTab]        = useState('home');
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -172,6 +181,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           setSettings(prev => ({ ...prev, ...data.preferences }));
         }
         setIsLoggedIn(true);
+        // Load cashback wallet (non-blocking)
+        void api('/cashback/wallet').then(async r => {
+          if (!r.ok) return;
+          const cb = await r.json() as { balance: string; cashbackEnabled: boolean; minTransferAmount: number; transferMode: string };
+          setCashbackBalance(parseFloat(cb.balance ?? '0'));
+          setCashbackSettings({ enabled: cb.cashbackEnabled, minTransferAmount: cb.minTransferAmount, transferMode: cb.transferMode as 'manual' | 'auto' });
+        }).catch(() => { /* non-fatal */ });
       })
       .catch(() => { /* network error — stay logged out */ })
       .finally(() => setIsLoading(false));
@@ -221,6 +237,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setIsLoggedIn(false);
     setUser(null);
     setBalance(0);
+    setCashbackBalance(0);
+    setCashbackSettings(null);
     setTransactions([]);
     setNotifications([]);
     setSettings(defaultSettings);
@@ -485,6 +503,41 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     } catch { /* silent — non-fatal */ }
   };
 
+  /** Refresh cashback wallet balance and settings from the server. */
+  const refreshCashbackWallet = async (): Promise<void> => {
+    try {
+      const res = await api('/cashback/wallet');
+      if (!res.ok) return;
+      const cb = await res.json() as { balance: string; cashbackEnabled: boolean; minTransferAmount: number; transferMode: string };
+      setCashbackBalance(parseFloat(cb.balance ?? '0'));
+      setCashbackSettings({ enabled: cb.cashbackEnabled, minTransferAmount: cb.minTransferAmount, transferMode: cb.transferMode as 'manual' | 'auto' });
+    } catch { /* silent */ }
+  };
+
+  /** Transfer cashback balance to main wallet. */
+  const transferCashback = async (amount?: number): Promise<{ ok: boolean; error?: string; transferred?: number; newMainBalance?: number; newCashbackBalance?: number }> => {
+    try {
+      const res = await api('/cashback/transfer', {
+        method: 'POST',
+        body: JSON.stringify(amount != null ? { amount } : {}),
+      });
+      const data = await res.json() as { ok?: boolean; error?: string; transferred?: number; newMainBalance?: string; newCashbackBalance?: string };
+      if (!res.ok || !data.ok) return { ok: false, error: data.error ?? 'Transfer failed' };
+      if (data.newMainBalance != null)     setBalance(parseFloat(data.newMainBalance));
+      if (data.newCashbackBalance != null) setCashbackBalance(parseFloat(data.newCashbackBalance));
+      // Refresh transactions to show the transfer record
+      void api('/user/transactions').then(async r => {
+        if (r.ok) { const rows = await r.json() as Record<string, unknown>[]; setTransactions(rows.map(transformTransaction)); }
+      });
+      return {
+        ok: true,
+        transferred:        data.transferred,
+        newMainBalance:     data.newMainBalance != null ? parseFloat(data.newMainBalance) : undefined,
+        newCashbackBalance: data.newCashbackBalance != null ? parseFloat(data.newCashbackBalance) : undefined,
+      };
+    } catch { return { ok: false, error: 'Network error' }; }
+  };
+
   // ── Notifications ─────────────────────────────────────────────────────────
 
   /** Sync notifications from the server into local state. Non-fatal. */
@@ -540,12 +593,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AppContext.Provider value={{
-      isLoggedIn, isLoading, user, balance, balanceHidden, transactions,
+      isLoggedIn, isLoading, user, balance, cashbackBalance, cashbackSettings, balanceHidden, transactions,
       notifications, unreadCount, settings, activeTab,
       login, logout, register, accountExists, checkUsernameAvailable, changeUsername, verifyPin, changePin,
       requestPinReset, resetPin,
       toggleBalanceHidden, markAllNotificationsRead, updateSettings,
       addTransaction, purchaseAirtime, purchaseData, setActiveTab, fundWallet, refreshWallet,
+      transferCashback, refreshCashbackWallet,
       markNotificationRead, deleteNotification, clearAllNotifications,
     }}>
       {children}

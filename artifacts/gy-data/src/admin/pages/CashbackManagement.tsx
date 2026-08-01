@@ -14,6 +14,9 @@ import { fmtNaira } from '../utils/format';
 interface CashbackSettings {
   enabled: boolean;
   updatedAt?: string;
+  minTransferAmount: number;
+  transferMode: 'manual' | 'auto';
+  eligibleServices: string[];
 }
 
 interface CashbackPlan {
@@ -295,6 +298,8 @@ function PlanRow({ plan, onSave }: PlanRowProps) {
 
 type Tab = 'plans' | 'reports';
 
+const ALL_SERVICES = ['data', 'airtime', 'electricity', 'cable', 'betting'];
+
 export default function CashbackManagement() {
   const [settings,      setSettings]      = useState<CashbackSettings | null>(null);
   const [plans,         setPlans]         = useState<CashbackPlan[]>([]);
@@ -306,6 +311,10 @@ export default function CashbackManagement() {
   const [bulkNetwork,   setBulkNetwork]   = useState<string | null>(null);
   const [togglingGlobal,setTogglingGlobal]= useState(false);
   const [expandedNets,  setExpandedNets]  = useState<Set<string>>(new Set(['MTN', 'AIRTEL', 'GLO', '9MOBILE']));
+  // Advanced settings editing state
+  const [editingSettings, setEditingSettings] = useState(false);
+  const [settingsDraft,   setSettingsDraft]   = useState<{ minTransferAmount: string; transferMode: 'manual' | 'auto'; eligibleServices: string[] }>({ minTransferAmount: '100', transferMode: 'manual', eligibleServices: ['data'] });
+  const [savingSettings,  setSavingSettings]  = useState(false);
 
   // Date range for reports
   const today = new Date().toISOString().split('T')[0]!;
@@ -320,12 +329,20 @@ export default function CashbackManagement() {
         adminApi('/api/admin/cashback/settings'),
         adminApi('/api/admin/cashback/plans'),
       ]);
-      if (sRes.ok) setSettings(await sRes.json() as CashbackSettings);
+      if (sRes.ok) {
+        const s = await sRes.json() as CashbackSettings;
+        setSettings(s);
+        setSettingsDraft({
+          minTransferAmount: String(s.minTransferAmount ?? 100),
+          transferMode:      s.transferMode ?? 'manual',
+          eligibleServices:  s.eligibleServices ?? ['data'],
+        });
+      }
       if (pRes.ok) {
         const d = await pRes.json() as { plans: CashbackPlan[] };
         setPlans(d.plans);
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to load cashback data');
     } finally {
       setLoading(false);
@@ -359,6 +376,33 @@ export default function CashbackManagement() {
       toast.error(err instanceof Error ? err.message : 'Failed');
     } finally {
       setTogglingGlobal(false);
+    }
+  }
+
+  async function saveAdvancedSettings() {
+    setSavingSettings(true);
+    try {
+      const r = await adminApi('/api/admin/cashback/settings', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          minTransferAmount: parseFloat(settingsDraft.minTransferAmount) || 100,
+          transferMode:      settingsDraft.transferMode,
+          eligibleServices:  settingsDraft.eligibleServices,
+        }),
+      });
+      if (!r.ok) throw new Error((await r.json() as { error?: string }).error ?? 'Failed');
+      setSettings(prev => prev ? {
+        ...prev,
+        minTransferAmount: parseFloat(settingsDraft.minTransferAmount) || 100,
+        transferMode:      settingsDraft.transferMode,
+        eligibleServices:  settingsDraft.eligibleServices,
+      } : prev);
+      setEditingSettings(false);
+      toast.success('Cashback settings saved');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save settings');
+    } finally {
+      setSavingSettings(false);
     }
   }
 
@@ -435,6 +479,125 @@ export default function CashbackManagement() {
               : <Toggle checked={settings?.enabled ?? false} onChange={toggleGlobal} />
             }
           </div>
+        </div>
+      )}
+
+      {/* ── Advanced settings card ──────────────────────────────────────────── */}
+      {!loading && settings && (
+        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-bold text-white">Transfer & Eligibility Settings</p>
+            <button
+              onClick={() => {
+                if (editingSettings) {
+                  void saveAdvancedSettings();
+                } else {
+                  setSettingsDraft({
+                    minTransferAmount: String(settings.minTransferAmount ?? 100),
+                    transferMode:      settings.transferMode ?? 'manual',
+                    eligibleServices:  settings.eligibleServices ?? ['data'],
+                  });
+                  setEditingSettings(true);
+                }
+              }}
+              disabled={savingSettings}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 disabled:opacity-50"
+            >
+              {savingSettings ? (
+                <div className="w-3 h-3 border border-blue-400 border-t-transparent rounded-full animate-spin" />
+              ) : editingSettings ? (
+                <Save className="w-3 h-3" />
+              ) : null}
+              {editingSettings ? 'Save Settings' : 'Edit Settings'}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Min transfer amount */}
+            <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-3">
+              <p className="text-[10px] text-white/40 uppercase tracking-wider font-semibold mb-2">Min Transfer Amount</p>
+              {editingSettings ? (
+                <div className="flex items-center gap-1.5 bg-white/5 rounded-lg px-2 py-1.5 border border-white/10">
+                  <span className="text-white/40 text-xs font-bold">₦</span>
+                  <input
+                    type="number" min="0" step="1"
+                    value={settingsDraft.minTransferAmount}
+                    onChange={e => setSettingsDraft(p => ({ ...p, minTransferAmount: e.target.value }))}
+                    className="flex-1 bg-transparent text-white text-sm outline-none"
+                  />
+                </div>
+              ) : (
+                <p className="text-lg font-bold text-amber-400">₦{(settings.minTransferAmount ?? 100).toLocaleString('en-NG')}</p>
+              )}
+              <p className="text-[10px] text-white/30 mt-1">Minimum balance to transfer</p>
+            </div>
+
+            {/* Transfer mode */}
+            <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-3">
+              <p className="text-[10px] text-white/40 uppercase tracking-wider font-semibold mb-2">Transfer Mode</p>
+              {editingSettings ? (
+                <div className="flex gap-2">
+                  {(['manual', 'auto'] as const).map(m => (
+                    <button
+                      key={m}
+                      onClick={() => setSettingsDraft(p => ({ ...p, transferMode: m }))}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${settingsDraft.transferMode === m ? 'bg-blue-500 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'}`}
+                    >
+                      {m === 'manual' ? 'Manual' : 'Auto'}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className={`text-lg font-bold capitalize ${settings.transferMode === 'auto' ? 'text-green-400' : 'text-blue-400'}`}>
+                  {settings.transferMode ?? 'Manual'}
+                </p>
+              )}
+              <p className="text-[10px] text-white/30 mt-1">{settings.transferMode === 'auto' ? 'Auto-transfer when minimum reached' : 'User triggers transfer manually'}</p>
+            </div>
+
+            {/* Eligible services */}
+            <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-3">
+              <p className="text-[10px] text-white/40 uppercase tracking-wider font-semibold mb-2">Eligible Services</p>
+              {editingSettings ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {ALL_SERVICES.map(svc => {
+                    const on = settingsDraft.eligibleServices.includes(svc);
+                    return (
+                      <button
+                        key={svc}
+                        onClick={() => setSettingsDraft(p => ({
+                          ...p,
+                          eligibleServices: on
+                            ? p.eligibleServices.filter(s => s !== svc)
+                            : [...p.eligibleServices, svc],
+                        }))}
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold capitalize transition-colors border ${on ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-white/5 text-white/30 border-white/10'}`}
+                      >
+                        {svc}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {(settings.eligibleServices ?? ['data']).map(svc => (
+                    <span key={svc} className="px-2 py-0.5 rounded-full text-[10px] font-semibold capitalize bg-green-500/15 text-green-400 border border-green-500/20">
+                      {svc}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {editingSettings && (
+            <button
+              onClick={() => setEditingSettings(false)}
+              className="text-xs text-white/30 hover:text-white/60 transition-colors"
+            >
+              Cancel
+            </button>
+          )}
         </div>
       )}
 

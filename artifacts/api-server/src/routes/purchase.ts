@@ -42,10 +42,13 @@ import { getIo } from '../lib/socket.js';
 //
 // Called AFTER a successful data purchase to credit any eligible cashback.
 //
-// Atomicity guarantee: the cashback_transactions audit row INSERT, wallet
-// balance update, transactions record, and wallet_ledger entry are all written
-// inside a SINGLE db.transaction().  wallet_txn_id is set to non-null only
-// after every write has committed, which serves as the "fully applied" flag.
+// Cashback is credited to the user's CASHBACK WALLET (cashback_wallets table),
+// NOT the main wallet. Users can transfer it to the main wallet separately.
+//
+// Atomicity guarantee: the cashback_transactions audit row INSERT, cashback
+// wallet balance update, and transactions record are all written inside a
+// SINGLE db.transaction(). wallet_txn_id is set to non-null only after every
+// write has committed, which serves as the "fully applied" flag.
 //
 // Idempotency / partial-state recovery:
 //   • New:          INSERT succeeds → proceed to credit (all in same tx).
@@ -53,8 +56,7 @@ import { getIo } from '../lib/socket.js';
 //                   → return applied:false (idempotent no-op).
 //   • Partial state: INSERT conflicts AND existing row has wallet_txn_id IS NULL
 //                   → previous tx crashed mid-flight; re-enter the credit block
-//                   using the existing audit-row id (still safe because wallet
-//                   balance was never updated in the failed attempt).
+//                   using the existing audit-row id.
 //
 async function applyCashbackIfEligible(opts: {
   userId:          string;
@@ -64,13 +66,27 @@ async function applyCashbackIfEligible(opts: {
   network:         string;
   planName:        string;
   purchaseAmount:  number;
-}): Promise<{ applied: boolean; amount: number; newBalance: string }> {
+}): Promise<{ applied: boolean; amount: number; cashbackBalance: string }> {
 
   // ── 1. Read-only pre-checks (outside the write transaction for efficiency) ──
 
-  const globalResult = await db.execute(sql`SELECT enabled FROM cashback_settings LIMIT 1`);
-  const globalEnabled = globalResult.rows[0] && (globalResult.rows[0] as { enabled: boolean }).enabled;
-  if (!globalEnabled) return { applied: false, amount: 0, newBalance: '' };
+  const globalResult = await db.execute<{
+    enabled: boolean;
+    eligible_services: string[] | string;
+    transfer_mode: string;
+    min_transfer_amount: string;
+  }>(sql`SELECT enabled, eligible_services, transfer_mode, min_transfer_amount FROM cashback_settings LIMIT 1`);
+
+  const globalRow = globalResult.rows[0];
+  if (!globalRow || !globalRow.enabled) return { applied: false, amount: 0, cashbackBalance: '' };
+
+  // Check eligible services — must include 'data'
+  let eligibleServices: string[] = ['data'];
+  try {
+    const raw = globalRow.eligible_services;
+    eligibleServices = Array.isArray(raw) ? raw : JSON.parse(typeof raw === 'string' ? raw : '["data"]');
+  } catch { /* default to ['data'] */ }
+  if (!eligibleServices.includes('data')) return { applied: false, amount: 0, cashbackBalance: '' };
 
   const planResult = await db.execute<{
     cashback_enabled: boolean;
@@ -86,7 +102,7 @@ async function applyCashbackIfEligible(opts: {
   `);
 
   const rule = planResult.rows[0];
-  if (!rule || !rule.cashback_enabled) return { applied: false, amount: 0, newBalance: '' };
+  if (!rule || !rule.cashback_enabled) return { applied: false, amount: 0, cashbackBalance: '' };
 
   const cashbackType  = rule.cashback_type;
   const cashbackValue = parseFloat(rule.cashback_value);
@@ -97,21 +113,19 @@ async function applyCashbackIfEligible(opts: {
   } else {
     cashbackAmount = parseFloat(cashbackValue.toFixed(2));
   }
-  if (cashbackAmount <= 0) return { applied: false, amount: 0, newBalance: '' };
+  if (cashbackAmount <= 0) return { applied: false, amount: 0, cashbackBalance: '' };
 
   const cashbackRef = `${opts.requestId}-cashback`;
 
-  // ── 2. Single atomic transaction ─────────────────────────────────────────────
+  // ── 2. Single atomic transaction — credits the CASHBACK WALLET ────────────
   //    Order inside the tx:
   //      a) INSERT cashback_transactions (or detect existing partial/complete row)
-  //      b) Lock wallet row (SELECT … FOR UPDATE)
-  //      c) Credit wallet balance
-  //      d) INSERT wallet transactions record
-  //      e) INSERT wallet_ledger entry
-  //      f) UPDATE cashback_transactions.wallet_txn_id  ← "fully applied" flag
+  //      b) Lock cashback_wallet row (SELECT … FOR UPDATE)
+  //      c) Credit cashback wallet balance
+  //      d) INSERT transactions record (type = wallet_fund, service = Cashback, payment_method = 'Cashback Wallet')
+  //      e) UPDATE cashback_transactions.wallet_txn_id ← "fully applied" flag
   //
-  //    Only when step (f) commits is cashback considered done.
-  //    If anything between (a) and (f) throws, Postgres rolls back ALL writes.
+  //    Only when step (e) commits is cashback considered done.
 
   const txResult = await db.transaction(async (tx) => {
 
@@ -131,10 +145,8 @@ async function applyCashbackIfEligible(opts: {
     let cashbackRowId: string;
 
     if (insertResult.rows[0]) {
-      // Fresh insert — proceed
       cashbackRowId = insertResult.rows[0].id;
     } else {
-      // Conflict: check whether the existing row is fully applied or a partial state
       const existing = await tx.execute<{ id: string; wallet_txn_id: string | null }>(sql`
         SELECT id, wallet_txn_id
         FROM cashback_transactions
@@ -142,32 +154,36 @@ async function applyCashbackIfEligible(opts: {
         LIMIT 1
       `);
       const row = existing.rows[0];
-      if (!row) return null; // should not happen, but be safe
-      if (row.wallet_txn_id !== null) {
-        // Already fully applied — idempotent no-op
-        return null;
-      }
-      // wallet_txn_id IS NULL → previous attempt crashed after INSERT but before
-      // wallet credit committed.  Reuse the existing audit row and re-attempt credit.
+      if (!row) return null;
+      if (row.wallet_txn_id !== null) return null; // Already fully applied
       cashbackRowId = row.id;
     }
 
-    // (b) Lock wallet
-    const [wallet] = await tx
-      .select().from(walletsTable)
-      .where(eq(walletsTable.userId, opts.userId))
-      .for('update');
-    if (!wallet) throw new Error('Wallet not found during cashback credit');
+    // (b) Lock cashback wallet row — ensure it exists first
+    await tx.execute(sql`
+      INSERT INTO cashback_wallets (user_id, balance)
+      VALUES (${opts.userId}::uuid, 0)
+      ON CONFLICT (user_id) DO NOTHING
+    `);
+    const cbWalletResult = await tx.execute<{ id: string; balance: string }>(sql`
+      SELECT id, balance FROM cashback_wallets
+      WHERE user_id = ${opts.userId}::uuid
+      FOR UPDATE
+    `);
+    const cbWallet = cbWalletResult.rows[0];
+    if (!cbWallet) throw new Error('Cashback wallet not found');
 
-    const balanceBefore = wallet.balance;
-    const newBal        = (parseFloat(balanceBefore) + cashbackAmount).toFixed(2);
+    const cbBalBefore = cbWallet.balance;
+    const cbBalAfter  = (parseFloat(cbBalBefore) + cashbackAmount).toFixed(2);
 
-    // (c) Credit wallet balance
-    await tx.update(walletsTable)
-      .set({ balance: newBal, updatedAt: new Date() })
-      .where(eq(walletsTable.userId, opts.userId));
+    // (c) Credit cashback wallet balance
+    await tx.execute(sql`
+      UPDATE cashback_wallets
+      SET balance = ${cbBalAfter}, updated_at = NOW()
+      WHERE user_id = ${opts.userId}::uuid
+    `);
 
-    // (d) Wallet transaction record (type = wallet_fund, service = Cashback)
+    // (d) Transaction record tagged as Cashback Wallet credit
     const cbTxnResult = await tx.execute<{ id: string }>(sql`
       INSERT INTO transactions
         (user_id, type, service, provider, amount, cost_price,
@@ -177,53 +193,142 @@ async function applyCashbackIfEligible(opts: {
          ${opts.network.toUpperCase()}, ${cashbackAmount.toFixed(2)}, '0',
          'success'::txn_status,
          ${'Data Cashback – ' + opts.planName},
-         'Cashback', ${cashbackRef + '-txn'}, NOW())
+         'Cashback Wallet', ${cashbackRef + '-txn'}, NOW())
       ON CONFLICT (reference) DO UPDATE
         SET updated_at = NOW()
       RETURNING id
     `);
     const walletTxnId = cbTxnResult.rows[0].id;
 
-    // (e) Wallet ledger entry
-    await tx.execute(sql`
-      INSERT INTO wallet_ledger
-        (user_id, type, amount, balance_before, balance_after,
-         reference, related_transaction_id, reason)
-      VALUES
-        (${opts.userId}::uuid, 'cashback', ${cashbackAmount.toFixed(2)},
-         ${balanceBefore}, ${newBal},
-         ${cashbackRef + '-ledger'}, ${walletTxnId}::uuid,
-         ${'Cashback for ' + opts.network.toUpperCase() + ' ' + opts.planName})
-      ON CONFLICT (reference) DO NOTHING
-    `);
-
-    // (f) Mark cashback row as fully applied ← "committed" flag
+    // (e) Mark cashback row as fully applied
     await tx.execute(sql`
       UPDATE cashback_transactions
       SET wallet_txn_id = ${walletTxnId}::uuid
       WHERE id = ${cashbackRowId}::uuid
     `);
 
-    return { walletTxnId, newBalance: newBal };
+    return { walletTxnId, cashbackBalance: cbBalAfter };
   });
 
-  // Transaction returned null → already applied or skipped — not an error
-  if (!txResult) return { applied: false, amount: 0, newBalance: '' };
+  if (!txResult) return { applied: false, amount: 0, cashbackBalance: '' };
 
-  const { walletTxnId, newBalance } = txResult;
+  const { walletTxnId, cashbackBalance } = txResult;
 
-  // ── 3. Post-commit side-effects (non-fatal — never fail the purchase) ────────
-  try { getIo().to(`user:${opts.userId}`).emit('wallet:updated', { balance: newBalance }); } catch { /* non-fatal */ }
+  // ── 3. Post-commit side-effects ───────────────────────────────────────────
+  try { getIo().to(`user:${opts.userId}`).emit('cashback:updated', { cashbackBalance }); } catch { /* non-fatal */ }
 
   await createNotification(opts.userId, {
     type:  'transaction',
     title: '🎁 Cashback Credited!',
-    body:  `₦${cashbackAmount.toLocaleString('en-NG')} cashback from your ${opts.network.toUpperCase()} data purchase has been added to your wallet.`,
+    body:  `₦${cashbackAmount.toLocaleString('en-NG')} cashback from your ${opts.network.toUpperCase()} data purchase has been added to your Cashback Wallet.`,
     refId: walletTxnId,
   });
 
-  logger.info({ userId: opts.userId, cashbackAmount, planCode: opts.planCode, cashbackRef }, 'Cashback credited');
-  return { applied: true, amount: cashbackAmount, newBalance };
+  // Auto-transfer if mode is 'auto' and balance meets minimum
+  try {
+    const minResult = await db.execute<{ min_transfer_amount: string; transfer_mode: string }>(
+      sql`SELECT min_transfer_amount, transfer_mode FROM cashback_settings LIMIT 1`
+    );
+    const settings = minResult.rows[0];
+    if (settings && settings.transfer_mode === 'auto') {
+      const minAmt = parseFloat(settings.min_transfer_amount || '100');
+      const curBal = parseFloat(cashbackBalance);
+      if (curBal >= minAmt) {
+        await transferCashbackToMain(opts.userId, curBal, 'auto');
+      }
+    }
+  } catch (autoErr) {
+    logger.warn({ autoErr, userId: opts.userId }, 'Auto cashback transfer check failed — non-fatal');
+  }
+
+  logger.info({ userId: opts.userId, cashbackAmount, planCode: opts.planCode, cashbackRef }, 'Cashback credited to cashback wallet');
+  return { applied: true, amount: cashbackAmount, cashbackBalance };
+}
+
+// ── transferCashbackToMain — transfers cashback wallet → main wallet ──────────
+export async function transferCashbackToMain(
+  userId: string,
+  amount: number,
+  mode: 'manual' | 'auto' = 'manual',
+): Promise<{ ok: boolean; newMainBalance: string; newCashbackBalance: string; error?: string }> {
+  const result = await db.transaction(async (tx) => {
+    // Lock cashback wallet
+    const cbRes = await tx.execute<{ id: string; balance: string }>(sql`
+      SELECT id, balance FROM cashback_wallets WHERE user_id = ${userId}::uuid FOR UPDATE
+    `);
+    const cbWallet = cbRes.rows[0];
+    if (!cbWallet) throw Object.assign(new Error('Cashback wallet not found'), { code: 'NOT_FOUND' });
+
+    const cbBal = parseFloat(cbWallet.balance);
+    if (cbBal < amount) throw Object.assign(new Error('Insufficient cashback balance'), { code: 'INSUFFICIENT' });
+
+    const newCbBal = (cbBal - amount).toFixed(2);
+
+    // Lock main wallet
+    const mwRes = await tx.execute<{ id: string; balance: string }>(sql`
+      SELECT id, balance FROM wallets WHERE user_id = ${userId}::uuid FOR UPDATE
+    `);
+    const mWallet = mwRes.rows[0];
+    if (!mWallet) throw Object.assign(new Error('Main wallet not found'), { code: 'NOT_FOUND' });
+
+    const mBal    = parseFloat(mWallet.balance);
+    const newMBal = (mBal + amount).toFixed(2);
+
+    // Debit cashback wallet
+    await tx.execute(sql`
+      UPDATE cashback_wallets SET balance = ${newCbBal}, updated_at = NOW()
+      WHERE user_id = ${userId}::uuid
+    `);
+
+    // Credit main wallet
+    await tx.execute(sql`
+      UPDATE wallets SET balance = ${newMBal}, updated_at = NOW()
+      WHERE user_id = ${userId}::uuid
+    `);
+
+    // Transaction record
+    const ref = `GY-CBT-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    const txnRes = await tx.execute<{ id: string }>(sql`
+      INSERT INTO transactions
+        (user_id, type, service, provider, amount, cost_price,
+         status, description, payment_method, reference, updated_at)
+      VALUES
+        (${userId}::uuid, 'wallet_fund'::txn_type, 'Cashback Transfer',
+         'GY DATA', ${amount.toFixed(2)}, '0',
+         'success'::txn_status,
+         'Cashback wallet transferred to main wallet',
+         'Cashback Wallet', ${ref}, NOW())
+      RETURNING id
+    `);
+    const txnId = txnRes.rows[0].id;
+
+    // Wallet ledger (main wallet credit)
+    await tx.execute(sql`
+      INSERT INTO wallet_ledger
+        (user_id, type, amount, balance_before, balance_after,
+         reference, related_transaction_id, reason)
+      VALUES
+        (${userId}::uuid, 'cashback', ${amount.toFixed(2)},
+         ${mBal.toFixed(2)}, ${newMBal},
+         ${ref + '-ledger'}, ${txnId}::uuid,
+         'Cashback wallet transfer to main wallet')
+      ON CONFLICT (reference) DO NOTHING
+    `);
+
+    // Transfer log
+    await tx.execute(sql`
+      INSERT INTO cashback_transfers
+        (user_id, cashback_wallet_id, amount, balance_before, balance_after, main_txn_id, mode)
+      VALUES
+        (${userId}::uuid, ${cbWallet.id}::uuid,
+         ${amount.toFixed(2)}, ${cbBal.toFixed(2)}, ${newCbBal},
+         ${txnId}::uuid, ${mode})
+    `);
+
+    return { txnId, newMainBalance: newMBal, newCashbackBalance: newCbBal };
+  });
+
+  return { ok: true, newMainBalance: result.newMainBalance, newCashbackBalance: result.newCashbackBalance };
 }
 
 const router = Router();
@@ -821,7 +926,7 @@ router.post('/data', async (req: Request, res: Response): Promise<void> => {
       if (cb.applied) {
         cashbackApplied = true;
         cashbackAmount  = cb.amount;
-        finalBalance    = cb.newBalance;
+        // finalBalance stays as the main wallet newBalance — cashback goes to cashback_wallets, not the main wallet
       }
     } catch (cbErr) {
       logger.error({ cbErr, txnId }, 'Cashback application failed — non-fatal, purchase still succeeded');

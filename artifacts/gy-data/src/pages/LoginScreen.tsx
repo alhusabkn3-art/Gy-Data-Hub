@@ -112,16 +112,16 @@ function CreateAccountButton({
       onClick={handleClick}
       className="font-semibold relative"
       style={{
-        color:            pressing ? '#1D4ED8' : '#2563EB',
+        color:            pressing ? 'rgba(255,255,255,0.9)' : 'rgba(147,197,253,0.85)',
         touchAction:      'none',
         userSelect:       'none',
         WebkitUserSelect: 'none',
         transition:       'color 0.15s ease',
         outline:          'none',
       }}
-      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#1D4ED8'; }}
+      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.9)'; }}
       onMouseLeave={e => {
-        if (!pressing) (e.currentTarget as HTMLButtonElement).style.color = '#2563EB';
+        if (!pressing) (e.currentTarget as HTMLButtonElement).style.color = 'rgba(147,197,253,0.85)';
       }}
     >
       Create Account
@@ -409,36 +409,30 @@ export default function LoginScreen() {
         </div>
       </div>
 
-      {/* ── Combined login card ───────────────────────────────────────── */}
+      {/* ── Login form — rendered directly on the background (no white card) ── */}
       <motion.div
         animate={isError ? { x: [-10, 10, -8, 8, -5, 5, 0] } : {}}
         transition={{ duration: 0.45 }}
         className="w-full max-w-sm z-10"
-        style={{
-          background:   '#ffffff',
-          borderRadius: 28,
-          boxShadow:    '0 24px 60px rgba(11,31,78,0.35), 0 8px 24px rgba(11,31,78,0.2)',
-          padding:      '22px 22px 20px',
-        }}
       >
         {/* Header */}
-        <div className="text-center mb-5">
-          <h2 className="text-2xl font-bold mb-1" style={{ color: '#0B1F4E' }}>Welcome Back</h2>
-          <p className="text-sm" style={{ color: '#6B7FA3' }}>Sign in to your account</p>
+        <div className="text-center mb-7">
+          <h2 className="text-2xl font-bold mb-1 text-white">Welcome Back</h2>
+          <p className="text-sm" style={{ color: 'rgba(147,197,253,0.7)' }}>Sign in to your account</p>
         </div>
 
         {/* ── Phone number field ────────────────────────────────────── */}
         <div className="mb-5">
           <label
             className="block text-xs font-semibold mb-2 uppercase tracking-wider"
-            style={{ color: '#6B7FA3' }}
+            style={{ color: 'rgba(147,197,253,0.65)' }}
           >
             Phone Number
           </label>
           <div className="relative flex items-center">
             <span
               className="absolute left-3 flex items-center gap-1.5 pointer-events-none text-sm font-semibold"
-              style={{ color: '#6B7FA3' }}
+              style={{ color: 'rgba(255,255,255,0.55)' }}
             >
               🇳🇬 +234
             </span>
@@ -458,21 +452,22 @@ export default function LoginScreen() {
               autoComplete="tel"
               className="w-full h-12 rounded-xl text-sm font-medium outline-none transition-all"
               style={{
-                border:       `2px solid ${phoneError ? '#EF4444' : '#DDEAFF'}`,
-                background:   phoneError ? '#FEF2F2' : '#F8FAFF',
-                color:        '#0B1F4E',
+                border:       `1.5px solid ${phoneError ? 'rgba(239,68,68,0.7)' : 'rgba(255,255,255,0.15)'}`,
+                background:   phoneError ? 'rgba(239,68,68,0.1)' : 'rgba(255,255,255,0.08)',
+                color:        '#ffffff',
                 paddingLeft:  '6rem',
                 paddingRight: phone.length > 0 ? '5.5rem' : '4rem',
               }}
               onFocus={e => {
-                // Collapse the numpad so the native phone keyboard has room
                 setPinActive(false);
-                e.currentTarget.style.borderColor = phoneError ? '#EF4444' : '#2563EB';
-                e.currentTarget.style.background  = phoneError ? '#FEF2F2' : '#EFF6FF';
+                e.currentTarget.style.borderColor = phoneError ? 'rgba(239,68,68,0.8)' : 'rgba(99,166,246,0.7)';
+                e.currentTarget.style.background  = phoneError ? 'rgba(239,68,68,0.12)' : 'rgba(255,255,255,0.12)';
+                e.currentTarget.style.boxShadow   = phoneError ? 'none' : '0 0 0 3px rgba(37,99,235,0.18)';
               }}
               onBlur={e => {
-                e.currentTarget.style.borderColor = phoneError ? '#EF4444' : '#DDEAFF';
-                e.currentTarget.style.background  = phoneError ? '#FEF2F2' : '#F8FAFF';
+                e.currentTarget.style.borderColor = phoneError ? 'rgba(239,68,68,0.7)' : 'rgba(255,255,255,0.15)';
+                e.currentTarget.style.background  = phoneError ? 'rgba(239,68,68,0.1)' : 'rgba(255,255,255,0.08)';
+                e.currentTarget.style.boxShadow   = 'none';
               }}
             />
             {/* Paste button — shown when field is empty */}
@@ -492,7 +487,7 @@ export default function LoginScreen() {
                     phoneInputRef.current?.focus();
                   }}
                   className="absolute right-2 flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg transition-all active:scale-90"
-                  style={{ color: '#2563EB', background: 'rgba(37,99,235,0.09)' }}
+                  style={{ color: 'rgba(147,197,253,0.9)', background: 'rgba(255,255,255,0.1)' }}
                   aria-label="Paste phone number"
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -515,7 +510,7 @@ export default function LoginScreen() {
                     try { await navigator.clipboard.writeText(phone); setPhoneCopied(true); setTimeout(() => setPhoneCopied(false), 1800); } catch { /* silent */ }
                   }}
                   className="absolute right-2 flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg transition-all active:scale-90"
-                  style={{ color: phoneCopied ? '#16a34a' : '#2563EB', background: phoneCopied ? 'rgba(22,163,74,0.09)' : 'rgba(37,99,235,0.09)' }}
+                  style={{ color: phoneCopied ? 'rgba(74,222,128,0.9)' : 'rgba(147,197,253,0.9)', background: 'rgba(255,255,255,0.1)' }}
                   aria-label="Copy phone number"
                 >
                   {phoneCopied ? (
@@ -531,7 +526,7 @@ export default function LoginScreen() {
             {phoneError && (
               <motion.p
                 initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                className="text-xs mt-2 pl-1" style={{ color: '#DC2626' }}
+                className="text-xs mt-2 pl-1" style={{ color: '#FCA5A5' }}
               >
                 {phoneError}
               </motion.p>
@@ -542,7 +537,7 @@ export default function LoginScreen() {
         {/* ── PIN label ─────────────────────────────────────────────── */}
         <label
           className="block text-xs font-semibold mb-3 uppercase tracking-wider"
-          style={{ color: '#6B7FA3' }}
+          style={{ color: 'rgba(147,197,253,0.65)' }}
         >
           6-Digit PIN
         </label>
@@ -568,16 +563,16 @@ export default function LoginScreen() {
                 style={{
                   width: 40, height: 40, borderRadius: 12,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  border: isFilled   ? '2px solid #1D4ED8'
-                        : isActive   ? '2px solid #2563EB'
-                        : isError    ? '2px solid #EF4444'
-                        : '2px solid #BFCFEE',
-                  background: isFilled ? 'linear-gradient(135deg, #1A3D8F 0%, #2563EB 100%)'
-                            : isActive ? '#EFF6FF'
-                            : isError  ? '#FEF2F2'
-                            : '#F8FAFF',
-                  boxShadow: isActive ? '0 0 0 4px rgba(37,99,235,0.12)'
-                           : isFilled ? '0 4px 12px rgba(37,99,235,0.3)' : 'none',
+                  border: isFilled   ? '2px solid rgba(99,166,246,0.8)'
+                        : isActive   ? '2px solid rgba(99,166,246,0.6)'
+                        : isError    ? '2px solid rgba(239,68,68,0.7)'
+                        : '2px solid rgba(255,255,255,0.18)',
+                  background: isFilled ? 'linear-gradient(135deg, rgba(29,78,216,0.9) 0%, rgba(37,99,235,0.9) 100%)'
+                            : isActive ? 'rgba(255,255,255,0.12)'
+                            : isError  ? 'rgba(239,68,68,0.1)'
+                            : 'rgba(255,255,255,0.07)',
+                  boxShadow: isActive ? '0 0 0 3px rgba(37,99,235,0.2)'
+                           : isFilled ? '0 4px 14px rgba(37,99,235,0.4)' : 'none',
                   transition: 'all 0.18s ease',
                 }}
               >
@@ -604,7 +599,7 @@ export default function LoginScreen() {
               exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.18 }}
               className="text-center text-xs mb-5 -mt-3"
-              style={{ color: '#9BA8C0' }}
+              style={{ color: 'rgba(147,197,253,0.5)' }}
             >
               Tap the boxes above to enter your PIN
             </motion.p>
@@ -633,17 +628,18 @@ export default function LoginScreen() {
                       height: 52, borderRadius: 14,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: key === 'backspace' ? undefined : 22, fontWeight: 600,
-                      color: '#0B1F4E', background: '#F0F5FF',
-                      border: '1.5px solid #DDEAFF',
-                      boxShadow: '0 2px 8px rgba(11,31,78,0.08)',
+                      color: 'rgba(255,255,255,0.9)',
+                      background: 'rgba(255,255,255,0.09)',
+                      border: '1.5px solid rgba(255,255,255,0.13)',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
                       cursor: isLoggingIn ? 'not-allowed' : 'pointer',
                       transition: 'background 0.12s ease',
                     } : { opacity: 0, cursor: 'default', height: 52 }}
-                    onMouseEnter={e => { if (key) (e.currentTarget as HTMLButtonElement).style.background = '#E0ECFF'; }}
-                    onMouseLeave={e => { if (key) (e.currentTarget as HTMLButtonElement).style.background = '#F0F5FF'; }}
+                    onMouseEnter={e => { if (key) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.15)'; }}
+                    onMouseLeave={e => { if (key) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.09)'; }}
                   >
                     {key === 'backspace' ? (
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0B1F4E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.85)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/>
                         <line x1="18" y1="9" x2="12" y2="15"/>
                         <line x1="12" y1="9" x2="18" y2="15"/>
@@ -667,26 +663,27 @@ export default function LoginScreen() {
             height: 52, borderRadius: 999, border: 'none',
             cursor: (isLoggingIn || pin.length < 6) ? 'not-allowed' : 'pointer',
             background: isLoggingIn
-              ? 'linear-gradient(90deg, #6B7FA3 0%, #6B7FA3 100%)'
+              ? 'rgba(107,127,163,0.5)'
               : pin.length < 6
-                ? 'linear-gradient(90deg, #9BA8C0 0%, #9BA8C0 100%)'
-                : 'linear-gradient(90deg, #0B1F4E 0%, #1D4ED8 60%, #2563EB 100%)',
-            boxShadow: (isLoggingIn || pin.length < 6) ? 'none' : '0 6px 24px rgba(37,99,235,0.38)',
+                ? 'rgba(255,255,255,0.15)'
+                : 'linear-gradient(90deg, #1D4ED8 0%, #2563EB 60%, #3B82F6 100%)',
+            boxShadow: (isLoggingIn || pin.length < 6) ? 'none' : '0 6px 28px rgba(37,99,235,0.5)',
             letterSpacing: '0.02em', transition: 'all 0.2s ease',
+            color: pin.length < 6 && !isLoggingIn ? 'rgba(255,255,255,0.4)' : '#ffffff',
           }}
         >
           {isLoggingIn ? 'Signing in…' : 'Login'}
         </motion.button>
 
         {/* ── Footer links ──────────────────────────────────────────── */}
-        <div className="flex justify-between mt-4 text-sm">
+        <div className="flex justify-between mt-5 text-sm">
           <button
             type="button"
             onClick={() => setLocation('/forgot-pin')}
             className="font-medium transition-colors"
-            style={{ color: '#6B7FA3' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#0B1F4E'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#6B7FA3'; }}
+            style={{ color: 'rgba(147,197,253,0.65)' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.9)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'rgba(147,197,253,0.65)'; }}
           >
             Forgot PIN?
           </button>

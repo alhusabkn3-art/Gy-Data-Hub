@@ -1,0 +1,20 @@
+# Render services configuration using Docker builds for a pnpm workspace monorepo
+# This file defines two web services that build using the Dockerfiles in the artifacts folders.
+# Render will build these Dockerfiles and deploy the resulting containers.
+
+services:
+  - type: web
+    name: gy-data-frontend
+    env: docker
+    branch: main
+    # Path to the Dockerfile inside the repo
+    dockerfilePath: artifacts/gy-data/Dockerfile
+    # Auto-deploy on branch updates
+    autoDeploy: true
+
+  - type: web
+    name: api-server
+    env: docker
+    branch: main
+    dockerfilePath: artifacts/api-server/Dockerfile
+    autoDeploy: true

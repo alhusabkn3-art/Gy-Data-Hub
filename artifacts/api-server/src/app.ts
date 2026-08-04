@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import router from './routes/index.js';
 import { logger } from './lib/logger.js';
 import { sessionMiddleware } from './lib/session-store.js';
+import { attachFrontend } from './lib/frontend.js';
 
 const app: Express = express();
 
@@ -25,7 +26,7 @@ app.use(
 // Trust the first reverse proxy hop when running behind a load balancer.
 app.set('trust proxy', 1);
 
-// ── CORS ───────────────────────────────────────────────────────────────────────
+// ── CORS ────────────────────────────────────────────────────────────
 // In production, restrict to explicitly listed origins via CORS_ORIGINS env var.
 // In development, reflect any origin for convenience.
 const rawOrigins = process.env['CORS_ORIGINS'];
@@ -65,7 +66,7 @@ app.use(
 );
 app.use(express.urlencoded({ extended: true }));
 
-// ── Body safety guard ─────────────────────────────────────────────────────────
+// ── Body safety guard ────────────────────────────────────────────────────────
 // Requests with no Content-Type (e.g. curl with no -H) leave req.body undefined.
 // Destructuring undefined throws a TypeError, so default to {} here once globally.
 app.use((req, _res, next) => {
@@ -73,11 +74,11 @@ app.use((req, _res, next) => {
   next();
 });
 
-// ── Session ────────────────────────────────────────────────────────────────────
+// ── Session ───────────────────────────────────────────────────────────
 // Imported from lib/session-store so Socket.io can share the same middleware.
 app.use(sessionMiddleware);
 
-// ── Rate Limiting ──────────────────────────────────────────────────────────────
+// ── Rate Limiting ─────────────────────────────────────────────────────────
 
 // Auth mutations: 10 attempts per 15 minutes per IP (login, register, forgot-pin)
 app.use(
@@ -152,5 +153,15 @@ app.use(
 );
 
 app.use('/api', router);
+
+// Attach frontend static assets (serves Vite production build). This is safe to
+// run even if the frontend dist is absent — static middleware will simply 404
+// asset requests and the app continues serving API routes.
+try {
+  attachFrontend(app);
+  logger.info('Frontend static serving attached');
+} catch (e) {
+  logger.warn({ err: e }, 'Could not attach frontend static assets');
+}
 
 export default app;

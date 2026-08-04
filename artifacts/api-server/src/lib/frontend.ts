@@ -1,0 +1,26 @@
+import path from 'path';
+import fs from 'fs';
+import express, { type Express } from 'express';
+import { logger } from './logger.js';
+
+export function attachFrontend(app: Express): void {
+  const distDir = process.env['FRONTEND_DIST_DIR'] || 'public';
+  const staticDir = path.isAbsolute(distDir) ? distDir : path.join(process.cwd(), distDir);
+
+  if (!fs.existsSync(staticDir)) {
+    logger.warn({ staticDir }, 'Frontend dist directory not found; static assets will not be served');
+    return;
+  }
+
+  // Serve static assets with long cache headers for immutables
+  app.use(express.static(staticDir, { maxAge: '1y', index: false }));
+
+  // SPA fallback: serve index.html for unknown GET routes (allow API prefix to pass)
+  app.get('*', (req, res, next) => {
+    // skip API routes
+    if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) return next();
+    const index = path.join(staticDir, 'index.html');
+    if (!fs.existsSync(index)) return next();
+    res.sendFile(index);
+  });
+}

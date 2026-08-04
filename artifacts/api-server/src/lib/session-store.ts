@@ -12,8 +12,8 @@ import { logger } from './logger.js';
 
 const PgStore = connectPg(session);
 
-let sessionStore: ReturnType<typeof PgStore> | undefined;
-let sessionMiddleware: ReturnType<typeof session> | undefined;
+let _sessionStoreInstance: ReturnType<typeof PgStore> | undefined;
+let _sessionMiddlewareInstance: ReturnType<typeof session> | undefined;
 let initialized = false;
 
 function ensureInitialized() {
@@ -24,13 +24,13 @@ function ensureInitialized() {
     throw new Error('SESSION_SECRET env var is required but not set.');
   }
 
-  sessionStore = new PgStore({
+  _sessionStoreInstance = new PgStore({
     pool,
     tableName: 'session',
   });
 
-  sessionMiddleware = session({
-    store: sessionStore,
+  _sessionMiddlewareInstance = session({
+    store: _sessionStoreInstance,
     secret,
     resave: false,
     saveUninitialized: false,
@@ -48,12 +48,12 @@ function ensureInitialized() {
 
 export function getSessionStore() {
   ensureInitialized();
-  return sessionStore!;
+  return _sessionStoreInstance!;
 }
 
 export function getSessionMiddleware() {
   ensureInitialized();
-  return sessionMiddleware!;
+  return _sessionMiddlewareInstance!;
 }
 
 // Lazy getters for backward compatibility with existing imports

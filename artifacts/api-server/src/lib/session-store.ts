@@ -12,27 +12,78 @@ import { logger } from './logger.js';
 
 const PgStore = connectPg(session);
 
-const secret = process.env['SESSION_SECRET'];
-if (!secret) {
-  throw new Error('SESSION_SECRET env var is required but not set.');
+let sessionStore: ReturnType<typeof PgStore> | undefined;
+let sessionMiddleware: ReturnType<typeof session> | undefined;
+let initialized = false;
+
+function ensureInitialized() {
+  if (initialized) return;
+
+  const secret = process.env['SESSION_SECRET'];
+  if (!secret) {
+    throw new Error('SESSION_SECRET env var is required but not set.');
+  }
+
+  sessionStore = new PgStore({
+    pool,
+    tableName: 'session',
+  });
+
+  sessionMiddleware = session({
+    store: sessionStore,
+    secret,
+    resave: false,
+    saveUninitialized: false,
+    name: 'gyd_sid',
+    cookie: {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env['NODE_ENV'] === 'production',
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    },
+  });
+
+  initialized = true;
 }
 
-export const sessionStore = new PgStore({
-  pool,
-  tableName: 'session',
+export function getSessionStore() {
+  ensureInitialized();
+  return sessionStore!;
+}
+
+export function getSessionMiddleware() {
+  ensureInitialized();
+  return sessionMiddleware!;
+}
+
+// Lazy getters for backward compatibility with existing imports
+export const sessionStore = new Proxy({} as ReturnType<typeof PgStore>, {
+  get(target, prop) {
+    return (getSessionStore() as any)[prop];
+  },
+  has(target, prop) {
+    return prop in getSessionStore();
+  },
+  ownKeys(target) {
+    return Reflect.ownKeys(getSessionStore());
+  },
+  getOwnPropertyDescriptor(target, prop) {
+    return Reflect.getOwnPropertyDescriptor(getSessionStore(), prop);
+  },
 });
 
-export const sessionMiddleware = session({
-  store: sessionStore,
-  secret,
-  resave: false,
-  saveUninitialized: false,
-  name: 'gyd_sid',
-  cookie: {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env['NODE_ENV'] === 'production',
-    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+export const sessionMiddleware = new Proxy({} as ReturnType<typeof session>, {
+  get(target, prop) {
+    return (getSessionMiddleware() as any)[prop];
+  },
+  has(target, prop) {
+    return prop in getSessionMiddleware();
+  },
+  ownKeys(target) {
+    return Reflect.ownKeys(getSessionMiddleware());
+  },
+  getOwnPropertyDescriptor(target, prop) {
+    return Reflect.getOwnPropertyDescriptor(getSessionMiddleware(), prop);
   },
 });
 

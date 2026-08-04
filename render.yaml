@@ -1,20 +1,13 @@
-# Render services configuration using Docker builds for a pnpm workspace monorepo
-# This file defines two web services that build using the Dockerfiles in the artifacts folders.
-# Render will build these Dockerfiles and deploy the resulting containers.
+# Render deployment manifest for Gy-Data-Hub (single web service)
+# This configuration tells Render to build the Dockerfile at artifacts/api-server/Dockerfile
+# and deploy one Web Service that serves both the backend API and the frontend static build.
 
 services:
   - type: web
-    name: gy-data-frontend
-    env: docker
-    branch: main
-    # Path to the Dockerfile inside the repo
-    dockerfilePath: artifacts/gy-data/Dockerfile
-    # Auto-deploy on branch updates
-    autoDeploy: true
-
-  - type: web
-    name: api-server
+    name: gy-data
     env: docker
     branch: main
     dockerfilePath: artifacts/api-server/Dockerfile
     autoDeploy: true
+    # Optional: you can add service settings here such as instance type, health check path, env vars,
+    # or environment sections, but secrets must be set in the Render dashboard, not a file.

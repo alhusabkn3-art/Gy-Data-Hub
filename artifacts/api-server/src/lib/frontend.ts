@@ -23,9 +23,8 @@ export function attachFrontend(app: Express): void {
   app.use(express.static(staticDir, { maxAge: '1y', index: false }));
 
   // SPA fallback: serve index.html for unknown GET routes (allow API prefix to pass)
-  app.get('*', (req, res, next) => {
-    // skip API routes
-    if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) return next();
+  // Express 5: use regex pattern instead of wildcard "*"
+  app.get(/^(?!\/api|\/socket\.io).*$/, (req, res) => {
     res.sendFile(indexPath);
   });
 }

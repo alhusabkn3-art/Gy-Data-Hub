@@ -1,40 +1,50 @@
-# Builder for api-server using pnpm workspace install
-FROM node:20-alpine AS builder
+# Multi-stage Dockerfile: build frontend (Vite) and backend (api-server), then produce a small runtime image.
+# The image builds the monorepo using pnpm, builds the frontend at artifacts/gy-data,
+# builds the api-server, and copies the built frontend into the server image under /app/public
+# which the Express server will serve (FRONTEND_DIST_DIR defaults to public).
 
-# Enable corepack and activate specific pnpm version
+FROM node:20-bullseye AS builder
+
+# Enable corepack and prepare pnpm
 RUN corepack enable && corepack prepare pnpm@10.17.1 --activate
+WORKDIR /workspace
 
-WORKDIR /app
+# Copy workspace manifests first for caching
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 
-# Copy lockfile and workspace manifest early for caching
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
-
-# Copy entire repository (we need workspace packages and tooling)
+# Copy everything (we need sources for builds)
 COPY . .
 
-# Install all workspace dependencies (including dev deps for builds)
+# Install workspace dependencies
 RUN pnpm install --frozen-lockfile
 
-# Build only the api-server workspace package
-RUN pnpm --filter @workspace/api-server run build
+# Build frontend (artifacts/gy-data)
+WORKDIR /workspace/artifacts/gy-data
+RUN pnpm run build
+
+# Build api-server
+WORKDIR /workspace/artifacts/api-server
+RUN pnpm run build
 
 # Production runtime image
-FROM node:20-alpine AS runtime
+FROM node:20-bullseye-slim AS runtime
 
-# Ensure corepack/pnpm are available in runtime for running scripts
-RUN corepack enable && corepack prepare pnpm@10.17.1 --activate
-
+# Create non-root user and set working dir
+RUN groupadd -r app && useradd -r -g app app
 WORKDIR /app
 
-# Copy node_modules and built artifacts from builder
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/artifacts/api-server/dist ./artifacts/api-server/dist
-COPY --from=builder /app/artifacts/api-server/package.json ./artifacts/api-server/package.json
+# Copy built server and frontend
+COPY --from=builder --chown=app:app /workspace/artifacts/api-server/dist ./dist
+COPY --from=builder --chown=app:app /workspace/artifacts/api-server/package.json ./package.json
+COPY --from=builder --chown=app:app /workspace/artifacts/gy-data/dist ./public
 
+# Copy node_modules from builder to avoid reinstalling in runtime
+COPY --from=builder --chown=app:app /workspace/node_modules ./node_modules
+
+USER app
 ENV NODE_ENV=production
 ENV PORT=3000
 
 EXPOSE 3000
 
-# Use pnpm to run the workspace start script for api-server
-CMD ["pnpm", "--filter", "@workspace/api-server", "run", "start"]
+CMD ["node", "--enable-source-maps", "dist/index.mjs"]

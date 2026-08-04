@@ -12,6 +12,13 @@ export function attachFrontend(app: Express): void {
     return;
   }
 
+  // Check for index.html to confirm frontend is actually built
+  const indexPath = path.join(staticDir, 'index.html');
+  if (!fs.existsSync(indexPath)) {
+    logger.warn({ staticDir, indexPath }, 'Frontend index.html not found; static serving disabled');
+    return;
+  }
+
   // Serve static assets with long cache headers for immutables
   app.use(express.static(staticDir, { maxAge: '1y', index: false }));
 
@@ -19,8 +26,6 @@ export function attachFrontend(app: Express): void {
   app.get('*', (req, res, next) => {
     // skip API routes
     if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) return next();
-    const index = path.join(staticDir, 'index.html');
-    if (!fs.existsSync(index)) return next();
-    res.sendFile(index);
+    res.sendFile(indexPath);
   });
 }

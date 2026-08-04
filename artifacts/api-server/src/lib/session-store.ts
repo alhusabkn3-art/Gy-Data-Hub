@@ -56,7 +56,14 @@ export function getSessionMiddleware() {
   return _sessionMiddlewareInstance!;
 }
 
-// Lazy getters for backward compatibility with existing imports
+// ── Middleware function wrapper ──────────────────────────────────────────
+// This is a real Express middleware function that delegates to the lazy-initialized instance.
+// Express recognizes this as a valid middleware and will call it for each request.
+export const sessionMiddleware = (req: any, res: any, next: any) => {
+  getSessionMiddleware()(req, res, next);
+};
+
+// Lazy getter for sessionStore (backward compatibility)
 export const sessionStore = new Proxy({} as ReturnType<typeof PgStore>, {
   get(target, prop) {
     return (getSessionStore() as any)[prop];
@@ -69,21 +76,6 @@ export const sessionStore = new Proxy({} as ReturnType<typeof PgStore>, {
   },
   getOwnPropertyDescriptor(target, prop) {
     return Reflect.getOwnPropertyDescriptor(getSessionStore(), prop);
-  },
-});
-
-export const sessionMiddleware = new Proxy({} as ReturnType<typeof session>, {
-  get(target, prop) {
-    return (getSessionMiddleware() as any)[prop];
-  },
-  has(target, prop) {
-    return prop in getSessionMiddleware();
-  },
-  ownKeys(target) {
-    return Reflect.ownKeys(getSessionMiddleware());
-  },
-  getOwnPropertyDescriptor(target, prop) {
-    return Reflect.getOwnPropertyDescriptor(getSessionMiddleware(), prop);
   },
 });
 

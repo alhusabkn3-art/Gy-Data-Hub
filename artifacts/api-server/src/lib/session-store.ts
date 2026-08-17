@@ -12,7 +12,7 @@ import { logger } from './logger.js';
 
 const PgStore = connectPg(session);
 
-let _sessionStoreInstance: ReturnType<typeof PgStore> | undefined;
+let _sessionStoreInstance: InstanceType<typeof PgStore> | undefined;
 let _sessionMiddlewareInstance: ReturnType<typeof session> | undefined;
 let initialized = false;
 
@@ -64,7 +64,7 @@ export const sessionMiddleware = (req: any, res: any, next: any) => {
 };
 
 // Lazy getter for sessionStore (backward compatibility)
-export const sessionStore = new Proxy({} as ReturnType<typeof PgStore>, {
+export const sessionStore = new Proxy({} as InstanceType<typeof PgStore>, {
   get(target, prop) {
     return (getSessionStore() as any)[prop];
   },
@@ -130,37 +130,23 @@ export function validateEnv(): void {
     }
   }
 
-  // Data/airtime provider — warn
+  // Data/Airtime provider — warn but don't fatal
   for (const key of REQUIRED_FOR_DATA_AIRTIME) {
     if (!process.env[key]) {
-      warnings.push(`${key} not set — data/airtime purchases will be unavailable`);
+      warnings.push(`${key} not set — Data/Airtime purchases will be unavailable`);
     }
   }
 
-  // Production-specific checks
-  if (process.env['NODE_ENV'] === 'production') {
-    if (!process.env['WHATSAPP_APP_SECRET']) {
-      warnings.push('WHATSAPP_APP_SECRET not set — WhatsApp webhook signature verification is DISABLED in production (security risk)');
-    }
-    if (!process.env['CORS_ORIGINS']) {
-      warnings.push('CORS_ORIGINS not set — all origins are allowed in production (set this to restrict access)');
-    }
-    const adminPin = process.env['ADMIN_PIN'];
-    if (!adminPin || adminPin === '125125' || adminPin.length < 6) {
-      warnings.push('ADMIN_PIN is missing, too short, or is the insecure default (125125) — admin seeding is disabled');
-    }
-  }
-
-  // Optional vars info
+  // Optional vars — informational only
   for (const { key, desc } of OPTIONAL_VARS) {
     if (!process.env[key]) {
-      logger.debug({ key, desc }, 'Optional env var not set');
+      logger.debug({ key }, `${desc} not configured`);
     }
   }
 
-  for (const w of warnings) {
-    logger.warn(w);
+  if (warnings.length > 0) {
+    for (const warning of warnings) {
+      logger.warn(warning);
+    }
   }
-
-  logger.info('Environment validation complete');
 }

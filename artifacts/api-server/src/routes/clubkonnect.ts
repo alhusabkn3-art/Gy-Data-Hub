@@ -31,7 +31,7 @@ function requireCredentials(_req: Request, res: Response, next: NextFunction): v
   if (!process.env['CLUBKONNECT_USER_ID'] || !process.env['CLUBKONNECT_API_KEY']) {
     res.status(503).json({
       error: 'ClubKonnect credentials not configured.',
-      hint:  'Add CLUBKONNECT_USER_ID and CLUBKONNECT_API_KEY to the deployment environment.',
+      hint: 'Add CLUBKONNECT_USER_ID and CLUBKONNECT_API_KEY to the deployment environment.',
     });
     return;
   }
@@ -48,6 +48,7 @@ router.get('/balance', async (req: Request, res: Response): Promise<void> => {
     res.status(401).json({ error: 'Admin session required.' });
     return;
   }
+
   try {
     const data = await ck.getBalance();
     res.json({ success: true, balance: data.balance ?? data.APIBalance });
@@ -63,15 +64,28 @@ router.get('/balance', async (req: Request, res: Response): Promise<void> => {
 // No auth required — plan listings are public information.
 router.get('/data-plans', async (req: Request, res: Response): Promise<void> => {
   const network = req.query['network'];
+
   if (!network || typeof network !== 'string') {
-    res.status(400).json({ error: 'Query param "network" is required (mtn | glo | airtel | 9mobile).' });
+    res.status(400).json({
+      error: 'Query param "network" is required (mtn | glo | airtel | 9mobile).',
+    });
     return;
   }
+
   try {
     const plans = await ck.getDataPlans(network);
 
-    // Enrich plans with cashback data from pricing_rules
-    let enriched = plans;
+    // Enrich plans with cashback data from pricing_rules.
+    // Keep the original CKDataPlan shape intact and add optional
+    // cashback fields instead of typing the plan as Record<string, unknown>.
+    let enriched = plans.map((p) => ({
+      ...p,
+      cashback_enabled: false,
+      cashback_type: undefined as string | undefined,
+      cashback_value: undefined as string | undefined,
+      cashback_amount: undefined as string | undefined,
+    }));
+
     try {
       const cbResult = await db.execute(sql`
         SELECT plan_id, cashback_enabled, cashback_type, cashback_value
@@ -80,39 +94,79 @@ router.get('/data-plans', async (req: Request, res: Response): Promise<void> => 
           AND (network = ${network.toUpperCase()} OR provider = ${network.toUpperCase()})
           AND cashback_enabled = true
       `);
-      const globalResult = await db.execute(sql`SELECT enabled FROM cashback_settings LIMIT 1`);
-      const globalEnabled = globalResult.rows[0] && (globalResult.rows[0] as { enabled: boolean }).enabled;
+
+      const globalResult = await db.execute(
+        sql`SELECT enabled FROM cashback_settings LIMIT 1`,
+      );
+
+      const globalEnabled =
+        globalResult.rows[0] &&
+        (globalResult.rows[0] as { enabled: boolean }).enabled;
 
       if (globalEnabled && cbResult.rows.length > 0) {
-        const cbMap = new Map<string, { cashback_type: string; cashback_value: string }>();
+        const cbMap = new Map<
+          string,
+          {
+            cashback_type: string;
+            cashback_value: string;
+          }
+        >();
+
         for (const row of cbResult.rows) {
-          const r = row as { plan_id: string; cashback_type: string; cashback_value: string };
-          cbMap.set(r.plan_id, { cashback_type: r.cashback_type, cashback_value: r.cashback_value });
+          const r = row as {
+            plan_id: string;
+            cashback_type: string;
+            cashback_value: string;
+          };
+
+          cbMap.set(r.plan_id, {
+            cashback_type: r.cashback_type,
+            cashback_value: r.cashback_value,
+          });
         }
-        enriched = plans.map((p: Record<string, unknown>) => {
-          const cb = cbMap.get(p['DataPlan'] as string);
+
+        enriched = plans.map((p) => {
+          const cb = cbMap.get(p.DataPlan);
+
           if (cb) {
-            const price = parseFloat(p['Price'] as string);
-            const val   = parseFloat(cb.cashback_value);
-            const amt   = cb.cashback_type === 'percentage'
-              ? (price * val / 100).toFixed(0)
-              : val.toFixed(0);
+            const price = parseFloat(String(p.Price));
+            const val = parseFloat(cb.cashback_value);
+
+            const amt =
+              cb.cashback_type === 'percentage'
+                ? (price * val / 100).toFixed(0)
+                : val.toFixed(0);
+
             return {
               ...p,
               cashback_enabled: true,
-              cashback_type:    cb.cashback_type,
-              cashback_value:   cb.cashback_value,
-              cashback_amount:  amt,
+              cashback_type: cb.cashback_type,
+              cashback_value: cb.cashback_value,
+              cashback_amount: amt,
             };
           }
-          return { ...p, cashback_enabled: false };
+
+          return {
+            ...p,
+            cashback_enabled: false,
+            cashback_type: undefined,
+            cashback_value: undefined,
+            cashback_amount: undefined,
+          };
         });
       }
     } catch (enrichErr) {
-      logger.warn({ enrichErr }, 'Cashback enrichment failed — returning plans without cashback info');
+      logger.warn(
+        { enrichErr },
+        'Cashback enrichment failed — returning plans without cashback info',
+      );
     }
 
-    res.json({ success: true, network, plans: enriched });
+    res.json({
+      success: true,
+      network,
+      plans: enriched,
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     logger.error({ err, network }, 'ClubKonnect data-plans fetch failed');
@@ -128,21 +182,27 @@ router.get('/status', async (req: Request, res: Response): Promise<void> => {
     res.status(401).json({ error: 'Admin session required.' });
     return;
   }
+
   const requestId = req.query['requestId'];
+
   if (!requestId || typeof requestId !== 'string') {
-    res.status(400).json({ error: 'Query param "requestId" is required.' });
+    res.status(400).json({
+      error: 'Query param "requestId" is required.',
+    });
     return;
   }
+
   try {
-    const result     = await ck.getTransactionStatus(requestId);
+    const result = await ck.getTransactionStatus(requestId);
     const normalized = normalizeCKStatus(result.status);
+
     res.json({
-      success:          true,
+      success: true,
       requestId,
       normalized,
-      vendorStatus:     result.status,
-      providerRef:      result.OrderID ?? result.ident,
-      rawResult:        result,
+      vendorStatus: result.status,
+      providerRef: result.OrderID ?? result.ident,
+      rawResult: result,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

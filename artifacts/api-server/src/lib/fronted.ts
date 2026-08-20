@@ -4,7 +4,9 @@ import express, { type Express } from 'express';
 import { logger } from './logger.js';
 
 export function attachFrontend(app: Express): void {
-  const distDir = process.env['FRONTEND_DIST_DIR'] || 'public';
+  const distDir =
+    process.env['FRONTEND_DIST_DIR'] || 'public';
+
   const staticDir = path.isAbsolute(distDir)
     ? distDir
     : path.join(process.cwd(), distDir);
@@ -18,11 +20,17 @@ export function attachFrontend(app: Express): void {
   }
 
   // Check for index.html to confirm frontend is actually built
-  const indexPath = path.join(staticDir, 'index.html');
+  const indexPath = path.join(
+    staticDir,
+    'index.html',
+  );
 
   if (!fs.existsSync(indexPath)) {
     logger.warn(
-      { staticDir, indexPath },
+      {
+        staticDir,
+        indexPath,
+      },
       'Frontend index.html not found; static serving disabled',
     );
     return;
@@ -36,7 +44,8 @@ export function attachFrontend(app: Express): void {
     }),
   );
 
-  // SPA fallback: serve index.html for unknown GET routes (allow API prefix to pass)
+  // SPA fallback: serve index.html for unknown GET routes
+  // Allow API prefix to pass through.
   // Express 5: use regex pattern instead of wildcard "*"
   app.get(
     /^(?!\/api|\/socket\.io).*$/,

@@ -11,15 +11,15 @@ const BASE = '/api/clubkonnect';
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export interface DataPlan {
-  DataPlan: string;      // Clubkonnect plan code — pass this back when purchasing
-  DataPlanName: string;  // e.g. "1GB for 30 Days"
-  DataPlanType: string;  // e.g. "SME" | "Direct"
-  Price: string;         // Naira string e.g. "270.00"
-  // Cashback info — present when global cashback is on and this plan has cashback configured
+  DataPlan: string;
+  DataPlanName: string;
+  DataPlanType: string;
+  Price: string;
+
   cashback_enabled?: boolean;
   cashback_type?: 'percentage' | 'fixed';
   cashback_value?: string;
-  cashback_amount?: string;  // pre-calculated cashback in ₦ for display
+  cashback_amount?: string;
 }
 
 export interface PurchaseResult {
@@ -30,31 +30,46 @@ export interface PurchaseResult {
   pending?: boolean;
   error?: string;
   balance?: string;
-  // airtime
+
   amount?: string;
   network?: string;
   phone?: string;
-  // data
+
   planName?: string;
   price?: string;
-  // cashback
+
   cashbackApplied?: boolean;
   cashbackAmount?: number;
 }
 
 // ── Core fetch wrapper ───────────────────────────────────────────────────────
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
-    ...init,
-  });
+async function apiFetch<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const res = await fetch(
+    `${BASE}${path}`,
+    {
+      headers: {
+        'Content-Type':
+          'application/json',
+        ...(init?.headers ?? {}),
+      },
+      ...init,
+    },
+  );
 
-  const json = await res.json() as T & { error?: string };
+  const json =
+    (await res.json()) as T & {
+      error?: string;
+    };
 
   if (!res.ok) {
-    // Surface the backend error message clearly
-    throw new Error((json as { error?: string }).error ?? `API error ${res.status}`);
+    throw new Error(
+      (json as { error?: string }).error ??
+        `API error ${res.status}`,
+    );
   }
 
   return json;
@@ -62,28 +77,46 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
-/**
- * Check the Clubkonnect wallet balance (admin/health use).
- */
-export async function checkBalance(): Promise<{ success: boolean; balance: string }> {
+export async function checkBalance(): Promise<{
+  success: boolean;
+  balance: string;
+}> {
   return apiFetch('/balance');
 }
 
 /**
- * Fetch available data plans for the given network.
- * Returns an empty array if none found or API is unconfigured.
+ * FIX:
+ * Phone is now sent to the backend because ClubKonnect requires
+ * MobileNumber when requesting APIDatabundlePlansV1.asp.
  */
-export async function fetchDataPlans(network: string): Promise<DataPlan[]> {
-  const data = await apiFetch<{ success: boolean; plans: DataPlan[] }>(
-    `/data-plans?network=${encodeURIComponent(network)}`,
-  );
+export async function fetchDataPlans(
+  network: string,
+  phone: string,
+): Promise<DataPlan[]> {
+  const normalizedPhone =
+    phone.trim();
+
+  if (!normalizedPhone) {
+    throw new Error(
+      'Phone number is required to load data plans.',
+    );
+  }
+
+  const data =
+    await apiFetch<{
+      success: boolean;
+      plans: DataPlan[];
+    }>(
+      `/data-plans?network=${encodeURIComponent(
+        network,
+      )}&phone=${encodeURIComponent(
+        normalizedPhone,
+      )}`,
+    );
+
   return data.plans ?? [];
 }
 
-/**
- * Purchase airtime.
- * Throws if the request fails or the purchase is unsuccessful.
- */
 export async function buyAirtime(params: {
   network: string;
   phone: string;
@@ -95,28 +128,15 @@ export async function buyAirtime(params: {
   });
 }
 
-/**
- * Purchase data bundle.
- * Throws if the request fails or the purchase is unsuccessful.
- */
 export async function buyData(params: {
   network: string;
   phone: string;
   planCode: string;
   planName: string;
-  planPrice: string;
+  amount: number;
 }): Promise<PurchaseResult> {
   return apiFetch('/data', {
     method: 'POST',
     body: JSON.stringify(params),
   });
-}
-
-/**
- * Query the status of a previous transaction by its requestId.
- */
-export async function getTransactionStatus(
-  requestId: string,
-): Promise<{ success: boolean; requestId: string; result: Record<string, unknown> }> {
-  return apiFetch(`/status?requestId=${encodeURIComponent(requestId)}`);
 }

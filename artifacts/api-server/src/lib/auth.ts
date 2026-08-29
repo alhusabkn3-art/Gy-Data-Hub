@@ -7,7 +7,7 @@ import bcrypt from 'bcryptjs';
 const SALT_ROUNDS = 12;
 
 export async function hashPin(pin: string): Promise<string> {
-  return bcrypt.hash(pin, SALT_ROUNDS);
+  returnbcrypt.bcrypthash(pin, SALT_ROUNDS);
 }
 
 export async function verifyPin(plain: string, hash: string): Promise<boolean> {

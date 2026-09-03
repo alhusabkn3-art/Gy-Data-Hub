@@ -1,95 +1,197 @@
-import { Router, type Request, type Response } from "express";
-import {
-  getManualDataPlans,
-  isSmeDataNetwork,
-} from "../lib/smedata.js";
+import axios from 'axios';
 
-const router = Router();
+const BASE_URL = 'https://smedata.ng/wp-json/api/v1';
 
-/**
- * GET /api/smedata/data-plans
- *
- * Data plans are maintained manually in lib/smedata.ts.
- *
- * Example:
- *   /api/smedata/data-plans?network=mtn
- *   /api/smedata/data-plans?network=glo
- *   /api/smedata/data-plans?network=airtel
- *
- * No phone number is required when loading the plan catalogue.
- */
-router.get(
-  "/data-plans",
-  (req: Request, res: Response): void => {
-    try {
-      const network = String(
-        req.query["network"] ?? "",
-      )
-        .trim()
-        .toLowerCase();
+function getToken(): string {
+  const token = process.env.SMEDATA_API_TOKEN?.trim();
 
-      if (!network) {
-        res.status(400).json({
-          success: false,
-          error: 'Query param "network" is required.',
-        });
-        return;
-      }
+  if (!token) {
+    throw new Error('SMEDATA_API_TOKEN is not configured');
+  }
 
-      if (!isSmeDataNetwork(network)) {
-        res.status(400).json({
-          success: false,
-          error:
-            "Unsupported SMEDATA network. Supported networks: mtn, glo, airtel.",
-        });
-        return;
-      }
+  return token;
+}
 
-      const plans = getManualDataPlans(network);
+function normalizePhone(phone: string): string {
+  let value = String(phone ?? '').replace(/\D/g, '');
 
-      res.json({
-        success: true,
-        network,
-        plans,
-      });
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Failed to load SMEDATA data plans.";
+  if (value.startsWith('234')) {
+    value = `0${value.slice(3)}`;
+  }
 
-      res.status(500).json({
-        success: false,
-        error: message,
-      });
-    }
-  },
-);
+  if (!/^0\d{10}$/.test(value)) {
+    throw new Error('Invalid Nigerian phone number');
+  }
 
-/**
- * GET /api/smedata/status
- *
- * Returns provider configuration status.
- * The actual API token is NEVER returned.
- */
-router.get(
-  "/status",
-  (_req: Request, res: Response): void => {
-    const configured = Boolean(
-      process.env["SMEDATA_API_TOKEN"]?.trim(),
-    );
+  return value;
+}
 
-    res.json({
+function normalizeNetwork(network: string): string {
+  const value = String(network ?? '').trim().toLowerCase();
+
+  const networks: Record<string, string> = {
+    mtn: 'mtn',
+    glo: 'glo',
+    airtel: 'airtel',
+  };
+
+  const result = networks[value];
+
+  if (!result) {
+    throw new Error(`SMEDATA does not support network: ${network}`);
+  }
+
+  return result;
+}
+
+function normalizeSize(size: string): string {
+  return String(size ?? '')
+    .trim()
+    .replace(/\s+/g, '')
+    .toLowerCase();
+}
+
+export interface SmedataPurchaseParams {
+  network: string;
+  phone: string;
+  size: string;
+}
+
+export interface SmedataPurchaseResult {
+  success: boolean;
+  status: 'success' | 'processing' | 'failure';
+  message: string;
+  providerRef: string | null;
+  raw: unknown;
+}
+
+export async function purchaseSmedataData(
+  params: SmedataPurchaseParams,
+): Promise<SmedataPurchaseResult> {
+  const token = getToken();
+  const phone = normalizePhone(params.phone);
+  const network = normalizeNetwork(params.network);
+  const size = normalizeSize(params.size);
+
+  if (!size) {
+    throw new Error('Data plan size is required');
+  }
+
+  const response = await axios.get(`${BASE_URL}/data`, {
+    params: {
+      token,
+      phone,
+      network,
+      size,
+    },
+    timeout: 30000,
+    validateStatus: () => true,
+  });
+
+  const data = response.data;
+
+  const code = String(data?.code ?? '').toLowerCase();
+  const message = String(data?.message ?? 'Unknown SMEDATA response');
+
+  const providerRef =
+    data?.data?.order_id !== undefined && data?.data?.order_id !== null
+      ? String(data.data.order_id)
+      : null;
+
+  if (code === 'success') {
+    return {
       success: true,
-      provider: "SMEDATA",
-      configured,
-      supportedNetworks: [
-        "mtn",
-        "glo",
-        "airtel",
-      ],
-    });
-  },
-);
+      status: 'success',
+      message,
+      providerRef,
+      raw: data,
+    };
+  }
 
-export default router;
+  if (
+    code === 'processing' ||
+    message.toLowerCase().includes('processing')
+  ) {
+    return {
+      success: false,
+      status: 'processing',
+      message,
+      providerRef,
+      raw: data,
+    };
+  }
+
+  return {
+    success: false,
+    status: 'failure',
+    message,
+    providerRef,
+    raw: data,
+  };
+}
+
+export async function requerySmedataData(
+  orderId: string,
+): Promise<SmedataPurchaseResult> {
+  const token = getToken();
+
+  const cleanOrderId = String(orderId ?? '').trim();
+
+  if (!cleanOrderId) {
+    throw new Error('SMEDATA order ID is required');
+  }
+
+  const response = await axios.get(`${BASE_URL}/requery`, {
+    params: {
+      token,
+      orderid: cleanOrderId,
+    },
+    timeout: 30000,
+    validateStatus: () => true,
+  });
+
+  const data = response.data;
+
+  const code = String(data?.code ?? '').toLowerCase();
+  const message = String(data?.message ?? 'Unknown SMEDATA response');
+
+  const providerRef =
+    data?.data?.order_id !== undefined && data?.data?.order_id !== null
+      ? String(data.data.order_id)
+      : cleanOrderId;
+
+  if (code === 'success') {
+    return {
+      success: true,
+      status: 'success',
+      message,
+      providerRef,
+      raw: data,
+    };
+  }
+
+  if (
+    code === 'processing' ||
+    message.toLowerCase().includes('processing')
+  ) {
+    return {
+      success: false,
+      status: 'processing',
+      message,
+      providerRef,
+      raw: data,
+    };
+  }
+
+  return {
+    success: false,
+    status: 'failure',
+    message,
+    providerRef,
+    raw: data,
+  };
+}
+
+export function isSmedataConfigured(): boolean {
+  return Boolean(process.env.SMEDATA_API_TOKEN?.trim());
+}

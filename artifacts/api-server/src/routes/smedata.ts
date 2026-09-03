@@ -1,197 +1,583 @@
-import axios from 'axios';
+/**
+ * /api/smedata
+ *
+ * SMEDATA data routes.
+ *
+ * Data plans are maintained manually in:
+ *   ../lib/smedata.ts
+ *
+ * SMEDATA credentials remain server-side.
+ */
 
-const BASE_URL = 'https://smedata.ng/wp-json/api/v1';
+import {
+  Router,
+  type Request,
+  type Response,
+} from 'express';
 
-function getToken(): string {
-  const token = process.env.SMEDATA_API_TOKEN?.trim();
+import {
+  getManualDataPlans,
+  isSmeDataNetwork,
+} from '../lib/smedata.js';
 
-  if (!token) {
-    throw new Error('SMEDATA_API_TOKEN is not configured');
-  }
+import { db } from '@workspace/db';
+import { sql } from 'drizzle-orm';
+import { logger } from '../lib/logger.js';
 
-  return token;
-}
+const router = Router();
 
-function normalizePhone(phone: string): string {
-  let value = String(phone ?? '').replace(/\D/g, '');
+/* ============================================================================
+ * HELPERS
+ * ========================================================================== */
 
-  if (value.startsWith('234')) {
-    value = `0${value.slice(3)}`;
-  }
-
-  if (!/^0\d{10}$/.test(value)) {
-    throw new Error('Invalid Nigerian phone number');
-  }
-
-  return value;
-}
-
-function normalizeNetwork(network: string): string {
-  const value = String(network ?? '').trim().toLowerCase();
-
-  const networks: Record<string, string> = {
-    mtn: 'mtn',
-    glo: 'glo',
-    airtel: 'airtel',
-  };
-
-  const result = networks[value];
-
-  if (!result) {
-    throw new Error(`SMEDATA does not support network: ${network}`);
-  }
-
-  return result;
-}
-
-function normalizeSize(size: string): string {
-  return String(size ?? '')
+function normalizeNetwork(
+  value: unknown,
+): string {
+  return String(value ?? '')
     .trim()
-    .replace(/\s+/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, '');
+}
+
+function normalizePlanId(
+  value: unknown,
+): string {
+  return String(value ?? '')
+    .trim()
     .toLowerCase();
 }
 
-export interface SmedataPurchaseParams {
-  network: string;
-  phone: string;
-  size: string;
+function normalizePlanName(
+  value: unknown,
+): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\(\)\[\]\{\}]/g, ' ')
+    .replace(/[_\-\/]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-export interface SmedataPurchaseResult {
-  success: boolean;
-  status: 'success' | 'processing' | 'failure';
-  message: string;
-  providerRef: string | null;
-  raw: unknown;
+function compactPlanName(
+  value: unknown,
+): string {
+  return normalizePlanName(
+    value,
+  ).replace(
+    /[^a-z0-9]/g,
+    '',
+  );
 }
 
-export async function purchaseSmedataData(
-  params: SmedataPurchaseParams,
-): Promise<SmedataPurchaseResult> {
-  const token = getToken();
-  const phone = normalizePhone(params.phone);
-  const network = normalizeNetwork(params.network);
-  const size = normalizeSize(params.size);
+function planNamesMatch(
+  first: unknown,
+  second: unknown,
+): boolean {
+  const a =
+    normalizePlanName(first);
 
-  if (!size) {
-    throw new Error('Data plan size is required');
+  const b =
+    normalizePlanName(second);
+
+  if (!a || !b) {
+    return false;
   }
 
-  const response = await axios.get(`${BASE_URL}/data`, {
-    params: {
-      token,
-      phone,
-      network,
-      size,
-    },
-    timeout: 30000,
-    validateStatus: () => true,
-  });
-
-  const data = response.data;
-
-  const code = String(data?.code ?? '').toLowerCase();
-  const message = String(data?.message ?? 'Unknown SMEDATA response');
-
-  const providerRef =
-    data?.data?.order_id !== undefined && data?.data?.order_id !== null
-      ? String(data.data.order_id)
-      : null;
-
-  if (code === 'success') {
-    return {
-      success: true,
-      status: 'success',
-      message,
-      providerRef,
-      raw: data,
-    };
+  if (a === b) {
+    return true;
   }
 
   if (
-    code === 'processing' ||
-    message.toLowerCase().includes('processing')
+    compactPlanName(a) ===
+    compactPlanName(b)
   ) {
-    return {
-      success: false,
-      status: 'processing',
-      message,
-      providerRef,
-      raw: data,
-    };
+    return true;
   }
 
-  return {
-    success: false,
-    status: 'failure',
-    message,
-    providerRef,
-    raw: data,
-  };
-}
+  const aTokens =
+    a.split(' ').filter(Boolean);
 
-export async function requerySmedataData(
-  orderId: string,
-): Promise<SmedataPurchaseResult> {
-  const token = getToken();
-
-  const cleanOrderId = String(orderId ?? '').trim();
-
-  if (!cleanOrderId) {
-    throw new Error('SMEDATA order ID is required');
-  }
-
-  const response = await axios.get(`${BASE_URL}/requery`, {
-    params: {
-      token,
-      orderid: cleanOrderId,
-    },
-    timeout: 30000,
-    validateStatus: () => true,
-  });
-
-  const data = response.data;
-
-  const code = String(data?.code ?? '').toLowerCase();
-  const message = String(data?.message ?? 'Unknown SMEDATA response');
-
-  const providerRef =
-    data?.data?.order_id !== undefined && data?.data?.order_id !== null
-      ? String(data.data.order_id)
-      : cleanOrderId;
-
-  if (code === 'success') {
-    return {
-      success: true,
-      status: 'success',
-      message,
-      providerRef,
-      raw: data,
-    };
-  }
+  const bTokens =
+    new Set(
+      b.split(' ').filter(Boolean),
+    );
 
   if (
-    code === 'processing' ||
-    message.toLowerCase().includes('processing')
+    aTokens.length === 0 ||
+    bTokens.size === 0
   ) {
-    return {
-      success: false,
-      status: 'processing',
-      message,
-      providerRef,
-      raw: data,
-    };
+    return false;
   }
 
-  return {
-    success: false,
-    status: 'failure',
-    message,
-    providerRef,
-    raw: data,
-  };
+  return aTokens.every(
+    (token) =>
+      bTokens.has(token),
+  );
 }
 
-export function isSmedataConfigured(): boolean {
-  return Boolean(process.env.SMEDATA_API_TOKEN?.trim());
-}
+/* ============================================================================
+ * DATA PLANS
+ * ========================================================================== */
+
+/**
+ * GET /api/smedata/data-plans?network=mtn
+ *
+ * No phone number is required.
+ *
+ * Plans come from the manual SMEDATA catalogue.
+ *
+ * Selling prices come from Super Admin pricing_rules.
+ */
+router.get(
+  '/data-plans',
+  async (
+    req: Request,
+    res: Response,
+  ): Promise<void> => {
+    const network =
+      normalizeNetwork(
+        req.query['network'],
+      );
+
+    if (!network) {
+      res.status(400).json({
+        error:
+          'Query param "network" is required (mtn | glo | airtel).',
+      });
+
+      return;
+    }
+
+    if (
+      !isSmeDataNetwork(
+        network,
+      )
+    ) {
+      res.status(400).json({
+        error:
+          `SMEDATA does not support network "${network}".`,
+      });
+
+      return;
+    }
+
+    try {
+      /* ----------------------------------------------------------------------
+       * 1. MANUAL SMEDATA CATALOGUE
+       * -------------------------------------------------------------------- */
+
+      const manualPlans =
+        getManualDataPlans(
+          network,
+        );
+
+      /* ----------------------------------------------------------------------
+       * 2. SUPER ADMIN PRICING RULES
+       * -------------------------------------------------------------------- */
+
+      const pricingResult =
+        await db.execute(
+          sql`
+            SELECT
+              id,
+              plan_id,
+              plan_name,
+              provider,
+              network,
+              cost_price,
+              selling_price,
+              enabled,
+              cashback_enabled,
+              cashback_type,
+              cashback_value
+            FROM pricing_rules
+            WHERE service_type = 'data'
+              AND enabled = true
+              AND selling_price IS NOT NULL
+              AND selling_price > 0
+            ORDER BY plan_name
+          `,
+        );
+
+      type PricingRule = {
+        id: string;
+        plan_id:
+          | string
+          | null;
+        plan_name: string;
+        provider:
+          | string
+          | null;
+        network:
+          | string
+          | null;
+        cost_price:
+          | string
+          | number
+          | null;
+        selling_price:
+          | string
+          | number
+          | null;
+        enabled: boolean;
+        cashback_enabled:
+          | boolean
+          | null;
+        cashback_type:
+          | string
+          | null;
+        cashback_value:
+          | string
+          | number
+          | null;
+      };
+
+      const rules: PricingRule[] =
+        pricingResult.rows
+          .map(
+            (row) => {
+              const r =
+                row as Record<
+                  string,
+                  unknown
+                >;
+
+              return {
+                id:
+                  String(
+                    r['id'] ??
+                      '',
+                  ),
+
+                plan_id:
+                  r['plan_id'] !==
+                    null &&
+                  r['plan_id'] !==
+                    undefined
+                    ? String(
+                        r['plan_id'],
+                      ).trim()
+                    : null,
+
+                plan_name:
+                  String(
+                    r['plan_name'] ??
+                      '',
+                  ).trim(),
+
+                provider:
+                  r['provider'] !==
+                    null &&
+                  r['provider'] !==
+                    undefined
+                    ? String(
+                        r['provider'],
+                      ).trim()
+                    : null,
+
+                network:
+                  r['network'] !==
+                    null &&
+                  r['network'] !==
+                    undefined
+                    ? String(
+                        r['network'],
+                      ).trim()
+                    : null,
+
+                cost_price:
+                  r['cost_price'] as
+                    | string
+                    | number
+                    | null,
+
+                selling_price:
+                  r['selling_price'] as
+                    | string
+                    | number
+                    | null,
+
+                enabled:
+                  Boolean(
+                    r['enabled'],
+                  ),
+
+                cashback_enabled:
+                  r[
+                    'cashback_enabled'
+                  ] as
+                    | boolean
+                    | null,
+
+                cashback_type:
+                  r[
+                    'cashback_type'
+                  ] as
+                    | string
+                    | null,
+
+                cashback_value:
+                  r[
+                    'cashback_value'
+                  ] as
+                    | string
+                    | number
+                    | null,
+              };
+            },
+          )
+          .filter(
+            (rule) =>
+              rule.enabled &&
+              Number(
+                rule.selling_price ??
+                  0,
+              ) > 0,
+          );
+
+      /* ----------------------------------------------------------------------
+       * 3. MATCH NETWORK
+       * -------------------------------------------------------------------- */
+
+      const networkRules =
+        rules.filter(
+          (rule) => {
+            const ruleNetwork =
+              normalizeNetwork(
+                rule.network,
+              );
+
+            const ruleProvider =
+              normalizeNetwork(
+                rule.provider,
+              );
+
+            /*
+             * Preferred:
+             * pricing_rules.network = mtn/glo/airtel
+             */
+            if (
+              ruleNetwork ===
+              network
+            ) {
+              return true;
+            }
+
+            /*
+             * Also allow provider/network values
+             * that explicitly identify SMEDATA.
+             */
+            if (
+              ruleProvider ===
+                'smedata' &&
+              (
+                !ruleNetwork ||
+                ruleNetwork ===
+                  network
+              )
+            ) {
+              return true;
+            }
+
+            return false;
+          },
+        );
+
+      /* ----------------------------------------------------------------------
+       * 4. MATCH MANUAL PLAN TO PRICING RULE
+       * -------------------------------------------------------------------- */
+
+      const plans =
+        manualPlans
+          .map(
+            (manualPlan) => {
+              const manualId =
+                normalizePlanId(
+                  manualPlan.DataPlan,
+                );
+
+              const manualName =
+                normalizePlanName(
+                  manualPlan.DataPlanName,
+                );
+
+              /*
+               * First try exact plan_id.
+               */
+              let matchedRule =
+                networkRules.find(
+                  (rule) =>
+                    normalizePlanId(
+                      rule.plan_id,
+                    ) ===
+                    manualId,
+                );
+
+              /*
+               * Then exact/normalized name.
+               */
+              if (!matchedRule) {
+                matchedRule =
+                  networkRules.find(
+                    (rule) =>
+                      planNamesMatch(
+                        rule.plan_name,
+                        manualName,
+                      ),
+                  );
+              }
+
+              /*
+               * If no pricing rule exists,
+               * do not expose a zero-price plan.
+               *
+               * This prevents customers from
+               * accidentally purchasing a plan
+               * with ₦0 selling price.
+               */
+              if (!matchedRule) {
+                return null;
+              }
+
+              const sellingPrice =
+                Number(
+                  matchedRule.selling_price ??
+                    0,
+                );
+
+              if (
+                !Number.isFinite(
+                  sellingPrice,
+                ) ||
+                sellingPrice <= 0
+              ) {
+                return null;
+              }
+
+              const costPrice =
+                Number(
+                  matchedRule.cost_price ??
+                    0,
+                );
+
+              const cashbackValue =
+                Number(
+                  matchedRule.cashback_value ??
+                    0,
+                );
+
+              return {
+                DataPlan:
+                  manualPlan.DataPlan,
+
+                DataPlanName:
+                  manualPlan.DataPlanName,
+
+                DataPlanType:
+                  manualPlan.DataPlanType,
+
+                /*
+                 * Frontend currently expects Price
+                 * as a string.
+                 */
+                Price:
+                  sellingPrice.toString(),
+
+                cashback_enabled:
+                  Boolean(
+                    matchedRule.cashback_enabled,
+                  ),
+
+                cashback_type:
+                  matchedRule
+                    .cashback_type ===
+                    'percentage' ||
+                  matchedRule
+                    .cashback_type ===
+                    'fixed'
+                    ? matchedRule
+                        .cashback_type
+                    : undefined,
+
+                cashback_value:
+                  Number.isFinite(
+                    cashbackValue,
+                  )
+                    ? cashbackValue.toString()
+                    : undefined,
+
+                /*
+                 * Keep internal information
+                 * useful to purchase.ts.
+                 */
+                cost_price:
+                  Number.isFinite(
+                    costPrice,
+                  )
+                    ? costPrice.toString()
+                    : '0',
+
+                pricing_rule_id:
+                  matchedRule.id,
+
+                plan_id:
+                  matchedRule.plan_id ??
+                  manualPlan.DataPlan,
+              };
+            },
+          )
+          .filter(
+            (
+              plan,
+            ): plan is NonNullable<
+              typeof plan
+            > =>
+              plan !== null,
+          );
+
+      logger.info(
+        {
+          network,
+          manualPlanCount:
+            manualPlans.length,
+          pricingRuleCount:
+            networkRules.length,
+          returnedPlanCount:
+            plans.length,
+        },
+        'SMEDATA manual data plans loaded',
+      );
+
+      res.setHeader(
+        'Cache-Control',
+        'no-store',
+      );
+
+      res.json({
+        success: true,
+        network,
+        plans,
+      });
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : String(err);
+
+      logger.error(
+        {
+          err,
+          network,
+        },
+        'SMEDATA data plans request failed',
+      );
+
+      res.status(500).json({
+        error: message,
+      });
+    }
+  },
+);
+
+export default router;

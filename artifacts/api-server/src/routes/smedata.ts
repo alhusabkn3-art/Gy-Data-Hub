@@ -1,132 +1,47 @@
-/**
- * /api/smedata
- *
- * SMEDATA data-plan routes.
- *
- * Data plans are maintained manually in ../lib/smedata.ts.
- * No SMEDATA secret is exposed to the frontend.
- */
+import { Router, type IRouter } from "express";
+import healthRouter from "./health.js";
+import clubkonnectRouter from "./clubkonnect.js";
+import smedataRouter from "./smedata.js";
+import authRouter from "./auth.js";
+import userRouter from "./user.js";
+import purchaseRouter from "./purchase.js";
+import adminRouter from "./admin.js";
+import adminSuperRouter from "./admin-super.js";
+import adminCCRouter from "./admin-cc.js";
+import adminFinanceRouter from "./admin-finance.js";
+import supportInboxRouter from "./support-inbox.js";
+import paymentRouter from "./payment.js";
+import whatsappRouter from "./whatsapp.js";
+import supportChatRouter from "./support-chat.js";
+import cashbackRouter from "./cashback.js";
+import cashbackUserRouter from "./cashback-user.js";
 
-import {
-  Router,
-  type Request,
-  type Response,
-} from 'express';
+const router: IRouter = Router();
 
-import {
-  getManualDataPlans,
-  isSmeDataNetwork,
-} from '../lib/smedata.js';
+router.use(healthRouter);
+router.use("/auth", authRouter);
+router.use("/user", userRouter);
+router.use("/purchase", purchaseRouter);
+router.use("/clubkonnect", clubkonnectRouter);
+router.use("/smedata", smedataRouter);
+router.use("/admin", adminRouter);
 
-const router = Router();
+// CC, Finance, and Inbox routers MUST come before adminSuperRouter.
+// adminSuperRouter has a global requireSuperAdmin middleware that would
+// intercept and block requests for non-super-admin staff roles if mounted first.
+router.use("/admin", adminCCRouter);
 
-/* ============================================================================
- * GET /api/smedata/data-plans
- *
- * Returns the manually configured SMEDATA plans for a network.
- *
- * Example:
- *   GET /api/smedata/data-plans?network=mtn
- *   GET /api/smedata/data-plans?network=glo
- *   GET /api/smedata/data-plans?network=airtel
- *
- * NOTE:
- * Phone number is NOT required here.
- * SMEDATA only needs the phone when the actual purchase is made.
- * ========================================================================== */
+// supportInboxRouter MUST come before adminFinanceRouter:
+// adminFinanceRouter has a global requireFinanceOrSuperAdmin middleware that
+// would block customer_care staff from reaching support-inbox routes.
+router.use("/admin/support-inbox", supportInboxRouter);
 
-router.get(
-  '/data-plans',
-  (
-    req: Request,
-    res: Response,
-  ): void => {
-    try {
-      const network =
-        String(
-          req.query['network'] ?? '',
-        )
-          .trim()
-          .toLowerCase();
-
-      if (!network) {
-        res.status(400).json({
-          success: false,
-          error:
-            'Query param "network" is required.',
-        });
-
-        return;
-      }
-
-      if (
-        !isSmeDataNetwork(network)
-      ) {
-        res.status(400).json({
-          success: false,
-          error:
-            'Unsupported SMEDATA data network. Supported networks: mtn, glo, airtel.',
-        });
-
-        return;
-      }
-
-      const plans =
-        getManualDataPlans(
-          network,
-        );
-
-      res.json({
-        success: true,
-        network,
-        plans,
-      });
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Failed to load SMEDATA data plans.';
-
-      res.status(500).json({
-        success: false,
-        error: message,
-      });
-    }
-  },
-);
-
-/* ============================================================================
- * GET /api/smedata/status
- *
- * Simple configuration check.
- *
- * This does NOT return the API token.
- * ========================================================================== */
-
-router.get(
-  '/status',
-  (
-    _req: Request,
-    res: Response,
-  ): void => {
-    const configured =
-      Boolean(
-        process.env[
-          'SMEDATA_API_TOKEN'
-        ]?.trim(),
-      );
-
-    res.json({
-      success: true,
-      provider: 'SMEDATA',
-      configured,
-      supportedNetworks: [
-        'mtn',
-        'glo',
-        'airtel',
-      ],
-    });
-  },
-);
+router.use("/admin", adminFinanceRouter);
+router.use("/admin", cashbackRouter);
+router.use("/cashback", cashbackUserRouter);
+router.use("/admin", adminSuperRouter);
+router.use("/payment", paymentRouter);
+router.use("/whatsapp", whatsappRouter);
+router.use("/support", supportChatRouter);
 
 export default router;

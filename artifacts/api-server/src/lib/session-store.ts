@@ -93,8 +93,7 @@ const REQUIRED_FOR_PAYMENTS = [
 ];
 
 const REQUIRED_FOR_DATA_AIRTIME = [
-  'CLUBKONNECT_USER_ID',
-  'CLUBKONNECT_API_KEY',
+  'SME_API_KEY',
 ];
 
 const OPTIONAL_VARS = [
@@ -138,7 +137,7 @@ export function validateEnv(): void {
   for (const key of REQUIRED_FOR_DATA_AIRTIME) {
     if (!process.env[key]) {
       warnings.push(
-        `${key} not set — Data/Airtime purchases will be unavailable`,
+        `${key} not set — SME API Data/Airtime purchases will be unavailable`,
       );
     }
   }

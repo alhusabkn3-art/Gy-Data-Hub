@@ -4,10 +4,10 @@ import {
 } from 'express';
 
 import healthRouter from './health.js';
-import clubkonnectRouter from './clubkonnect.js';
 import authRouter from './auth.js';
 import userRouter from './user.js';
 import purchaseRouter from './purchase.js';
+import smeapiRouter from './smeapi.js';
 import adminRouter from './admin.js';
 import adminSuperRouter from './admin-super.js';
 import adminCCRouter from './admin-cc.js';
@@ -19,8 +19,7 @@ import supportChatRouter from './support-chat.js';
 import cashbackRouter from './cashback.js';
 import cashbackUserRouter from './cashback-user.js';
 
-const router: IRouter =
-  Router();
+const router: IRouter = Router();
 
 router.use(
   healthRouter,
@@ -41,17 +40,9 @@ router.use(
   purchaseRouter,
 );
 
-/*
- * ClubKonnect is still mounted temporarily
- * because airtime has not yet been migrated.
- *
- * DO NOT remove this import or route yet.
- * We will migrate airtime first, then remove
- * ClubKonnect completely.
- */
 router.use(
-  '/clubkonnect',
-  clubkonnectRouter,
+  '/smeapi',
+  smeapiRouter,
 );
 
 router.use(

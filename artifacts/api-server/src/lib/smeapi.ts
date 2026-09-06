@@ -7,7 +7,10 @@
 
 import { logger } from './logger.js';
 
-const BASE_URL = 'https://smeapi.com.ng';
+// Read base URL from environment to allow sandbox/test overrides.
+// Trim trailing slashes so path concatenation is robust.
+const BASE_URL = String(process.env.SME_API_BASE_URL || 'https://smeapi.com.ng/api/')
+  .replace(/\/+$/u, '');
 
 const TIMEOUT_READ = 15_000;
 const TIMEOUT_PURCHASE = 30_000;
@@ -69,10 +72,14 @@ async function request<T>(
     timeoutMs,
   );
 
+  // Build URL robustly: ensure single slash between BASE_URL and path
+  const url = `${BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+
   try {
-    const response = await fetch(`${BASE_URL}${path}`, {
+    const response = await fetch(url, {
       ...options,
       signal: controller.signal,
+      // Do not include developer-visible headers or log them.
       headers: {
         Authorization: `Token ${getApiKey()}`,
         Accept: 'application/json',
@@ -92,16 +99,32 @@ async function request<T>(
     }
 
     if (!response.ok) {
-      throw new Error(
-        `SME API HTTP ${response.status}: ${
-          typeof data === 'string'
-            ? data
-            : JSON.stringify(data)
-        }`,
-      );
+      // Try to extract a safe message without echoing any sensitive fields.
+      let safeMsg = response.statusText || 'SME API error';
+
+      try {
+        if (data && typeof data === 'object' && 'message' in (data as Record<string, unknown>)) {
+          safeMsg = String((data as Record<string, unknown>).message ?? safeMsg);
+        } else if (typeof data === 'string' && data.trim()) {
+          // small payloads are likely safe to include
+          safeMsg = data.slice(0, 500);
+        }
+      } catch {
+        // ignore parsing errors and fall back to statusText
+      }
+
+      throw new Error(`SME API HTTP ${response.status}: ${safeMsg}`);
     }
 
     return data as T;
+  } catch (err) {
+    // Normalize AbortError / timeout
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('SME API request timed out');
+    }
+
+    // Surface a generic error without exposing API key or headers.
+    throw err instanceof Error ? new Error(`SME API request failed: ${err.message}`) : new Error('SME API request failed');
   } finally {
     clearTimeout(timeout);
   }
@@ -391,3 +414,19 @@ export function getSMEProviderConfig() {
     networks: NETWORK_IDS,
   };
 }
+
+/*
+ * TODO: Transaction status / requery and Wallet balance endpoints
+ * The project requires a transaction-status (requery) and a wallet balance
+ * check for full reconciliation & admin health checks. The exact SMEAPI
+ * endpoints and response schema were not present in the repository or
+ * supplied documentation during Phase 2. Do NOT guess or invent endpoints.
+ *
+ * BEFORE implementing the requery/status or balance functions, obtain the
+ * official SME API docs (endpoint paths, request parameters and response
+ * schema). Once verified, implement functions such as:
+ *   - async function requeryTransactionByRef(ref: string) { ... }
+ *   - async function getWalletBalance() { ... }
+ *
+ * MARKED: NEEDS DOCUMENTATION VERIFICATION
+ */

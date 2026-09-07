@@ -5,6 +5,7 @@ This document describes step-by-step Render deployment instructions, required en
 ---
 
 ## Quick overview
+
 We deploy a single Render Web Service built from `artifacts/api-server/Dockerfile`. The Dockerfile builds the frontend (Vite) at `artifacts/gy-data` and the backend (`artifacts/api-server`), copies the frontend `dist` into the server image under `/app/public`, and runs the Express server (`dist/index.mjs`) which will serve both API routes and the built SPA.
 
 ---
@@ -29,7 +30,8 @@ We deploy a single Render Web Service built from `artifacts/api-server/Dockerfil
 
 ## Required Render environment variables
 
-Core / server
+### Core / server
+
 - NODE_ENV=production
 - PORT=3000
 - DATABASE_URL=postgres://<user>:<password>@<host>:<port>/<dbname> (required)
@@ -40,20 +42,21 @@ Core / server
 - CORS_ORIGINS=https://yourdomain.com (production allowed origins)
 - JWT_SECRET (if used)
 
-Monnify (payment gateway)
+### SMEAPI
+
+- SME_API_KEY
+- SME_API_BASE_URL=https://smeapi.com.ng/api/
+
+### Monnify (payment gateway)
+
 - MONNIFY_BASE_URL (optional; default sandbox)
 - MONNIFY_API_KEY
 - MONNIFY_SECRET_KEY
 - MONNIFY_CONTRACT_CODE
 - MONNIFY_WEBHOOK_SECRET (if your Monnify webhook uses a secret header)
 
-ClubKonnect (airtime/data provider)
-- CLUBKONNECT_USER_ID
-- CLUBKONNECT_API_KEY
-- CLUBKONNECT_BASE_URL (optional)
-- CLUBKONNECT_WEBHOOK_SECRET (if you configure webhooks)
+### Optional / integrations
 
-Optional / integrations
 - OPENAI_API_KEY (if used)
 - SENTRY_DSN (optional)
 - WHATSAPP_ACCESS_TOKEN
@@ -65,55 +68,67 @@ Optional / integrations
 - ADMIN_PIN
 - LOG_LEVEL (e.g., info, debug)
 
-Note: `.env.example` in repo root contains placeholders for all of the above.
+Note: `.env.example` in repo root contains placeholders for the environment variables used by the project.
 
 ---
 
 ## Monnify webhook URL
+
 - Configure Monnify dashboard webhook to:
   - POST to: `https://<your-render-domain>/api/payment/monnify/webhook`
-  - The server verifies Monnify HMAC signature using `MONNIFY_SECRET_KEY` (read from env).
-
----
-
-## ClubKonnect webhook URL
-- If ClubKonnect offers webhooks, configure the webhook to:
-  - POST to: `https://<your-render-domain>/api/clubkonnect/webhook` (or the route your integration uses)
-- Note: this repo’s ClubKonnect client is primarily query-string server calls and a recovery job; verify your desired webhook path if you plan to use push notifications.
+- The server verifies Monnify HMAC signature using `MONNIFY_SECRET_KEY` read from the environment.
 
 ---
 
 ## Post-deployment verification checklist
 
-1. Health checks and basic endpoints
-   - GET `https://<your-render-domain>/health` → 200 OK
-   - GET `https://<your-render-domain>/` → returns index.html (SPA served)
-   - GET `https://<your-render-domain>/api/clubkonnect/balance` (if ClubKonnect creds set) → returns balance or auth error
+### 1. Health checks and basic endpoints
 
-2. Database & sessions
-   - Confirm Postgres DB reachable via `DATABASE_URL`.
-   - Confirm `session` table exists and sessions persist (connect-pg-simple).
-   - Test user login/register to verify cookies are set (HttpOnly, Secure).
+- GET `https://<your-render-domain>/health` → 200 OK
+- GET `https://<your-render-domain>/` → returns index.html (SPA served)
+- GET the SMEAPI data-plan endpoint used by the application and confirm that plans are returned correctly.
 
-3. Monnify payment flow (sandbox)
-   - Initialize wallet funding via `/api/payment/monnify/initialize`.
-   - Confirm `checkoutUrl` is returned and sandbox payment flow can be simulated.
-   - Confirm webhook arrives to `/api/payment/monnify/webhook` and signature verifies.
-   - Confirm wallet credited only after server-side verifyTransaction returns PAID.
+### 2. Database & sessions
 
-4. ClubKonnect purchase flow
-   - Using test creds, perform a data/airtime purchase and confirm:
-     - DB transaction created and status updated appropriately (pending -> success/failed).
-     - Stuck-transaction recovery job can query provider statuses.
+- Confirm Postgres DB reachable via `DATABASE_URL`.
+- Confirm `session` table exists and sessions persist (connect-pg-simple).
+- Test user login/register to verify cookies are set (HttpOnly, Secure).
 
-5. Logging / Observability
-   - Confirm logs stream in Render and LOG_LEVEL is appropriate.
-   - Confirm Sentry (if configured) receives errors.
+### 3. SMEAPI purchase flow
 
-6. Security checks
-   - Confirm `SESSION_SECRET` is long and random.
-   - Confirm `SESSION_COOKIE_SECURE=true` and site served over HTTPS.
-   - Confirm CORS_ORIGINS is set to production domains.
+- Confirm SMEAPI API key is configured correctly.
+- Confirm data plans load successfully from SMEAPI.
+- Confirm the selected plan is matched against the application's pricing rules.
+- Perform a test data purchase and confirm:
+  - DB transaction is created.
+  - Wallet is debited exactly once.
+  - The SMEAPI request uses the correct network and data-plan ID.
+  - A unique transaction reference is generated.
+  - Transaction status is handled correctly.
+  - Successful purchases are marked `success`.
+  - Processing/reconciliation responses are handled as `pending`.
+  - Failed purchases are marked `failed` and the wallet is refunded safely.
+  - A pending transaction can be checked using its original reference.
+
+### 4. Monnify payment flow (sandbox)
+
+- Initialize wallet funding via `/api/payment/monnify/initialize`.
+- Confirm `checkoutUrl` is returned and sandbox payment flow can be simulated.
+- Confirm webhook arrives to `/api/payment/monnify/webhook` and signature verifies.
+- Confirm wallet is credited only after server-side verification confirms the payment is PAID.
+
+### 5. Logging / Observability
+
+- Confirm logs stream in Render and LOG_LEVEL is appropriate.
+- Confirm Sentry (if configured) receives errors.
+
+### 6. Security checks
+
+- Confirm `SESSION_SECRET` is long and random.
+- Confirm `SESSION_COOKIE_SECURE=true` and site served over HTTPS.
+- Confirm CORS_ORIGINS is set to production domains.
+- Never commit `SME_API_KEY`, Monnify secrets, or other private credentials to Git.
+- Keep provider API keys only in Render Environment Variables or another secure secret store.
 
 ---
 
@@ -122,7 +137,19 @@ Note: `.env.example` in repo root contains placeholders for all of the above.
 - Docker/build failures: check Render build logs. Common causes:
   - Missing workspace deps, private registries needing auth, or memory limits.
 - DB errors: verify `DATABASE_URL`, `PGSSLMODE`, and networking.
-- Webhook signature verification errors: ensure raw body is sent and secret matches env var.
+- SMEAPI authentication errors:
+  - Verify `SME_API_KEY` is set in Render.
+  - Verify the API key has not expired or been revoked.
+  - Confirm the server is sending the key using the required Authorization header.
+- SMEAPI data-plan errors:
+  - Confirm the application is retrieving plans from `/dataplans/`.
+  - Confirm the network ID and data-plan ID match the SMEAPI plan.
+- SMEAPI purchase errors:
+  - Check the Render logs for the transaction reference.
+  - Do not resubmit a purchase that received a processing/reconciliation response.
+  - Check the transaction status using the original reference.
+- Webhook signature verification errors:
+  - Ensure raw body is sent and secret matches env var.
 
 ---
 
@@ -132,3 +159,4 @@ Note: `.env.example` in repo root contains placeholders for all of the above.
 - The repo uses a pnpm monorepo; the Docker build uses corepack/pnpm to build both frontend and backend.
 - If you prefer a separate frontend service, revert to a two-service configuration and use `artifacts/gy-data/Dockerfile` for the frontend.
 - Ensure your DB migrations are applied prior to production traffic.
+- SMEAPI is the active provider for data purchases in this project.

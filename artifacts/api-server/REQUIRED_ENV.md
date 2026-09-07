@@ -1,77 +1,144 @@
-# GY DATA — Required Environment Variables
+# Production Readiness Report
 
-All secrets must be set in the deployment environment (never in source code or committed `.env` files).
+## Overview
 
----
+This report summarizes the production-readiness checks for the Gy-Data-Hub application.
 
-## 🔴 REQUIRED — App will not start without these
+The application uses SMEAPI as the active provider for data and airtime services. Wallet, transaction, pricing, authentication, payment, cashback, and administrative functionality remain enabled.
 
-| Variable | Description | Example |
-|---|---|---|
-| `SESSION_SECRET` | Random secret for signing session cookies. Use at least 32 random characters. | `openssl rand -base64 32` |
-| `DATABASE_URL` | PostgreSQL connection string for the application database. | `postgresql://user:pass@host:5432/db` |
-| `PORT` | TCP port the API server listens on. Defaults to `5000` when not provided. | `8080` |
+## Environment Configuration
 
----
+`validateEnv()` in `lib/session-store.ts` runs before the HTTP server starts.
 
-## 🟠 REQUIRED for payment processing (Monnify)
+Required environment variables are validated at startup, while optional integrations emit structured warnings when they are not configured.
 
-Without these, wallet funding via Monnify is unavailable. The app still starts.
+Required configuration includes:
 
-| Variable | Description | Where to find |
-|---|---|---|
-| `MONNIFY_API_KEY` | Monnify merchant API key | Monnify Dashboard → Settings → API Keys |
-| `MONNIFY_SECRET_KEY` | Monnify merchant secret key | Monnify Dashboard → Settings → API Keys |
-| `MONNIFY_CONTRACT_CODE` | Monnify contract/merchant code | Monnify Dashboard → Settings → Contract Code |
-| `MONNIFY_BASE_URL` | Monnify API base URL | `https://api.monnify.com` (live) or `https://sandbox.monnify.com` (test) |
+- `SESSION_SECRET`
+- `DATABASE_URL`
+- `PORT`
 
----
+Optional integrations include:
 
-## 🟠 REQUIRED for data/airtime purchases (ClubKonnect)
+- Monnify
+- WhatsApp
 
-Without these, data and airtime purchases are unavailable. The app still starts.
+## Data Provider
 
-| Variable | Description | Where to find |
-|---|---|---|
-| `CLUBKONNECT_USER_ID` | ClubKonnect account user ID | ClubKonnect Dashboard → Profile → API Details |
-| `CLUBKONNECT_API_KEY` | ClubKonnect API key | ClubKonnect Dashboard → Profile → API Details |
+SMEAPI is the active provider for data services.
 
----
+The application retrieves available data plans from SMEAPI and maps them to the application's pricing rules before displaying them to customers.
 
-## 🟡 REQUIRED for WhatsApp integration (Meta)
+Data purchases use the SMEAPI purchase endpoint and maintain a unique transaction reference for each paid transaction.
 
-Without these, WhatsApp messaging is unavailable. **In production, `WHATSAPP_APP_SECRET` is required — without it, all webhook POST requests are rejected.**
+## Transaction Safety
 
-| Variable | Description | Where to find |
-|---|---|---|
-| `WHATSAPP_ACCESS_TOKEN` | Meta Graph API permanent access token | Meta Developer Console → App → WhatsApp → API Setup |
-| `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp Business phone number ID | Meta Developer Console → App → WhatsApp → API Setup |
-| `WHATSAPP_BUSINESS_ACCOUNT_ID` | WhatsApp Business Account (WABA) ID | Meta Business Manager → WhatsApp Accounts |
-| `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | A secret string YOU choose, configured in both the deployment environment and Meta webhook settings | Any random string, e.g. `openssl rand -hex 16` |
-| `WHATSAPP_APP_SECRET` | App secret for HMAC-SHA256 webhook signature verification | Meta Developer Console → App → Settings → Basic → App Secret |
+Customer wallet balances are debited before a provider purchase is submitted.
 
----
+Transactions are stored with their provider and provider reference so that the transaction lifecycle can be audited.
 
-## 🟢 OPTIONAL
+Provider responses are normalized into the application's transaction statuses:
 
-| Variable | Description | Default |
-|---|---|---|
-| `OPENAI_API_KEY` | OpenAI API key used by the AI support assistant. | Disabled unless configured |
-| `CORS_ORIGINS` | Comma-separated list of allowed frontend origins in production. | All origins allowed (set this in production!) |
-| `ADMIN_EMAIL` | Bootstrap super-admin email. Only used on first startup. | `admin@gydata.ng` |
-| `ADMIN_PIN` | Bootstrap super-admin PIN (6 digits). **Change immediately after first login.** Must not be `125125`. | None (seeding disabled if missing or insecure) |
-| `LOG_LEVEL` | Pino log level: `trace`, `debug`, `info`, `warn`, `error`, `fatal` | `info` |
+- `success`
+- `pending`
+- `failed`
 
----
+Pending transactions can be reconciled using the original provider reference instead of submitting the purchase again.
 
-## Production Security Checklist
+Failed transactions are reversed through the wallet transaction system.
 
-Before going live, verify:
+## Wallet Protection
 
-- [ ] `SESSION_SECRET` is a random 32+ character string (not a dictionary word)
-- [ ] `ADMIN_PIN` is set to a strong 6-digit PIN that is NOT `125125`
-- [ ] `CORS_ORIGINS` is set to your production frontend domain
-- [ ] `WHATSAPP_APP_SECRET` is set (mandatory in production)
-- [ ] `MONNIFY_BASE_URL` is set to `https://api.monnify.com` (not sandbox)
-- [ ] All secrets are stored in the deployment environment, not in code or committed `.env` files
-- [ ] After first login as super admin, change the PIN via the admin panel
+Wallet debits and credits are recorded through the transaction ledger.
+
+Refund operations must be idempotent so that a failed or reconciled transaction cannot credit the customer's wallet more than once.
+
+Successful purchases must never be refunded.
+
+## Pricing
+
+Data-plan selling prices are controlled through the application's pricing rules.
+
+Pricing rules determine:
+
+- Customer selling price
+- Provider cost price
+- Profit
+- Enabled/disabled status
+- Network
+- Data-plan identification
+
+The customer-facing data-plan list only exposes enabled plans with valid pricing configuration.
+
+## Authentication and Authorization
+
+Customer APIs require authenticated sessions where appropriate.
+
+Administrative endpoints require the appropriate administrator privileges.
+
+Super-admin functionality remains protected and is not affected by provider cleanup.
+
+## Payments
+
+Monnify integration remains available for wallet funding when the required Monnify environment variables are configured.
+
+Missing Monnify configuration disables payment functionality without affecting the rest of the application.
+
+## Cashback
+
+Cashback functionality remains enabled.
+
+Cashback calculations and wallet credits remain separate from the provider integration and should not be modified during provider cleanup.
+
+## WhatsApp Integration
+
+WhatsApp functionality remains available when its required environment variables are configured.
+
+Provider cleanup must not remove or modify WhatsApp functionality.
+
+## Database
+
+The existing transaction schema stores provider information and provider references.
+
+Transaction statuses support:
+
+- `success`
+- `pending`
+- `failed`
+
+Existing wallet and transaction records must remain intact during deployment.
+
+## Deployment
+
+The API server is built and started using the project's existing production commands.
+
+The frontend is served from the generated production distribution.
+
+The production server must listen on the Render-provided `PORT` and bind to `0.0.0.0`.
+
+## Verification Checklist
+
+Before deployment, verify:
+
+- SMEAPI environment configuration is present.
+- SMEAPI data plans can be retrieved.
+- Data-plan pricing rules are available.
+- Customer wallet debit works correctly.
+- Successful data purchases are recorded as successful.
+- Pending purchases remain pending until reconciliation.
+- Failed purchases are refunded exactly once.
+- Transaction references remain unique.
+- Monnify remains available when configured.
+- WhatsApp remains available when configured.
+- Admin authentication continues to work.
+- Super-admin functionality continues to work.
+- Frontend production build completes successfully.
+- API server production build completes successfully.
+- TypeScript checks complete successfully.
+- No obsolete provider imports or routes remain.
+
+## Final Status
+
+The application is ready for production verification with SMEAPI as the active data provider.
+
+Provider cleanup must not modify SMEAPI, wallet accounting, transaction safety, pricing management, Monnify, WhatsApp, authentication, or administrative functionality.

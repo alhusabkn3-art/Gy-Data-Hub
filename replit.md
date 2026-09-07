@@ -36,25 +36,3 @@ Both workflows start automatically:
 On a fresh environment, run:
 ```bash
 psql "$DATABASE_URL" -f db/bootstrap.sql
-```
-
-Then start the API server — it seeds the super-admin account on first boot using `ADMIN_EMAIL` and `ADMIN_PIN` env vars.
-
-## Required environment variables
-
-See `artifacts/api-server/REQUIRED_ENV.md` for the full list.
-
-**Must-have to start:**
-- `SESSION_SECRET` — random 32+ char string
-- `DATABASE_URL` — PostgreSQL connection string
-
-**Optional (features disabled without them):**
-- `MONNIFY_*` — wallet funding via Monnify
-- `CLUBKONNECT_*` — data/airtime purchases
-- `WHATSAPP_*` — WhatsApp notifications
-- `OPENAI_API_KEY` — AI support assistant
-- `ADMIN_EMAIL` / `ADMIN_PIN` — super-admin bootstrap credentials
-
-## User preferences
-
-- Keep the existing monorepo structure — do not restructure or migrate to a different stack

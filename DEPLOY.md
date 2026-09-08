@@ -45,7 +45,15 @@ We deploy a single Render Web Service built from `artifacts/api-server/Dockerfil
 ### SMEAPI
 
 - SME_API_KEY
+- SME_API_BASE_URL=https://smeapi.com.ng
+
+The SMEAPI base URL must be the root domain only. The application adds the required `/api/...` endpoint paths itself.
+
+Do not set:
+
 - SME_API_BASE_URL=https://smeapi.com.ng/api/
+
+because that can result in duplicated paths such as `/api/api/...`.
 
 ### Monnify (payment gateway)
 
@@ -86,7 +94,7 @@ Note: `.env.example` in repo root contains placeholders for the environment vari
 
 - GET `https://<your-render-domain>/health` → 200 OK
 - GET `https://<your-render-domain>/` → returns index.html (SPA served)
-- GET the SMEAPI data-plan endpoint used by the application and confirm that plans are returned correctly.
+- Get the SMEAPI data-plan endpoint used by the application and confirm that plans are returned correctly.
 
 ### 2. Database & sessions
 
@@ -142,7 +150,7 @@ Note: `.env.example` in repo root contains placeholders for the environment vari
   - Verify the API key has not expired or been revoked.
   - Confirm the server is sending the key using the required Authorization header.
 - SMEAPI data-plan errors:
-  - Confirm the application is retrieving plans from `/dataplans/`.
+  - Confirm the application is retrieving plans from the configured SMEAPI data-plan endpoint.
   - Confirm the network ID and data-plan ID match the SMEAPI plan.
 - SMEAPI purchase errors:
   - Check the Render logs for the transaction reference.
@@ -159,4 +167,4 @@ Note: `.env.example` in repo root contains placeholders for the environment vari
 - The repo uses a pnpm monorepo; the Docker build uses corepack/pnpm to build both frontend and backend.
 - If you prefer a separate frontend service, revert to a two-service configuration and use `artifacts/gy-data/Dockerfile` for the frontend.
 - Ensure your DB migrations are applied prior to production traffic.
-- SMEAPI is the active provider for data purchases in this project.
+- SMEAPI is the active provider for data and airtime purchases in this project.

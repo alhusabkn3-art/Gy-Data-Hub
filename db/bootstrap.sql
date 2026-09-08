@@ -571,3 +571,12 @@ CREATE TABLE IF NOT EXISTS cashback_transfers (
 );
 CREATE INDEX IF NOT EXISTS idx_cashback_transfers_user_id    ON cashback_transfers (user_id);
 CREATE INDEX IF NOT EXISTS idx_cashback_transfers_created_at ON cashback_transfers (created_at DESC);
+CREATE TABLE IF NOT EXISTS announcements (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title       TEXT NOT NULL,
+  body        TEXT NOT NULL,
+  enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by  UUID,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

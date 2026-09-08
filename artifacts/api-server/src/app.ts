@@ -33,8 +33,17 @@ app.use(
 app.set('trust proxy', 1);
 
 // ── CORS ────────────────────────────────────────────────────────────
-// In production, restrict to explicitly listed origins via CORS_ORIGINS env var.
-// In development, reflect any origin for convenience.
+// Production:
+//   CORS_ORIGINS must contain the exact browser origins allowed to use
+//   the API, separated by commas.
+//
+// Development:
+//   Any origin is allowed for local development convenience.
+//
+// Important:
+//   If production is missing CORS_ORIGINS, do NOT fall back to
+//   origin: true. This prevents accidentally opening the API to arbitrary
+//   browser origins because of a missing deployment environment variable.
 const rawOrigins = process.env['CORS_ORIGINS'];
 
 const allowedOrigins = rawOrigins
@@ -42,29 +51,41 @@ const allowedOrigins = rawOrigins
       .split(',')
       .map((o) => o.trim())
       .filter(Boolean)
-  : null;
+  : [];
+
+const isProduction = process.env['NODE_ENV'] === 'production';
+
+if (isProduction && allowedOrigins.length === 0) {
+  logger.error(
+    'CORS_ORIGINS is not configured in production. Browser cross-origin requests will be rejected until CORS_ORIGINS is set.',
+  );
+}
 
 app.use(
   cors({
-    origin:
-      process.env['NODE_ENV'] === 'production' &&
-      allowedOrigins &&
-      allowedOrigins.length > 0
-        ? (origin, callback) => {
-            // Allow server-to-server requests (no Origin header)
-            // and explicitly listed browser origins.
-            if (!origin || allowedOrigins.includes(origin)) {
-              callback(null, true);
-            } else {
-              logger.warn(
-                { origin },
-                'CORS: rejected request from unlisted origin',
-              );
-
-              callback(new Error('Not allowed by CORS policy.'));
-            }
+    origin: isProduction
+      ? (origin, callback) => {
+          // Allow server-to-server requests and requests without an
+          // Origin header. Browser requests must match an explicitly
+          // configured origin.
+          if (!origin) {
+            callback(null, true);
+            return;
           }
-        : true, // reflect any origin in development
+
+          if (allowedOrigins.includes(origin)) {
+            callback(null, true);
+            return;
+          }
+
+          logger.warn(
+            { origin },
+            'CORS: rejected request from unlisted origin',
+          );
+
+          callback(new Error('Not allowed by CORS policy.'));
+        }
+      : true,
     credentials: true,
   }),
 );
@@ -72,7 +93,9 @@ app.use(
 logger.info(
   {
     mode: process.env['NODE_ENV'],
-    allowedOrigins: allowedOrigins ?? 'all (dev)',
+    allowedOrigins: isProduction
+      ? allowedOrigins
+      : 'all (development)',
   },
   'CORS configured',
 );

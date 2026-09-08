@@ -898,3 +898,901 @@ router.patch(
       });
       return;
     }
+try {
+      const beforeResult =
+        await db.execute<Record<string, unknown>>(sql`
+          SELECT
+            id,
+            service_type,
+            provider,
+            plan_name,
+            cost_price,
+            selling_price,
+            enabled
+          FROM pricing_rules
+          WHERE id = ${id}::uuid
+          LIMIT 1
+        `);
+
+      const before = beforeResult.rows[0];
+
+      if (!before) {
+        res.status(404).json({
+          error: 'Pricing rule not found.',
+        });
+        return;
+      }
+
+      const result =
+        await db.execute<Record<string, unknown>>(sql`
+          UPDATE pricing_rules
+          SET
+            selling_price =
+              ${
+                sellingPrice !== undefined
+                  ? sellingPrice.toFixed(2)
+                  : sql`selling_price`
+              },
+            cost_price =
+              ${
+                costPrice !== undefined
+                  ? costPrice.toFixed(2)
+                  : sql`cost_price`
+              },
+            markup_percent =
+              ${
+                markupPercent !== undefined
+                  ? markupPercent.toFixed(2)
+                  : sql`markup_percent`
+              },
+            enabled =
+              ${
+                hasEnabled
+                  ? body.enabled
+                  : sql`enabled`
+              },
+            plan_name =
+              ${
+                hasPlanName
+                  ? String(body.planName).trim()
+                  : sql`plan_name`
+              },
+            updated_by =
+              ${req.session.adminId!}::uuid,
+            updated_by_name =
+              (
+                SELECT name
+                FROM admin_accounts
+                WHERE id = ${req.session.adminId!}::uuid
+              ),
+            reason =
+              ${'Updated via Admin Pricing Management'},
+            updated_at = NOW()
+          WHERE id = ${id}::uuid
+          RETURNING
+            id,
+            service_type,
+            provider,
+            network,
+            plan_id,
+            plan_name,
+            cost_price,
+            selling_price,
+            markup_percent,
+            enabled,
+            updated_at,
+            created_at
+        `);
+
+      const row = result.rows[0];
+
+      if (!row) {
+        res.status(404).json({
+          error: 'Pricing rule not found.',
+        });
+        return;
+      }
+
+      await writePricingAudit({
+        req,
+        action: 'update',
+        ruleId: id,
+        serviceType: String(
+          before.service_type ?? '',
+        ),
+        planName: String(
+          row.plan_name ??
+            before.plan_name ??
+            '',
+        ),
+        provider: String(
+          before.provider ?? '',
+        ),
+        oldSellingPrice:
+          before.selling_price,
+        newSellingPrice:
+          row.selling_price,
+        oldCostPrice:
+          before.cost_price,
+        newCostPrice:
+          row.cost_price,
+        oldEnabled:
+          before.enabled,
+        newEnabled:
+          row.enabled,
+        reason:
+          'Updated via Admin Pricing Management',
+      });
+
+      res.json(normalisePricingRule(row));
+    } catch (err) {
+      logger.error(
+        { err, id },
+        'PATCH /pricing/:id failed',
+      );
+
+      res.status(500).json({
+        error: 'Failed to update pricing rule.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/pricing',
+  requireFinancePermission('manage_pricing'),
+  async (req: Request, res: Response): Promise<void> => {
+    const body =
+      req.body as Record<string, unknown>;
+
+    const serviceType =
+      String(body.serviceType ?? '').trim();
+
+    const provider =
+      String(body.provider ?? '').trim();
+
+    const network =
+      body.network == null ||
+      String(body.network).trim() === ''
+        ? null
+        : String(body.network).trim();
+
+    const planId =
+      body.planId == null ||
+      String(body.planId).trim() === ''
+        ? null
+        : String(body.planId).trim();
+
+    const planName =
+      body.planName == null
+        ? null
+        : String(body.planName).trim();
+
+    const costPrice =
+      Number(body.costPrice ?? 0);
+
+    const sellingPrice =
+      Number(body.sellingPrice ?? 0);
+
+    const markupPercent =
+      Number(body.markupPercent ?? 0);
+
+    const enabled =
+      body.enabled === undefined
+        ? true
+        : body.enabled;
+
+    if (
+      !serviceType ||
+      !provider ||
+      !planName
+    ) {
+      res.status(400).json({
+        error:
+          'serviceType, provider and planName are required.',
+      });
+      return;
+    }
+
+    if (
+      ![costPrice, sellingPrice, markupPercent]
+        .every(Number.isFinite) ||
+      costPrice < 0 ||
+      sellingPrice < 0
+    ) {
+      res.status(400).json({
+        error:
+          'costPrice, sellingPrice and markupPercent must be valid numbers.',
+      });
+      return;
+    }
+
+    if (typeof enabled !== 'boolean') {
+      res.status(400).json({
+        error: 'enabled must be a boolean.',
+      });
+      return;
+    }
+
+    try {
+      const result =
+        await db.execute<Record<string, unknown>>(sql`
+          INSERT INTO pricing_rules
+            (
+              service_type,
+              provider,
+              network,
+              plan_id,
+              plan_name,
+              cost_price,
+              selling_price,
+              markup_percent,
+              enabled,
+              updated_by,
+              updated_by_name,
+              reason,
+              updated_at
+            )
+          VALUES
+            (
+              ${serviceType},
+              ${provider},
+              ${network},
+              ${planId},
+              ${planName},
+              ${costPrice.toFixed(2)},
+              ${sellingPrice.toFixed(2)},
+              ${markupPercent.toFixed(2)},
+              ${enabled},
+              ${req.session.adminId!}::uuid,
+              (
+                SELECT name
+                FROM admin_accounts
+                WHERE id = ${req.session.adminId!}::uuid
+              ),
+              ${'Created via Admin Pricing Management'},
+              NOW()
+            )
+          RETURNING
+            id,
+            service_type,
+            provider,
+            network,
+            plan_id,
+            plan_name,
+            cost_price,
+            selling_price,
+            markup_percent,
+            enabled,
+            updated_at,
+            created_at
+        `);
+
+      const row = result.rows[0];
+
+      if (!row) {
+        res.status(500).json({
+          error: 'Failed to create pricing rule.',
+        });
+        return;
+      }
+
+      await writePricingAudit({
+        req,
+        action: 'create',
+        ruleId: String(row.id),
+        serviceType,
+        planName,
+        provider,
+        newSellingPrice:
+          row.selling_price,
+        newCostPrice:
+          row.cost_price,
+        newEnabled:
+          row.enabled,
+        reason:
+          'Created via Admin Pricing Management',
+      });
+
+      res.status(201).json(
+        normalisePricingRule(row),
+      );
+    } catch (err) {
+      logger.error(
+        { err },
+        'POST /pricing failed',
+      );
+
+      res.status(500).json({
+        error: 'Failed to create pricing rule.',
+      });
+    }
+  },
+);
+
+router.delete(
+  '/pricing/:id',
+  requireFinancePermission('manage_pricing'),
+  async (req: Request, res: Response): Promise<void> => {
+    const id = String(req.params['id'] ?? '');
+
+    if (!isUuid(id)) {
+      res.status(400).json({
+        error: 'Invalid pricing rule ID.',
+      });
+      return;
+    }
+
+    try {
+      const beforeResult =
+        await db.execute<Record<string, unknown>>(sql`
+          SELECT
+            id,
+            service_type,
+            provider,
+            plan_name,
+            cost_price,
+            selling_price,
+            enabled
+          FROM pricing_rules
+          WHERE id = ${id}::uuid
+          LIMIT 1
+        `);
+
+      const before = beforeResult.rows[0];
+
+      if (!before) {
+        res.status(404).json({
+          error: 'Pricing rule not found.',
+        });
+        return;
+      }
+
+      await db.execute(
+        sql`
+          DELETE FROM pricing_rules
+          WHERE id = ${id}::uuid
+        `,
+      );
+
+      try {
+        await writePricingAudit({
+          req,
+          action: 'delete',
+          ruleId: undefined,
+          serviceType: String(
+            before.service_type ?? '',
+          ),
+          planName: String(
+            before.plan_name ?? '',
+          ),
+          provider: String(
+            before.provider ?? '',
+          ),
+          oldSellingPrice:
+            before.selling_price,
+          oldCostPrice:
+            before.cost_price,
+          oldEnabled:
+            before.enabled,
+          reason:
+            'Deleted via Admin Pricing Management',
+        });
+      } catch (auditError) {
+        logger.warn(
+          {
+            err: auditError,
+            id,
+          },
+          'Pricing rule deleted but delete audit could not be written',
+        );
+      }
+
+      res.status(204).send();
+    } catch (err) {
+      logger.error(
+        { err, id },
+        'DELETE /pricing/:id failed',
+      );
+
+      res.status(500).json({
+        error: 'Failed to delete pricing rule.',
+      });
+    }
+  },
+);
+
+// ════════════════════════════════════════════════════════════════════════════
+// FUNDING REQUESTS
+// ════════════════════════════════════════════════════════════════════════════
+
+router.get(
+  '/finance/funding-requests',
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const status =
+        String(req.query['status'] ?? '').trim();
+
+      const page = Math.max(
+        1,
+        parseInt(
+          String(req.query['page'] ?? '1'),
+          10,
+        ) || 1,
+      );
+
+      const limit = Math.min(
+        200,
+        Math.max(
+          1,
+          parseInt(
+            String(req.query['limit'] ?? '50'),
+            10,
+          ) || 50,
+        ),
+      );
+
+      const offset = (page - 1) * limit;
+
+      const rows =
+        await db.execute<Record<string, unknown>>(sql`
+          SELECT
+            fr.*,
+            u.name AS customer_name,
+            u.phone AS customer_phone,
+            u.email AS customer_email
+          FROM funding_requests fr
+          LEFT JOIN users u
+            ON u.id = fr.user_id
+          WHERE 1 = 1
+            ${
+              status
+                ? sql`AND fr.status = ${status}`
+                : sql``
+            }
+          ORDER BY fr.created_at DESC
+          LIMIT ${limit}
+          OFFSET ${offset}
+        `);
+
+      const count =
+        await db.execute<{ total: string }>(sql`
+          SELECT COUNT(*)::text AS total
+          FROM funding_requests fr
+          WHERE 1 = 1
+            ${
+              status
+                ? sql`AND fr.status = ${status}`
+                : sql``
+            }
+        `);
+
+      const total =
+        parseInt(
+          count.rows[0]?.total ?? '0',
+          10,
+        );
+
+      res.json({
+        requests: rows.rows,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(
+            total / limit,
+          ),
+        },
+      });
+    } catch (err) {
+      logger.error(
+        { err },
+        'GET /finance/funding-requests failed',
+      );
+
+      res.status(500).json({
+        error:
+          'Failed to load funding requests.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/finance/funding-requests/:id/approve',
+  requireFinancePermission('approve_funding'),
+  async (req: Request, res: Response): Promise<void> => {
+    const adminId =
+      req.session.adminId!;
+
+    const adminRole =
+      req.session.adminRole!;
+
+    const id =
+      String(req.params['id'] ?? '');
+
+    const body =
+      req.body as { reason?: string };
+
+    const reason =
+      body.reason?.trim();
+
+    if (!reason) {
+      res.status(400).json({
+        error:
+          'reason is required.',
+      });
+      return;
+    }
+
+    try {
+      const result =
+        await db.execute<Record<string, unknown>>(sql`
+          SELECT *
+          FROM funding_requests
+          WHERE id = ${id}::uuid
+          LIMIT 1
+        `);
+
+      const funding =
+        result.rows[0];
+
+      if (!funding) {
+        res.status(404).json({
+          error:
+            'Funding request not found.',
+        });
+        return;
+      }
+
+      if (
+        String(funding.status) !==
+        'pending'
+      ) {
+        res.status(409).json({
+          error:
+            'Funding request is no longer pending.',
+        });
+        return;
+      }
+
+      const userId =
+        String(funding.user_id);
+
+      const amount =
+        Number(funding.amount);
+
+      const reference =
+        String(
+          funding.reference ??
+            makeRef('FUND'),
+        );
+
+      let balanceBefore = 0;
+      let balanceAfter = 0;
+
+      await db.transaction(
+        async (tx) => {
+          const wallet =
+            (
+              await tx.execute<{
+                balance: string;
+              }>(
+                sql`
+                  SELECT balance
+                  FROM wallets
+                  WHERE user_id = ${userId}::uuid
+                  FOR UPDATE
+                `,
+              )
+            ).rows[0];
+
+          if (!wallet) {
+            throw new Error(
+              'Wallet not found',
+            );
+          }
+
+          balanceBefore =
+            Number(wallet.balance);
+
+          balanceAfter =
+            balanceBefore + amount;
+
+          await tx.execute(
+            sql`
+              UPDATE wallets
+              SET
+                balance = ${balanceAfter},
+                updated_at = NOW()
+              WHERE user_id = ${userId}::uuid
+            `,
+          );
+
+          await tx.execute(
+            sql`
+              INSERT INTO wallet_ledger
+                (
+                  user_id,
+                  type,
+                  amount,
+                  balance_before,
+                  balance_after,
+                  reference,
+                  related_transaction_id,
+                  performed_by,
+                  reason
+                )
+              VALUES
+                (
+                  ${userId}::uuid,
+                  'funding',
+                  ${amount},
+                  ${balanceBefore},
+                  ${balanceAfter},
+                  ${reference},
+                  NULL,
+                  ${adminId}::uuid,
+                  ${reason}
+                )
+            `,
+          );
+
+          await tx.execute(
+            sql`
+              UPDATE funding_requests
+              SET
+                status = 'approved',
+                approved_by = ${adminId}::uuid,
+                approved_at = NOW(),
+                reason = ${reason},
+                updated_at = NOW()
+              WHERE id = ${id}::uuid
+            `,
+          );
+        },
+      );
+
+      void financialAuditLog({
+        adminId,
+        adminRole,
+        action:
+          'funding_request_approved',
+        entityType:
+          'funding_request',
+        entityId: id,
+        customerId: userId,
+        previousValue: {
+          status:
+            funding.status,
+          wallet_balance:
+            balanceBefore,
+          amount,
+        },
+        newValue: {
+          status: 'approved',
+          wallet_balance:
+            balanceAfter,
+          amount,
+        },
+        reason,
+        ip: clientIp(req),
+      });
+
+      res.json({
+        ok: true,
+        reference,
+        amount,
+        balanceBefore,
+        balanceAfter,
+        status: 'approved',
+      });
+    } catch (err: unknown) {
+      const error =
+        err as {
+          message?: string;
+        };
+
+      if (
+        error.message ===
+        'Wallet not found'
+      ) {
+        res.status(404).json({
+          error:
+            'Wallet not found.',
+        });
+        return;
+      }
+
+      logger.error(
+        { err },
+        'POST /finance/funding-requests/:id/approve failed',
+      );
+
+      res.status(500).json({
+        error:
+          'Failed to approve funding request.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/finance/funding-requests/:id/reject',
+  requireFinancePermission('approve_funding'),
+  async (req: Request, res: Response): Promise<void> => {
+    const adminId =
+      req.session.adminId!;
+
+    const adminRole =
+      req.session.adminRole!;
+
+    const id =
+      String(req.params['id'] ?? '');
+
+    const body =
+      req.body as { reason?: string };
+
+    const reason =
+      body.reason?.trim();
+
+    if (!reason) {
+      res.status(400).json({
+        error:
+          'reason is required.',
+      });
+      return;
+    }
+
+    try {
+      const result =
+        await db.execute<Record<string, unknown>>(sql`
+          SELECT *
+          FROM funding_requests
+          WHERE id = ${id}::uuid
+          LIMIT 1
+        `);
+
+      const funding =
+        result.rows[0];
+
+      if (!funding) {
+        res.status(404).json({
+          error:
+            'Funding request not found.',
+        });
+        return;
+      }
+
+      if (
+        String(funding.status) !==
+        'pending'
+      ) {
+        res.status(409).json({
+          error:
+            'Funding request is no longer pending.',
+        });
+        return;
+      }
+
+      await db.execute(
+        sql`
+          UPDATE funding_requests
+          SET
+            status = 'rejected',
+            rejected_by = ${adminId}::uuid,
+            rejected_at = NOW(),
+            reason = ${reason},
+            updated_at = NOW()
+          WHERE id = ${id}::uuid
+        `,
+      );
+
+      void financialAuditLog({
+        adminId,
+        adminRole,
+        action:
+          'funding_request_rejected',
+        entityType:
+          'funding_request',
+        entityId: id,
+        customerId:
+          String(funding.user_id),
+        previousValue: {
+          status:
+            funding.status,
+        },
+        newValue: {
+          status: 'rejected',
+        },
+        reason,
+        ip: clientIp(req),
+      });
+
+      res.json({
+        ok: true,
+        status: 'rejected',
+      });
+    } catch (err) {
+      logger.error(
+        { err },
+        'POST /finance/funding-requests/:id/reject failed',
+      );
+
+      res.status(500).json({
+        error:
+          'Failed to reject funding request.',
+      });
+    }
+  },
+);
+
+// ════════════════════════════════════════════════════════════════════════════
+// WALLET ADJUSTMENT
+// ════════════════════════════════════════════════════════════════════════════
+
+router.post(
+  '/finance/users/:id/wallet/adjust',
+  requireFinancePermission('adjust_wallet'),
+  async (req: Request, res: Response): Promise<void> => {
+    const adminId =
+      req.session.adminId!;
+
+    const adminRole =
+      req.session.adminRole!;
+
+    const { id } =
+      req.params as {
+        id: string;
+      };
+
+    const {
+      type,
+      amount,
+      reason,
+    } =
+      req.body as {
+        type?: 'credit' | 'debit';
+        amount?: number;
+        reason?: string;
+      };
+
+    if (
+      !type ||
+      !['credit', 'debit'].includes(type)
+    ) {
+      res.status(400).json({
+        error:
+          'type must be "credit" or "debit".',
+      });
+      return;
+    }
+
+    if (
+      !amount ||
+      Number(amount) <= 0
+    ) {
+      res.status(400).json({
+        error:
+          'amount must be a positive number.',
+      });
+      return;
+    }
+
+    if (!reason?.trim()) {
+      res.status(400).json({
+        error:
+          'reason is mandatory for all wallet adjustments.',
+      });
+      return;
+    }
+
+    if (
+      Number(amount) > 1_000_000
+    ) {
+      res.status(400).json({
+        error:
+          'Finance staff wallet adjustments cannot exceed ₦1,000,000. Contact a Super Admin for larger amounts.',
+      });
+      return;
+    }

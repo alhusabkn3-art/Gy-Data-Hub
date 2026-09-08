@@ -1,4 +1,4 @@
-/**
+Hu/**
  * /api/admin — Finance Department routes.
  *
  * Access model:
@@ -1796,3 +1796,687 @@ router.post(
       });
       return;
     }
+const numericAmount =
+      Number(amount);
+
+    const ref =
+      makeRef('FADJ');
+
+    try {
+      const customer =
+        (
+          await db.execute<{
+            name: string;
+          }>(
+            sql`
+              SELECT name
+              FROM users
+              WHERE id = ${id}::uuid
+              LIMIT 1
+            `,
+          )
+        ).rows[0];
+
+      if (!customer) {
+        res.status(404).json({
+          error:
+            'User not found.',
+        });
+        return;
+      }
+
+      let balanceBefore = 0;
+      let balanceAfter = 0;
+
+      await db.transaction(
+        async (tx) => {
+          const wallet =
+            (
+              await tx.execute<{
+                balance: string;
+              }>(
+                sql`
+                  SELECT balance
+                  FROM wallets
+                  WHERE user_id = ${id}::uuid
+                  FOR UPDATE
+                `,
+              )
+            ).rows[0];
+
+          if (!wallet) {
+            throw new Error(
+              'Wallet not found',
+            );
+          }
+
+          balanceBefore =
+            Number(wallet.balance);
+
+          balanceAfter =
+            type === 'credit'
+              ? balanceBefore +
+                numericAmount
+              : balanceBefore -
+                numericAmount;
+
+          if (
+            balanceAfter < 0
+          ) {
+            throw Object.assign(
+              new Error(
+                'Insufficient balance',
+              ),
+              {
+                code:
+                  'INSUFFICIENT',
+              },
+            );
+          }
+
+          await tx.execute(
+            sql`
+              UPDATE wallets
+              SET
+                balance = ${balanceAfter},
+                updated_at = NOW()
+              WHERE user_id = ${id}::uuid
+            `,
+          );
+
+          await tx.execute(
+            sql`
+              INSERT INTO wallet_ledger
+                (
+                  user_id,
+                  type,
+                  amount,
+                  balance_before,
+                  balance_after,
+                  reference,
+                  performed_by,
+                  reason
+                )
+              VALUES
+                (
+                  ${id}::uuid,
+                  ${type},
+                  ${numericAmount},
+                  ${balanceBefore},
+                  ${balanceAfter},
+                  ${ref},
+                  ${adminId}::uuid,
+                  ${reason!.trim()}
+                )
+            `,
+          );
+        },
+      );
+
+      void financialAuditLog({
+        adminId,
+        adminRole,
+        action:
+          `wallet_${type}`,
+        entityType: 'wallet',
+        entityId: id,
+        customerId: id,
+        customerName:
+          customer.name,
+        previousValue: {
+          balance:
+            balanceBefore,
+        },
+        newValue: {
+          balance:
+            balanceAfter,
+          adjustment:
+            numericAmount,
+          direction: type,
+        },
+        reason:
+          reason!.trim(),
+        ip: clientIp(req),
+      });
+
+      res.json({
+        ok: true,
+        reference: ref,
+        balanceBefore,
+        balanceAfter,
+        type,
+        amount: numericAmount,
+      });
+    } catch (err: unknown) {
+      const error =
+        err as {
+          code?: string;
+          message?: string;
+        };
+
+      if (
+        error.code ===
+        'INSUFFICIENT'
+      ) {
+        res.status(400).json({
+          error:
+            'Insufficient wallet balance for this debit.',
+        });
+        return;
+      }
+
+      if (
+        error.message ===
+        'Wallet not found'
+      ) {
+        res.status(404).json({
+          error:
+            'Wallet not found.',
+        });
+        return;
+      }
+
+      logger.error(
+        { err },
+        'POST /finance/users/:id/wallet/adjust failed',
+      );
+
+      res.status(500).json({
+        error:
+          'Failed to adjust wallet.',
+      });
+    }
+  },
+);
+
+// ════════════════════════════════════════════════════════════════════════════
+// TRANSACTION REVERSAL
+// ════════════════════════════════════════════════════════════════════════════
+
+router.post(
+  '/finance/transactions/:id/reverse',
+  requireFinancePermission('process_refunds'),
+  async (req: Request, res: Response): Promise<void> => {
+    const adminId =
+      req.session.adminId!;
+
+    const adminRole =
+      req.session.adminRole!;
+
+    const { id } =
+      req.params as {
+        id: string;
+      };
+
+    const { reason } =
+      req.body as {
+        reason?: string;
+      };
+
+    if (!reason?.trim()) {
+      res.status(400).json({
+        error:
+          'reason is required for all reversals.',
+      });
+      return;
+    }
+
+    try {
+      const txn =
+        (
+          await db.execute<
+            Record<string, unknown>
+          >(
+            sql`
+              SELECT *
+              FROM transactions
+              WHERE id = ${id}::uuid
+              LIMIT 1
+            `,
+          )
+        ).rows[0];
+
+      if (!txn) {
+        res.status(404).json({
+          error:
+            'Transaction not found.',
+        });
+        return;
+      }
+
+      if (
+        String(txn['status']) !==
+        'success'
+      ) {
+        res.status(400).json({
+          error:
+            'Only successful transactions can be reversed.',
+        });
+        return;
+      }
+
+      const existing =
+        (
+          await db.execute<{
+            id: string;
+          }>(
+            sql`
+              SELECT id
+              FROM transaction_reversals
+              WHERE original_transaction_id =
+                ${id}::uuid
+              LIMIT 1
+            `,
+          )
+        ).rows[0];
+
+      if (existing) {
+        res.status(409).json({
+          error:
+            'This transaction has already been reversed.',
+        });
+        return;
+      }
+
+      const userId =
+        String(txn['user_id']);
+
+      const amount =
+        Number(txn['amount']);
+
+      const ref =
+        makeRef('FREV');
+
+      const customer =
+        (
+          await db.execute<{
+            name: string;
+          }>(
+            sql`
+              SELECT name
+              FROM users
+              WHERE id = ${userId}::uuid
+              LIMIT 1
+            `,
+          )
+        ).rows[0];
+
+      let balanceBefore = 0;
+      let balanceAfter = 0;
+      let ledgerEntryId = '';
+
+      await db.transaction(
+        async (tx) => {
+          const wallet =
+            (
+              await tx.execute<{
+                balance: string;
+              }>(
+                sql`
+                  SELECT balance
+                  FROM wallets
+                  WHERE user_id = ${userId}::uuid
+                  FOR UPDATE
+                `,
+              )
+            ).rows[0];
+
+          if (!wallet) {
+            throw new Error(
+              'Wallet not found',
+            );
+          }
+
+          balanceBefore =
+            Number(wallet.balance);
+
+          balanceAfter =
+            balanceBefore + amount;
+
+          await tx.execute(
+            sql`
+              UPDATE wallets
+              SET
+                balance = ${balanceAfter},
+                updated_at = NOW()
+              WHERE user_id = ${userId}::uuid
+            `,
+          );
+
+          const ledger =
+            (
+              await tx.execute<{
+                id: string;
+              }>(
+                sql`
+                  INSERT INTO wallet_ledger
+                    (
+                      user_id,
+                      type,
+                      amount,
+                      balance_before,
+                      balance_after,
+                      reference,
+                      related_transaction_id,
+                      performed_by,
+                      reason
+                    )
+                  VALUES
+                    (
+                      ${userId}::uuid,
+                      'reversal',
+                      ${amount},
+                      ${balanceBefore},
+                      ${balanceAfter},
+                      ${ref},
+                      ${id}::uuid,
+                      ${adminId}::uuid,
+                      ${reason!.trim()}
+                    )
+                  RETURNING id
+                `,
+              )
+            ).rows[0];
+
+          ledgerEntryId =
+            ledger!.id;
+
+          await tx.execute(
+            sql`
+              INSERT INTO transaction_reversals
+                (
+                  original_transaction_id,
+                  user_id,
+                  amount,
+                  reason,
+                  performed_by,
+                  wallet_ledger_id
+                )
+              VALUES
+                (
+                  ${id}::uuid,
+                  ${userId}::uuid,
+                  ${amount},
+                  ${reason!.trim()},
+                  ${adminId}::uuid,
+                  ${ledgerEntryId}::uuid
+                )
+            `,
+          );
+        },
+      );
+
+      void financialAuditLog({
+        adminId,
+        adminRole,
+        action:
+          'transaction_reversed',
+        entityType:
+          'transaction',
+        entityId: id,
+        customerId: userId,
+        customerName:
+          customer?.name,
+        previousValue: {
+          transaction_status:
+            txn['status'],
+          wallet_balance:
+            balanceBefore,
+          amount:
+            txn['amount'],
+          reference:
+            txn['reference'],
+        },
+        newValue: {
+          reversal_reference:
+            ref,
+          wallet_balance:
+            balanceAfter,
+          amount_refunded:
+            amount,
+        },
+        reason:
+          reason!.trim(),
+        ip: clientIp(req),
+      });
+
+      res.json({
+        ok: true,
+        reference: ref,
+        amount,
+        balanceBefore,
+        balanceAfter,
+      });
+    } catch (err: unknown) {
+      const error =
+        err as {
+          message?: string;
+        };
+
+      if (
+        error.message ===
+        'Wallet not found'
+      ) {
+        res.status(404).json({
+          error:
+            'Wallet not found.',
+        });
+        return;
+      }
+
+      logger.error(
+        { err },
+        'POST /finance/transactions/:id/reverse failed',
+      );
+
+      res.status(500).json({
+        error:
+          'Failed to reverse transaction.',
+      });
+    }
+  },
+);
+
+// ════════════════════════════════════════════════════════════════════════════
+// WALLET LEDGER
+// ════════════════════════════════════════════════════════════════════════════
+
+router.get(
+  '/finance/wallet-ledger',
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const page =
+        Math.max(
+          1,
+          parseInt(
+            String(
+              req.query['page'] ??
+                '1',
+            ),
+            10,
+          ) || 1,
+        );
+
+      const limit =
+        Math.min(
+          200,
+          Math.max(
+            1,
+            parseInt(
+              String(
+                req.query['limit'] ??
+                  '50',
+              ),
+              10,
+            ) || 50,
+          ),
+        );
+
+      const offset =
+        (page - 1) * limit;
+
+      const userId =
+        req.query['user_id'] as
+          | string
+          | undefined;
+
+      const type =
+        req.query['type'] as
+          | string
+          | undefined;
+
+      const from =
+        req.query['from'] as
+          | string
+          | undefined;
+
+      const to =
+        req.query['to'] as
+          | string
+          | undefined;
+
+      const rows =
+        (
+          await db.execute<
+            Record<string, unknown>
+          >(
+            sql`
+              SELECT
+                wl.*,
+                u.name AS customer_name,
+                u.phone AS customer_phone
+              FROM wallet_ledger wl
+              LEFT JOIN users u
+                ON u.id = wl.user_id
+              WHERE 1 = 1
+                ${
+                  userId
+                    ? sql`
+                        AND wl.user_id =
+                          ${userId}::uuid
+                      `
+                    : sql``
+                }
+                ${
+                  type
+                    ? sql`
+                        AND wl.type =
+                          ${type}
+                      `
+                    : sql``
+                }
+                ${
+                  from
+                    ? sql`
+                        AND wl.created_at >=
+                          ${from}::timestamptz
+                      `
+                    : sql``
+                }
+                ${
+                  to
+                    ? sql`
+                        AND wl.created_at <=
+                          ${to}::timestamptz +
+                          interval '1 day'
+                      `
+                    : sql``
+                }
+              ORDER BY
+                wl.created_at DESC
+              LIMIT ${limit}
+              OFFSET ${offset}
+            `,
+          )
+        ).rows;
+
+      const countRow =
+        (
+          await db.execute<{
+            total: string;
+            total_amount: string;
+          }>(
+            sql`
+              SELECT
+                COUNT(*)::text AS total,
+                COALESCE(
+                  SUM(amount),
+                  0
+                )::text AS total_amount
+              FROM wallet_ledger wl
+              WHERE 1 = 1
+                ${
+                  userId
+                    ? sql`
+                        AND wl.user_id =
+                          ${userId}::uuid
+                      `
+                    : sql``
+                }
+                ${
+                  type
+                    ? sql`
+                        AND wl.type =
+                          ${type}
+                      `
+                    : sql``
+                }
+                ${
+                  from
+                    ? sql`
+                        AND wl.created_at >=
+                          ${from}::timestamptz
+                      `
+                    : sql``
+                }
+                ${
+                  to
+                    ? sql`
+                        AND wl.created_at <=
+                          ${to}::timestamptz +
+                          interval '1 day'
+                      `
+                    : sql``
+                }
+            `,
+          )
+        ).rows[0];
+
+      const total =
+        parseInt(
+          countRow?.total ?? '0',
+          10,
+        );
+
+      res.json({
+        entries: rows,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages:
+            Math.ceil(
+              total / limit,
+            ),
+        },
+        summary: {
+          total_amount:
+            countRow?.total_amount ??
+            '0',
+        },
+      });
+    } catch (err) {
+      logger.error(
+        { err },
+        'GET /finance/wallet-ledger failed',
+      );
+
+      res.status(500).json({
+        error:
+          'Failed to load wallet ledger.',
+      });
+    }
+  },
+);
+
+export default router;

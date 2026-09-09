@@ -1,4 +1,4 @@
-Hu/**
+/**
  * /api/admin — Finance Department routes.
  *
  * Access model:

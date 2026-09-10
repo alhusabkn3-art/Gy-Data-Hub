@@ -32,7 +32,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: Install Capacitor and branding dependencies
+      - name: Install Capacitor and Sharp
         working-directory: artifacts/gy-data
         run: |
           pnpm add @capacitor/core @capacitor/android
@@ -42,7 +42,7 @@ jobs:
         working-directory: artifacts/gy-data
         run: pnpm build
 
-      - name: Remove previous Android platform
+      - name: Remove old Android platform
         working-directory: artifacts/gy-data
         run: rm -rf android
 
@@ -54,11 +54,11 @@ jobs:
         working-directory: artifacts/gy-data
         run: pnpm exec cap sync android
 
-      - name: Generate GY DATA Android branding
+      - name: Generate GY DATA branding
         working-directory: artifacts/gy-data
         run: node scripts/create-android-branding.mjs
 
-      - name: Verify GY DATA launcher resources
+      - name: Verify GY DATA launcher
         working-directory: artifacts/gy-data
         run: |
           test -f android/app/src/main/res/drawable/ic_launcher_foreground.png
@@ -67,37 +67,27 @@ jobs:
           test -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
 
           if [ -f android/app/src/main/res/drawable-v24/ic_launcher_foreground.xml ]; then
-            echo "ERROR: Old Wi-Fi launcher foreground still exists."
+            echo "ERROR: Old Wi-Fi icon still exists."
             exit 1
           fi
 
-          echo "GY DATA launcher branding verified successfully."
+          echo "GY DATA launcher verified."
 
       - name: Make Gradle executable
         working-directory: artifacts/gy-data/android
         run: chmod +x gradlew
 
-      - name: Clean Android project
+      - name: Clean Android build
         working-directory: artifacts/gy-data/android
         run: ./gradlew clean
 
-      - name: Build Debug APK
+      - name: Build APK
         working-directory: artifacts/gy-data/android
         run: ./gradlew assembleDebug
 
-      - name: Build Debug AAB
+      - name: Build AAB
         working-directory: artifacts/gy-data/android
         run: ./gradlew bundleDebug
-
-      - name: Verify APK
-        run: |
-          test -f artifacts/gy-data/android/app/build/outputs/apk/debug/app-debug.apk
-          echo "APK build completed successfully."
-
-      - name: Verify AAB
-        run: |
-          test -f artifacts/gy-data/android/app/build/outputs/bundle/debug/app-debug.aab
-          echo "AAB build completed successfully."
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

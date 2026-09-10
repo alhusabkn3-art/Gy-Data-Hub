@@ -32,7 +32,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: Install Capacitor
+      - name: Install Capacitor and branding dependencies
         working-directory: artifacts/gy-data
         run: |
           pnpm add @capacitor/core @capacitor/android
@@ -42,10 +42,9 @@ jobs:
         working-directory: artifacts/gy-data
         run: pnpm build
 
-      - name: Remove old Android platform
+      - name: Remove previous Android platform
         working-directory: artifacts/gy-data
-        run: |
-          rm -rf android
+        run: rm -rf android
 
       - name: Add Android platform
         working-directory: artifacts/gy-data
@@ -55,50 +54,50 @@ jobs:
         working-directory: artifacts/gy-data
         run: pnpm exec cap sync android
 
-      - name: Generate GY DATA branding
+      - name: Generate GY DATA Android branding
         working-directory: artifacts/gy-data
-        run: pnpm create:android-branding
+        run: node scripts/create-android-branding.mjs
 
-      - name: Verify old Wi-Fi icon is removed
+      - name: Verify GY DATA launcher resources
         working-directory: artifacts/gy-data
         run: |
+          test -f android/app/src/main/res/drawable/ic_launcher_foreground.png
+          test -f android/app/src/main/res/drawable/ic_launcher_background.xml
+          test -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          test -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+
           if [ -f android/app/src/main/res/drawable-v24/ic_launcher_foreground.xml ]; then
-            echo "ERROR: Old Capacitor Wi-Fi icon still exists."
+            echo "ERROR: Old Wi-Fi launcher foreground still exists."
             exit 1
           fi
 
-          if grep -R "wifi" android/app/src/main/res/drawable-v24 2>/dev/null; then
-            echo "ERROR: Possible old Wi-Fi launcher resource found."
-            exit 1
-          fi
-
-          echo "GY DATA launcher resources verified."
+          echo "GY DATA launcher branding verified successfully."
 
       - name: Make Gradle executable
         working-directory: artifacts/gy-data/android
         run: chmod +x gradlew
 
-      - name: Clean Android build
+      - name: Clean Android project
         working-directory: artifacts/gy-data/android
         run: ./gradlew clean
 
-      - name: Build APK
+      - name: Build Debug APK
         working-directory: artifacts/gy-data/android
         run: ./gradlew assembleDebug
 
-      - name: Build AAB
+      - name: Build Debug AAB
         working-directory: artifacts/gy-data/android
         run: ./gradlew bundleDebug
 
-      - name: Verify APK exists
+      - name: Verify APK
         run: |
           test -f artifacts/gy-data/android/app/build/outputs/apk/debug/app-debug.apk
-          echo "APK created successfully."
+          echo "APK build completed successfully."
 
-      - name: Verify AAB exists
+      - name: Verify AAB
         run: |
           test -f artifacts/gy-data/android/app/build/outputs/bundle/debug/app-debug.aab
-          echo "AAB created successfully."
+          echo "AAB build completed successfully."
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

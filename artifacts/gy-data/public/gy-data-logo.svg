@@ -1,1 +1,242 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1024"
+     height="1024"
+     viewBox="0 0 1024 1024">
 
+  <defs>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#062E73"/>
+      <stop offset="45%" stop-color="#075CC4"/>
+      <stop offset="100%" stop-color="#13A7F5"/>
+    </linearGradient>
+
+    <linearGradient id="wave" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#DDF5FF"/>
+      <stop offset="55%" stop-color="#55C8FA"/>
+      <stop offset="100%" stop-color="#0098E8"/>
+    </linearGradient>
+
+    <filter id="shadow"
+            x="-30%"
+            y="-30%"
+            width="160%"
+            height="160%">
+      <feDropShadow
+        dx="0"
+        dy="12"
+        stdDeviation="12"
+        flood-opacity="0.28"/>
+    </filter>
+
+    <filter id="softShadow"
+            x="-30%"
+            y="-30%"
+            width="160%"
+            height="160%">
+      <feDropShadow
+        dx="0"
+        dy="5"
+        stdDeviation="6"
+        flood-opacity="0.20"/>
+    </filter>
+  </defs>
+
+  <!-- WHITE BACKGROUND -->
+  <rect width="1024" height="1024" fill="#FFFFFF"/>
+
+  <!-- TOP LEFT BLUE WAVES -->
+  <path
+    d="M0 0H430
+       C315 55 220 122 0 255Z"
+    fill="#E1F6FF"/>
+
+  <path
+    d="M0 0H330
+       C245 70 140 140 0 205Z"
+    fill="#B7E9FC"/>
+
+  <path
+    d="M0 0H230
+       C170 58 82 108 0 150Z"
+    fill="#62C9F5"/>
+
+  <!-- BOTTOM RIGHT WAVES -->
+  <path
+    d="M1024 1024H580
+       C735 940 850 858 1024 765Z"
+    fill="#E1F6FF"/>
+
+  <path
+    d="M1024 1024H675
+       C815 945 918 875 1024 810Z"
+    fill="#8CDDFC"/>
+
+  <path
+    d="M1024 1024H790
+       C875 972 954 912 1024 866Z"
+    fill="url(#wave)"/>
+
+  <!-- CIRCUIT PATTERN TOP RIGHT -->
+  <g
+    fill="none"
+    stroke="#B7DDF5"
+    stroke-width="3"
+    opacity="0.65">
+
+    <path d="M760 245H810V210H855V170H910V125H970"/>
+    <path d="M795 280H845V245H890V205H935V160H1000"/>
+    <path d="M830 315H880V275H925V235H970V195H1024"/>
+
+    <path d="M870 180V145H905V110H950"/>
+    <path d="M910 210V175H945V140H985"/>
+    <path d="M950 235V205H990V170H1024"/>
+
+    <circle cx="810" cy="210" r="6" fill="#FFFFFF"/>
+    <circle cx="855" cy="170" r="6" fill="#FFFFFF"/>
+    <circle cx="910" cy="125" r="6" fill="#FFFFFF"/>
+    <circle cx="845" cy="245" r="6" fill="#FFFFFF"/>
+    <circle cx="890" cy="205" r="6" fill="#FFFFFF"/>
+    <circle cx="935" cy="160" r="6" fill="#FFFFFF"/>
+  </g>
+
+  <!-- CIRCUIT PATTERN BOTTOM LEFT -->
+  <g
+    fill="none"
+    stroke="#B7DDF5"
+    stroke-width="3"
+    opacity="0.65">
+
+    <path d="M0 780H55V735H100V690H150V645H200"/>
+    <path d="M0 825H75V780H125V735H175V690H225"/>
+    <path d="M0 870H50V830H105V790H155V750H215"/>
+
+    <path d="M75 780V735H115V700H160"/>
+    <path d="M125 735V690H170V655H205"/>
+    <path d="M175 690V650H220V615H255"/>
+
+    <circle cx="55" cy="735" r="6" fill="#FFFFFF"/>
+    <circle cx="100" cy="690" r="6" fill="#FFFFFF"/>
+    <circle cx="150" cy="645" r="6" fill="#FFFFFF"/>
+    <circle cx="75" cy="780" r="6" fill="#FFFFFF"/>
+    <circle cx="125" cy="735" r="6" fill="#FFFFFF"/>
+  </g>
+
+  <!-- GY LOGO -->
+  <g transform="translate(512 390)"
+     filter="url(#shadow)">
+
+    <!-- G -->
+    <path
+      d="
+      M-225 15
+      C-225 -112 -137 -198 -12 -198
+      C70 -198 139 -164 185 -105
+      L116 -50
+      C87 -88 47 -108 0 -108
+      C-66 -108 -116 -65 -116 17
+      C-116 96 -67 142 5 142
+      C42 142 72 134 99 117
+      V69
+      H8
+      V-9
+      H191
+      V164
+      C137 204 76 225 1 225
+      C-132 225 -225 137 -225 15Z"
+      fill="url(#blue)"/>
+
+    <!-- Y -->
+    <path
+      d="
+      M130 -183
+      H230
+      L292 -45
+      L355 -183
+      H454
+      L342 30
+      V220
+      H240
+      V30
+      Z"
+      fill="url(#blue)"/>
+
+    <!-- SWOOSH -->
+    <path
+      d="
+      M-183 102
+      C-75 166 49 183 163 129
+      C244 91 305 42 348 -6
+      C300 85 234 154 145 190
+      C29 236 -108 213 -204 151
+      Z"
+      fill="url(#blue)"/>
+
+    <!-- GY highlight -->
+    <path
+      d="
+      M-205 4
+      C-192 -92 -123 -166 -21 -174"
+      fill="none"
+      stroke="#32A8F5"
+      stroke-width="7"
+      stroke-linecap="round"
+      opacity="0.75"/>
+
+    <path
+      d="
+      M155 -164
+      L230 -36
+      L291 -164"
+      fill="none"
+      stroke="#31B5FA"
+      stroke-width="7"
+      stroke-linecap="round"
+      opacity="0.65"/>
+  </g>
+
+  <!-- GY DATA -->
+  <text
+    x="512"
+    y="690"
+    text-anchor="middle"
+    font-family="Arial, Helvetica, sans-serif"
+    font-size="108"
+    font-weight="900"
+    letter-spacing="2"
+    fill="url(#blue)"
+    filter="url(#softShadow)">
+    GY DATA
+  </text>
+
+  <!-- LEFT LINE -->
+  <line
+    x1="225"
+    y1="744"
+    x2="420"
+    y2="744"
+    stroke="#062E73"
+    stroke-width="5"/>
+
+  <!-- RIGHT LINE -->
+  <line
+    x1="604"
+    y1="744"
+    x2="799"
+    y2="744"
+    stroke="#062E73"
+    stroke-width="5"/>
+
+  <!-- ENDLESS JOY -->
+  <text
+    x="512"
+    y="795"
+    text-anchor="middle"
+    font-family="Arial, Helvetica, sans-serif"
+    font-size="45"
+    font-weight="600"
+    letter-spacing="2"
+    fill="#062E73">
+    Endless Joy
+  </text>
+
+</svg>

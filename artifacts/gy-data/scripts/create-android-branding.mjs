@@ -1,113 +1,255 @@
-name: Build GY DATA Android
+import fs from "node:fs";
+import path from "node:path";
+import sharp from "sharp";
 
-on:
-  workflow_dispatch:
+const projectRoot = process.cwd();
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+const logoPath = path.join(
+  projectRoot,
+  "public",
+  "gy-data-logo.svg"
+);
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+const androidMain = path.join(
+  projectRoot,
+  "android",
+  "app",
+  "src",
+  "main"
+);
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.17.1
+if (!fs.existsSync(logoPath)) {
+  throw new Error(
+    `GY DATA logo not found: ${logoPath}`
+  );
+}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+if (!fs.existsSync(androidMain)) {
+  throw new Error(
+    `Android project not found: ${androidMain}`
+  );
+}
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
+const resDir = path.join(
+  androidMain,
+  "res"
+);
 
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+const drawableDir = path.join(
+  resDir,
+  "drawable"
+);
 
-      - name: Install Capacitor
-        working-directory: artifacts/gy-data
-        run: |
-          pnpm add @capacitor/core @capacitor/android
-          pnpm add -D @capacitor/cli sharp
+const drawableV24Dir = path.join(
+  resDir,
+  "drawable-v24"
+);
 
-      - name: Build web application
-        working-directory: artifacts/gy-data
-        run: pnpm build
+const adaptiveIconDir = path.join(
+  resDir,
+  "mipmap-anydpi-v26"
+);
 
-      - name: Remove old Android platform
-        working-directory: artifacts/gy-data
-        run: |
-          rm -rf android
+fs.mkdirSync(drawableDir, {
+  recursive: true,
+});
 
-      - name: Add Android platform
-        working-directory: artifacts/gy-data
-        run: pnpm exec cap add android
+fs.mkdirSync(drawableV24Dir, {
+  recursive: true,
+});
 
-      - name: Sync Capacitor
-        working-directory: artifacts/gy-data
-        run: pnpm exec cap sync android
+fs.mkdirSync(adaptiveIconDir, {
+  recursive: true,
+});
 
-      - name: Generate GY DATA branding
-        working-directory: artifacts/gy-data
-        run: pnpm create:android-branding
+/*
+ * Remove the old Capacitor launcher foreground.
+ */
+const oldForegroundFiles = [
+  path.join(
+    drawableV24Dir,
+    "ic_launcher_foreground.xml"
+  ),
+  path.join(
+    drawableV24Dir,
+    "ic_launcher_foreground.png"
+  ),
+  path.join(
+    drawableDir,
+    "ic_launcher_foreground.xml"
+  ),
+  path.join(
+    drawableDir,
+    "ic_launcher_foreground.png"
+  ),
+];
 
-      - name: Verify old Wi-Fi icon is removed
-        working-directory: artifacts/gy-data
-        run: |
-          if [ -f android/app/src/main/res/drawable-v24/ic_launcher_foreground.xml ]; then
-            echo "ERROR: Old Capacitor Wi-Fi icon still exists."
-            exit 1
-          fi
+for (const file of oldForegroundFiles) {
+  if (fs.existsSync(file)) {
+    fs.unlinkSync(file);
+  }
+}
 
-          if grep -R "wifi" android/app/src/main/res/drawable-v24 2>/dev/null; then
-            echo "ERROR: Possible old Wi-Fi launcher resource found."
-            exit 1
-          fi
+/*
+ * Android launcher icon sizes.
+ */
+const iconSizes = [
+  ["mipmap-mdpi", 48],
+  ["mipmap-hdpi", 72],
+  ["mipmap-xhdpi", 96],
+  ["mipmap-xxhdpi", 144],
+  ["mipmap-xxxhdpi", 192],
+];
 
-          echo "GY DATA launcher resources verified."
+/*
+ * Generate normal launcher icons.
+ */
+for (const [folder, size] of iconSizes) {
+  const outputDir = path.join(
+    resDir,
+    folder
+  );
 
-      - name: Make Gradle executable
-        working-directory: artifacts/gy-data/android
-        run: chmod +x gradlew
+  fs.mkdirSync(outputDir, {
+    recursive: true,
+  });
 
-      - name: Clean Android build
-        working-directory: artifacts/gy-data/android
-        run: ./gradlew clean
+  const iconPath = path.join(
+    outputDir,
+    "ic_launcher.png"
+  );
 
-      - name: Build APK
-        working-directory: artifacts/gy-data/android
-        run: ./gradlew assembleDebug
+  const roundIconPath = path.join(
+    outputDir,
+    "ic_launcher_round.png"
+  );
 
-      - name: Build AAB
-        working-directory: artifacts/gy-data/android
-        run: ./gradlew bundleDebug
+  await sharp(logoPath)
+    .resize(size, size, {
+      fit: "contain",
+      background: {
+        r: 255,
+        g: 255,
+        b: 255,
+        alpha: 1,
+      },
+    })
+    .png()
+    .toFile(iconPath);
 
-      - name: Verify APK exists
-        run: |
-          test -f artifacts/gy-data/android/app/build/outputs/apk/debug/app-debug.apk
-          echo "APK created successfully."
+  await sharp(logoPath)
+    .resize(size, size, {
+      fit: "contain",
+      background: {
+        r: 255,
+        g: 255,
+        b: 255,
+        alpha: 1,
+      },
+    })
+    .png()
+    .toFile(roundIconPath);
+}
 
-      - name: Verify AAB exists
-        run: |
-          test -f artifacts/gy-data/android/app/build/outputs/bundle/debug/app-debug.aab
-          echo "AAB created successfully."
+/*
+ * Adaptive icon background.
+ */
+const backgroundXml = `<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: gy-data-hub-apk
-          path: artifacts/gy-data/android/app/build/outputs/apk/debug/app-debug.apk
+    <solid android:color="#FFFFFF" />
 
-      - name: Upload AAB
-        uses: actions/upload-artifact@v4
-        with:
-          name: gy-data-hub-aab
-          path: artifacts/gy-data/android/app/build/outputs/bundle/debug/app-debug.aab
+</shape>
+`;
+
+fs.writeFileSync(
+  path.join(
+    drawableDir,
+    "ic_launcher_background.xml"
+  ),
+  backgroundXml,
+  "utf8"
+);
+
+/*
+ * Create GY DATA adaptive foreground.
+ *
+ * This is PNG instead of the old Capacitor
+ * Wi-Fi vector resource.
+ */
+const foregroundPath = path.join(
+  drawableDir,
+  "ic_launcher_foreground.png"
+);
+
+await sharp(logoPath)
+  .resize(432, 432, {
+    fit: "contain",
+    background: {
+      r: 255,
+      g: 255,
+      b: 255,
+      alpha: 1,
+    },
+  })
+  .png()
+  .toFile(foregroundPath);
+
+/*
+ * Android 8+ adaptive icon.
+ */
+const adaptiveIconXml = `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <background
+        android:drawable="@drawable/ic_launcher_background" />
+
+    <foreground
+        android:drawable="@drawable/ic_launcher_foreground" />
+
+</adaptive-icon>
+`;
+
+fs.writeFileSync(
+  path.join(
+    adaptiveIconDir,
+    "ic_launcher.xml"
+  ),
+  adaptiveIconXml,
+  "utf8"
+);
+
+fs.writeFileSync(
+  path.join(
+    adaptiveIconDir,
+    "ic_launcher_round.xml"
+  ),
+  adaptiveIconXml,
+  "utf8"
+);
+
+/*
+ * Generate splash artwork.
+ */
+const splashPath = path.join(
+  drawableDir,
+  "gy_data_splash.png"
+);
+
+await sharp(logoPath)
+  .resize(1024, 1024, {
+    fit: "contain",
+    background: {
+      r: 255,
+      g: 255,
+      b: 255,
+      alpha: 1,
+    },
+  })
+  .png()
+  .toFile(splashPath);
+
+console.log(
+  "GY DATA Android branding generated successfully."
+);

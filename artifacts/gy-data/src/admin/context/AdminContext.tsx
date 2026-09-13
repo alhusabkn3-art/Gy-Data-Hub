@@ -33,7 +33,7 @@ import {
   type AdminAccount,
   type AdminRole,
   type AuditLogEntry,
-} from './data/adminMockData';
+} from '../data/adminMockData';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // API

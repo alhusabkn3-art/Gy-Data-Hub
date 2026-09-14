@@ -566,17 +566,206 @@ router.patch(
     }
   },
 );
+// ── GET /api/admin/stats ──────────────────────────────────────────────────────
 
 router.get(
   '/stats',
   async (_req: Request, res: Response): Promise<void> => {
     try {
-      const usersResult = await db.execute(sql`
-        SELECT COUNT(*)::int AS count
-        FROM users
+      /*
+       * IMPORTANT:
+       * The users table does NOT contain role or balance.
+       * Balance is stored in wallets.
+       *
+       * This endpoint returns the exact AdminStats shape expected
+       * by the frontend.
+       */
+
+      const result = await db.execute(sql`
+        SELECT
+          (
+            SELECT COUNT(*)::int
+            FROM users
+          ) AS total_users,
+
+          (
+            SELECT COUNT(*)::int
+            FROM users
+            WHERE status = 'active'
+          ) AS active_users,
+
+          (
+            SELECT COUNT(*)::int
+            FROM users
+            WHERE status = 'suspended'
+          ) AS suspended_users,
+
+          (
+            SELECT COUNT(*)::int
+            FROM users
+            WHERE kyc_status = 'verified'
+          ) AS verified_users,
+
+          (
+            SELECT COUNT(*)::int
+            FROM users
+            WHERE kyc_status = 'pending'
+          ) AS pending_kyc_users,
+
+          (
+            SELECT COUNT(*)::int
+            FROM users
+            WHERE kyc_status = 'unverified'
+          ) AS unverified_users,
+
+          (
+            SELECT COUNT(*)::int
+            FROM transactions
+          ) AS total_transactions,
+
+          (
+            SELECT COUNT(*)::int
+            FROM transactions
+            WHERE status = 'success'
+          ) AS successful_transactions,
+
+          (
+            SELECT COUNT(*)::int
+            FROM transactions
+            WHERE status = 'pending'
+          ) AS pending_transactions,
+
+          (
+            SELECT COUNT(*)::int
+            FROM transactions
+            WHERE status = 'failed'
+          ) AS failed_transactions,
+
+          (
+            SELECT COALESCE(SUM(amount), 0)
+            FROM transactions
+            WHERE status = 'success'
+          ) AS total_revenue,
+
+          (
+            SELECT COALESCE(SUM(amount), 0)
+            FROM transactions
+            WHERE status = 'success'
+              AND created_at >= CURRENT_DATE
+          ) AS today_revenue,
+
+          (
+            SELECT COALESCE(SUM(amount), 0)
+            FROM transactions
+            WHERE status = 'success'
+              AND created_at >= CURRENT_DATE - INTERVAL '6 days'
+          ) AS week_revenue,
+
+          (
+            SELECT COALESCE(SUM(amount), 0)
+            FROM transactions
+            WHERE status = 'success'
+              AND created_at >= DATE_TRUNC('month', CURRENT_DATE)
+          ) AS month_revenue,
+
+          (
+            SELECT COALESCE(SUM(balance), 0)
+            FROM wallets
+          ) AS total_wallet_balance,
+
+          (
+            SELECT COALESCE(AVG(amount), 0)
+            FROM transactions
+            WHERE status = 'success'
+          ) AS avg_transaction_value
       `);
 
-      const transactionsResult = await db.execute(sql`
+      const row = result.rows[0] as Record<
+        string,
+        string | number | null | undefined
+      >;
+
+      const numberValue = (
+        value: string | number | null | undefined,
+      ): number => {
+        const parsed = Number(value ?? 0);
+
+        return Number.isFinite(parsed) ? parsed : 0;
+      };
+
+      const stats = {
+        totalUsers: numberValue(row.total_users),
+
+        activeUsers: numberValue(row.active_users),
+
+        suspendedUsers: numberValue(row.suspended_users),
+
+        verifiedUsers: numberValue(row.verified_users),
+
+        pendingKycUsers: numberValue(
+          row.pending_kyc_users,
+        ),
+
+        unverifiedUsers: numberValue(
+          row.unverified_users,
+        ),
+
+        totalTransactions: numberValue(
+          row.total_transactions,
+        ),
+
+        successfulTransactions: numberValue(
+          row.successful_transactions,
+        ),
+
+        pendingTransactions: numberValue(
+          row.pending_transactions,
+        ),
+
+        failedTransactions: numberValue(
+          row.failed_transactions,
+        ),
+
+        totalRevenue: numberValue(
+          row.total_revenue,
+        ),
+
+        todayRevenue: numberValue(
+          row.today_revenue,
+        ),
+
+        weekRevenue: numberValue(
+          row.week_revenue,
+        ),
+
+        monthRevenue: numberValue(
+          row.month_revenue,
+        ),
+
+        totalWalletBalance: numberValue(
+          row.total_wallet_balance,
+        ),
+
+        avgTransactionValue: numberValue(
+          row.avg_transaction_value,
+        ),
+      };
+
+      res.json(stats);
+    } catch (err) {
+      logger.error(
+        {
+          err,
+        },
+        'admin/stats failed',
+      );
+
+      res.status(500).json({
+        error: 'Failed to load admin statistics.',
+      });
+    }
+  },
+);b.execute(sql`
         SELECT COUNT(*)::int AS count
         FROM transactions
       `);

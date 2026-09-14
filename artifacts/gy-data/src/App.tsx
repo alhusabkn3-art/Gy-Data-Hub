@@ -1,9 +1,22 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
-import { AppProvider, useAppContext } from './context/AppContext';
-import { AdminProvider } from './admin/context/AdminContext';
+import {
+  Route,
+  Switch,
+  Router as WouterRouter,
+  useLocation,
+} from 'wouter';
+
+import {
+  AppProvider,
+  useAppContext,
+} from './context/AppContext';
+
+import {
+  AdminProvider,
+} from './admin/context/AdminContext';
+
 import AdminApp from './admin/AdminApp';
 
 // Screen Imports
@@ -30,7 +43,8 @@ import BottomNav from './components/BottomNav';
 
 const queryClient = new QueryClient();
 
-// ── Loading screen — shown while session check is in flight ───────────────────
+// ── Loading screen ────────────────────────────────────────────────────────────
+
 function SessionLoadingScreen() {
   return (
     <div
@@ -76,7 +90,7 @@ function SessionLoadingScreen() {
   );
 }
 
-// ── Customer App ─────────────────────────────────────────────────────────────
+// ── Main Customer Application ─────────────────────────────────────────────────
 
 function MainApp() {
   const { activeTab } = useAppContext();
@@ -85,6 +99,7 @@ function MainApp() {
     <div className="flex flex-col h-[100dvh] bg-background text-foreground overflow-hidden">
       <div className="flex-1 overflow-y-auto min-h-0">
         <Switch>
+
           <Route
             path="/data"
             component={BuyDataScreen}
@@ -141,12 +156,27 @@ function MainApp() {
           />
 
           <Route path="/">
-            {activeTab === 'home' && <HomeScreen />}
-            {activeTab === 'wallet' && <WalletScreen />}
-            {activeTab === 'history' && <TransactionHistoryScreen />}
-            {activeTab === 'profile' && <ProfileScreen />}
-            {activeTab === 'services' && <HomeScreen />}
+            {activeTab === 'home' && (
+              <HomeScreen />
+            )}
+
+            {activeTab === 'wallet' && (
+              <WalletScreen />
+            )}
+
+            {activeTab === 'history' && (
+              <TransactionHistoryScreen />
+            )}
+
+            {activeTab === 'profile' && (
+              <ProfileScreen />
+            )}
+
+            {activeTab === 'services' && (
+              <HomeScreen />
+            )}
           </Route>
+
         </Switch>
       </div>
 
@@ -155,34 +185,66 @@ function MainApp() {
   );
 }
 
-function CustomerRouter() {
-  const { isLoggedIn, isLoading } = useAppContext();
+// ── Customer Router ───────────────────────────────────────────────────────────
 
-  // Neutral loading screen while the /api/auth/me check is in flight.
-  // Prevents a flash of the login screen for users who are already logged in.
+function CustomerRouter() {
+  /*
+   * IMPORTANT:
+   *
+   * AppContext exposes:
+   *
+   *   isAuthenticated
+   *   isLoading
+   *
+   * It does NOT expose isLoggedIn.
+   *
+   * The previous code used:
+   *
+   *   const { isLoggedIn, isLoading } = useAppContext();
+   *
+   * which caused the router to remain on LoginScreen
+   * even after a successful login.
+   */
+
+  const {
+    isAuthenticated,
+    isLoading,
+  } = useAppContext();
+
+  // Wait until /api/auth/me finishes restoring the session.
   if (isLoading) {
     return <SessionLoadingScreen />;
   }
 
   return (
     <Switch>
-      {/* Auth screens — always accessible */}
+
+      {/* Registration */}
       <Route
         path="/register"
         component={RegisterScreen}
       />
 
+      {/* Forgot PIN */}
       <Route
         path="/forgot-pin"
         component={ForgotPinScreen}
       />
 
+      {/* All other customer routes */}
       <Route path="*">
-        {isLoggedIn ? <MainApp /> : <LoginScreen />}
+        {isAuthenticated ? (
+          <MainApp />
+        ) : (
+          <LoginScreen />
+        )}
       </Route>
+
     </Switch>
   );
 }
+
+// ── Customer Application Provider ─────────────────────────────────────────────
 
 function CustomerApp() {
   return (
@@ -194,7 +256,7 @@ function CustomerApp() {
   );
 }
 
-// ── Root Router — splits /admin from customer app ─────────────────────────────
+// ── Root Router ───────────────────────────────────────────────────────────────
 
 function RootRouter() {
   const [location] = useLocation();
@@ -228,13 +290,16 @@ function RootRouter() {
   return <CustomerApp />;
 }
 
-// ── App Entry ─────────────────────────────────────────────────────────────────
+// ── Application Entry ─────────────────────────────────────────────────────────
 
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <WouterRouter
-        base={import.meta.env.BASE_URL.replace(/\/$/, '')}
+        base={import.meta.env.BASE_URL.replace(
+          /\/$/,
+          '',
+        )}
       >
         <RootRouter />
 

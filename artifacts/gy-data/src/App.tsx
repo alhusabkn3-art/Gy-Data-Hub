@@ -13,13 +13,9 @@ import {
   useAppContext,
 } from './context/AppContext';
 
-import {
-  AdminProvider,
-} from './admin/context/AdminContext';
-
+import { AdminProvider } from './admin/context/AdminContext';
 import AdminApp from './admin/AdminApp';
 
-// Screen Imports
 import LoginScreen from './pages/LoginScreen';
 import RegisterScreen from './pages/RegisterScreen';
 import ForgotPinScreen from './pages/ForgotPinScreen';
@@ -43,41 +39,62 @@ import BottomNav from './components/BottomNav';
 
 const queryClient = new QueryClient();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SPLASH / SESSION LOADING SCREEN
-// ─────────────────────────────────────────────────────────────────────────────
+/* ────────────────────────────────────────────────────────────────────────────
+   SPLASH / SESSION LOADING SCREEN
+   ──────────────────────────────────────────────────────────────────────────── */
 
 function SessionLoadingScreen() {
   return (
-    <div className="relative h-[100dvh] w-full overflow-hidden bg-[#061B4A]">
-      <img
-        src="/gy-data-splash.png"
-        alt="Gy-Data-Hub"
-        className="absolute inset-0 h-full w-full object-cover"
-      />
+    <div className="fixed inset-0 flex h-[100dvh] w-full items-center justify-center overflow-hidden bg-white">
+      <div className="relative flex h-full w-full max-w-[480px] flex-col items-center justify-center px-6">
+        
+        {/* Clean splash design */}
+        <div className="flex w-full flex-col items-center justify-center">
+          
+          <div className="relative flex h-32 w-32 items-center justify-center rounded-[32px] bg-white shadow-[0_12px_45px_rgba(0,0,0,0.10)]">
+            <img
+              src="/gy-data-logo.svg"
+              alt="GY DATA"
+              className="h-24 w-24 object-contain"
+            />
+          </div>
 
-      <div className="absolute bottom-[6%] left-1/2 flex -translate-x-1/2 flex-col items-center">
-        <div
-          className="h-10 w-10 animate-spin rounded-full"
-          style={{
-            border: '4px solid rgba(255,255,255,0.18)',
-            borderTopColor: '#13B9FF',
-            borderRightColor: '#1684FF',
-          }}
-          aria-label="Loading"
-        />
+          <div className="mt-7 text-center">
+            <h1 className="text-2xl font-bold tracking-tight text-[#075CC4]">
+              GY DATA
+            </h1>
 
-        <span className="mt-3 text-[11px] font-medium tracking-[0.35em] text-white/75">
-          LOADING...
-        </span>
+            <p className="mt-1 text-sm font-medium text-gray-500">
+              Endless Joy
+            </p>
+          </div>
+
+          {/* Loading indicator */}
+          <div className="mt-10 flex items-center gap-2">
+            <span
+              className="h-2.5 w-2.5 animate-bounce rounded-full bg-[#075CC4]"
+              style={{ animationDelay: '0s' }}
+            />
+
+            <span
+              className="h-2.5 w-2.5 animate-bounce rounded-full bg-[#0A8FE0]"
+              style={{ animationDelay: '0.15s' }}
+            />
+
+            <span
+              className="h-2.5 w-2.5 animate-bounce rounded-full bg-[#13A7F5]"
+              style={{ animationDelay: '0.30s' }}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MAIN CUSTOMER APPLICATION
-// ─────────────────────────────────────────────────────────────────────────────
+/* ────────────────────────────────────────────────────────────────────────────
+   MAIN CUSTOMER APPLICATION
+   ──────────────────────────────────────────────────────────────────────────── */
 
 function MainApp() {
   const { activeTab } = useAppContext();
@@ -143,25 +160,17 @@ function MainApp() {
           />
 
           <Route path="/">
-            {activeTab === 'home' && (
-              <HomeScreen />
-            )}
+            {activeTab === 'home' && <HomeScreen />}
 
-            {activeTab === 'wallet' && (
-              <WalletScreen />
-            )}
+            {activeTab === 'wallet' && <WalletScreen />}
 
             {activeTab === 'history' && (
               <TransactionHistoryScreen />
             )}
 
-            {activeTab === 'profile' && (
-              <ProfileScreen />
-            )}
+            {activeTab === 'profile' && <ProfileScreen />}
 
-            {activeTab === 'services' && (
-              <HomeScreen />
-            )}
+            {activeTab === 'services' && <HomeScreen />}
           </Route>
 
         </Switch>
@@ -172,9 +181,9 @@ function MainApp() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CUSTOMER ROUTER
-// ─────────────────────────────────────────────────────────────────────────────
+/* ────────────────────────────────────────────────────────────────────────────
+   CUSTOMER ROUTER
+   ──────────────────────────────────────────────────────────────────────────── */
 
 function CustomerRouter() {
   const {
@@ -182,34 +191,7 @@ function CustomerRouter() {
     isLoading,
   } = useAppContext();
 
-  /*
-   * IMPORTANT:
-   *
-   * Never allow session restoration to block the Login screen forever.
-   *
-   * If /auth/me or any session request hangs, the user must still
-   * be able to reach the Login page.
-   */
-  const [loadingTimedOut, setLoadingTimedOut] = React.useState(false);
-
-  React.useEffect(() => {
-    if (!isLoading) {
-      setLoadingTimedOut(false);
-      return;
-    }
-
-    const timeout = window.setTimeout(() => {
-      setLoadingTimedOut(true);
-    }, 5000);
-
-    return () => {
-      window.clearTimeout(timeout);
-    };
-  }, [isLoading]);
-
-  // Only show splash while session restoration is actually loading.
-  // After 5 seconds, allow the Login page to appear.
-  if (isLoading && !loadingTimedOut) {
+  if (isLoading) {
     return <SessionLoadingScreen />;
   }
 
@@ -238,9 +220,9 @@ function CustomerRouter() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CUSTOMER APPLICATION PROVIDER
-// ─────────────────────────────────────────────────────────────────────────────
+/* ────────────────────────────────────────────────────────────────────────────
+   CUSTOMER PROVIDER
+   ──────────────────────────────────────────────────────────────────────────── */
 
 function CustomerApp() {
   return (
@@ -252,9 +234,9 @@ function CustomerApp() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ROOT ROUTER
-// ─────────────────────────────────────────────────────────────────────────────
+/* ────────────────────────────────────────────────────────────────────────────
+   ROOT ROUTER
+   ──────────────────────────────────────────────────────────────────────────── */
 
 function RootRouter() {
   const [location] = useLocation();
@@ -288,18 +270,15 @@ function RootRouter() {
   return <CustomerApp />;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// APPLICATION ENTRY
-// ─────────────────────────────────────────────────────────────────────────────
+/* ────────────────────────────────────────────────────────────────────────────
+   APPLICATION ENTRY
+   ──────────────────────────────────────────────────────────────────────────── */
 
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <WouterRouter
-        base={import.meta.env.BASE_URL.replace(
-          /\/$/,
-          '',
-        )}
+        base={import.meta.env.BASE_URL.replace(/\/$/, '')}
       >
         <RootRouter />
 

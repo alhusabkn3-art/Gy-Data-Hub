@@ -43,49 +43,49 @@ import BottomNav from './components/BottomNav';
 
 const queryClient = new QueryClient();
 
-// ── Splash / Session Loading Screen ───────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// SPLASH / SESSION LOADING SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
 
 function SessionLoadingScreen() {
   return (
-    <div
-      className="relative flex h-[100dvh] w-full items-center justify-center overflow-hidden"
-      style={{
-        background:
-          'linear-gradient(180deg, #061B4A 0%, #062B72 55%, #03183F 100%)',
-      }}
-    >
-      <div className="relative h-full w-full">
-        <img
-          src="/gy-data-splash.png"
-          alt="Gy-Data-Hub"
-          className="absolute inset-0 h-full w-full object-cover"
+    <div className="relative h-[100dvh] w-full overflow-hidden bg-[#061B4A]">
+      <img
+        src="/gy-data-splash.png"
+        alt="Gy-Data-Hub"
+        className="absolute inset-0 h-full w-full object-cover"
+      />
+
+      {/* Loading Indicator */}
+      <div className="absolute bottom-[6%] left-1/2 flex -translate-x-1/2 flex-col items-center">
+        <div
+          className="h-10 w-10 animate-spin rounded-full"
+          style={{
+            border: '4px solid rgba(255,255,255,0.18)',
+            borderTopColor: '#13B9FF',
+            borderRightColor: '#1684FF',
+          }}
+          aria-label="Loading"
         />
 
-        <div className="absolute bottom-[7%] left-1/2 -translate-x-1/2">
-          <div
-            className="h-10 w-10 animate-spin rounded-full"
-            style={{
-              border:
-                '4px solid rgba(255,255,255,0.18)',
-              borderTopColor: '#13B9FF',
-              borderRightColor: '#1684FF',
-            }}
-            aria-label="Loading"
-          />
-        </div>
+        <span className="mt-3 text-[11px] font-medium tracking-[0.35em] text-white/75">
+          LOADING...
+        </span>
       </div>
     </div>
   );
 }
 
-// ── Main Customer Application ─────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN CUSTOMER APPLICATION
+// ─────────────────────────────────────────────────────────────────────────────
 
 function MainApp() {
   const { activeTab } = useAppContext();
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-background text-foreground overflow-hidden">
-      <div className="flex-1 overflow-y-auto min-h-0">
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-background text-foreground">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         <Switch>
 
           <Route
@@ -173,7 +173,9 @@ function MainApp() {
   );
 }
 
-// ── Customer Router ───────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// CUSTOMER ROUTER
+// ─────────────────────────────────────────────────────────────────────────────
 
 function CustomerRouter() {
   const {
@@ -181,6 +183,7 @@ function CustomerRouter() {
     isLoading,
   } = useAppContext();
 
+  // Show the new splash while restoring/checking the session.
   if (isLoading) {
     return <SessionLoadingScreen />;
   }
@@ -188,19 +191,16 @@ function CustomerRouter() {
   return (
     <Switch>
 
-      {/* Registration */}
       <Route
         path="/register"
         component={RegisterScreen}
       />
 
-      {/* Forgot PIN */}
       <Route
         path="/forgot-pin"
         component={ForgotPinScreen}
       />
 
-      {/* All other customer routes */}
       <Route path="*">
         {isAuthenticated ? (
           <MainApp />
@@ -213,7 +213,9 @@ function CustomerRouter() {
   );
 }
 
-// ── Customer Application Provider ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// CUSTOMER APPLICATION PROVIDER
+// ─────────────────────────────────────────────────────────────────────────────
 
 function CustomerApp() {
   return (
@@ -225,7 +227,9 @@ function CustomerApp() {
   );
 }
 
-// ── Root Router ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// ROOT ROUTER
+// ─────────────────────────────────────────────────────────────────────────────
 
 function RootRouter() {
   const [location] = useLocation();
@@ -259,7 +263,9 @@ function RootRouter() {
   return <CustomerApp />;
 }
 
-// ── Application Entry ─────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// APPLICATION ENTRY
+// ─────────────────────────────────────────────────────────────────────────────
 
 function App() {
   return (

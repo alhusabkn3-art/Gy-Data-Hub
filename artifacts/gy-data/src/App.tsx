@@ -263,7 +263,7 @@ function RootRouter() {
 
 function App() {
   return (
-    <QueryClientProvider clientName={queryClient}>
+    <QueryClientProvider client={queryClient}>
       <WouterRouter
         base={import.meta.env.BASE_URL.replace(
           /\/$/,

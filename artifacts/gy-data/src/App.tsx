@@ -43,46 +43,34 @@ import BottomNav from './components/BottomNav';
 
 const queryClient = new QueryClient();
 
-// ── Loading screen ────────────────────────────────────────────────────────────
+// ── Splash / Session Loading Screen ───────────────────────────────────────────
 
 function SessionLoadingScreen() {
   return (
     <div
-      className="flex h-[100dvh] flex-col items-center justify-center overflow-hidden"
+      className="relative flex h-[100dvh] w-full items-center justify-center overflow-hidden"
       style={{
-        background: '#FFFFFF',
+        background:
+          'linear-gradient(180deg, #061B4A 0%, #062B72 55%, #03183F 100%)',
       }}
     >
-      <div className="w-full max-w-[420px] px-6 flex flex-col items-center">
+      <div className="relative h-full w-full">
         <img
-          src="/gy-data-logo.svg"
-          alt="GY DATA - Endless Joy"
-          className="w-full h-auto object-contain"
+          src="/gy-data-splash.png"
+          alt="Gy-Data-Hub"
+          className="absolute inset-0 h-full w-full object-cover"
         />
 
-        <div className="flex gap-2 mt-8">
+        <div className="absolute bottom-[7%] left-1/2 -translate-x-1/2">
           <div
-            className="w-2.5 h-2.5 rounded-full animate-bounce"
+            className="h-10 w-10 animate-spin rounded-full"
             style={{
-              background: '#075CC4',
-              animationDelay: '0s',
+              border:
+                '4px solid rgba(255,255,255,0.18)',
+              borderTopColor: '#13B9FF',
+              borderRightColor: '#1684FF',
             }}
-          />
-
-          <div
-            className="w-2.5 h-2.5 rounded-full animate-bounce"
-            style={{
-              background: '#0A8FE0',
-              animationDelay: '0.15s',
-            }}
-          />
-
-          <div
-            className="w-2.5 h-2.5 rounded-full animate-bounce"
-            style={{
-              background: '#13A7F5',
-              animationDelay: '0.30s',
-            }}
+            aria-label="Loading"
           />
         </div>
       </div>
@@ -188,30 +176,11 @@ function MainApp() {
 // ── Customer Router ───────────────────────────────────────────────────────────
 
 function CustomerRouter() {
-  /*
-   * IMPORTANT:
-   *
-   * AppContext exposes:
-   *
-   *   isAuthenticated
-   *   isLoading
-   *
-   * It does NOT expose isLoggedIn.
-   *
-   * The previous code used:
-   *
-   *   const { isLoggedIn, isLoading } = useAppContext();
-   *
-   * which caused the router to remain on LoginScreen
-   * even after a successful login.
-   */
-
   const {
     isAuthenticated,
     isLoading,
   } = useAppContext();
 
-  // Wait until /api/auth/me finishes restoring the session.
   if (isLoading) {
     return <SessionLoadingScreen />;
   }
@@ -294,7 +263,7 @@ function RootRouter() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider clientName={queryClient}>
       <WouterRouter
         base={import.meta.env.BASE_URL.replace(
           /\/$/,

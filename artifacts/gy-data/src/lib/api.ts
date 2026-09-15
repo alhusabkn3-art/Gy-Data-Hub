@@ -105,10 +105,12 @@ export async function buyData(params: {
   planCode: string;
   planName: string;
   amount: number;
+  purchasePin: string;
 }): Promise<PurchaseResult> {
   const network = params.network.trim();
   const phone = params.phone.trim();
   const planCode = params.planCode.trim();
+  const purchasePin = params.purchasePin.trim();
 
   if (!network) {
     throw new Error('Network is required.');
@@ -122,6 +124,10 @@ export async function buyData(params: {
     throw new Error('Data plan is required.');
   }
 
+  if (!/^\d{4}$/.test(purchasePin)) {
+    throw new Error('Purchase PIN must be exactly 4 digits.');
+  }
+
   return apiFetch<PurchaseResult>(
     PURCHASE_BASE,
     '/data',
@@ -133,6 +139,7 @@ export async function buyData(params: {
         planCode,
         planName: params.planName,
         amount: params.amount,
+        purchasePin,
       }),
     },
   );

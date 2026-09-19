@@ -33,20 +33,13 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
-          cache: gradle
 
-      - name: Install root dependencies
+      - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
-
-      - name: Install Android build dependencies
-        working-directory: artifacts/gy-data
-        run: |
-          pnpm add @capacitor/core @capacitor/android
-          pnpm add -D @capacitor/cli sharp
 
       - name: Build web application
         working-directory: artifacts/gy-data
@@ -56,15 +49,15 @@ jobs:
         working-directory: artifacts/gy-data
         run: pnpm exec cap add android
 
-      - name: Sync web app with Android
+      - name: Sync Capacitor
         working-directory: artifacts/gy-data
         run: pnpm exec cap sync android
 
-      - name: Apply GY DATA Android branding
+      - name: Generate GY DATA branding
         working-directory: artifacts/gy-data
         run: node scripts/create-android-branding.mjs
 
-      - name: Verify GY DATA branding
+      - name: Verify GY DATA launcher
         working-directory: artifacts/gy-data
         run: |
           test -f android/app/src/main/res/drawable/ic_launcher_foreground.png
@@ -73,17 +66,17 @@ jobs:
           test -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
 
           if [ -f android/app/src/main/res/drawable-v24/ic_launcher_foreground.xml ]; then
-            echo "Old Capacitor Wi-Fi launcher resource detected."
+            echo "ERROR: Old Wi-Fi launcher resource detected."
             exit 1
           fi
 
-          echo "GY DATA branding verified."
+          echo "GY DATA launcher verified."
 
       - name: Make Gradle executable
         working-directory: artifacts/gy-data/android
         run: chmod +x gradlew
 
-      - name: Build installable debug APK
+      - name: Build installable APK
         working-directory: artifacts/gy-data/android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 

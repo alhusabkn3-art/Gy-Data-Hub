@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
+import { useLocation } from 'wouter';
 import { useAppContext } from '../context/AppContext';
 import { Home, Grid, Wallet, Clock, User } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import ServicesModal from './ServicesModal';
 
 export default function BottomNav() {
   const { activeTab, setActiveTab, unreadCount } = useAppContext();
+  const [, setLocation] = useLocation();
   const [isServicesOpen, setIsServicesOpen] = useState(false);
 
   const tabs = [
@@ -19,9 +21,11 @@ export default function BottomNav() {
   const handleTabClick = (id: string) => {
     if (id === 'services') {
       setIsServicesOpen(true);
-    } else {
-      setActiveTab(id);
+      return;
     }
+
+    setActiveTab(id);
+    setLocation('/');
   };
 
   return (
@@ -31,29 +35,47 @@ export default function BottomNav() {
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
             const Icon = tab.icon;
-            
+
             return (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => handleTabClick(tab.id)}
                 className="relative flex flex-col items-center justify-center w-16 h-full gap-1"
               >
                 {isActive && tab.id !== 'services' && (
-                  <motion.div 
+                  <motion.div
                     layoutId="activeTabIndicator"
                     className="absolute -top-1 w-8 h-1 bg-primary rounded-full"
-                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                    transition={{
+                      type: 'spring',
+                      stiffness: 300,
+                      damping: 30,
+                    }}
                   />
                 )}
-                
-                <div className={`relative flex items-center justify-center w-8 h-8 rounded-full transition-colors ${isActive && tab.id !== 'services' ? 'bg-primary/10 text-primary' : 'text-muted-foreground'}`}>
+
+                <div
+                  className={`relative flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
+                    isActive && tab.id !== 'services'
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground'
+                  }`}
+                >
                   <Icon className="w-5 h-5" />
+
                   {tab.id === 'home' && unreadCount > 0 && (
-                    <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full border border-background"></span>
+                    <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full border border-background" />
                   )}
                 </div>
-                
-                <span className={`text-[10px] font-medium transition-colors ${isActive && tab.id !== 'services' ? 'text-primary' : 'text-muted-foreground'}`}>
+
+                <span
+                  className={`text-[10px] font-medium transition-colors ${
+                    isActive && tab.id !== 'services'
+                      ? 'text-primary'
+                      : 'text-muted-foreground'
+                  }`}
+                >
                   {tab.label}
                 </span>
               </button>
@@ -62,7 +84,10 @@ export default function BottomNav() {
         </div>
       </div>
 
-      <ServicesModal open={isServicesOpen} onOpenChange={setIsServicesOpen} />
+      <ServicesModal
+        open={isServicesOpen}
+        onOpenChange={setIsServicesOpen}
+      />
     </>
   );
 }

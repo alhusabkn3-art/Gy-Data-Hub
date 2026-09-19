@@ -41,6 +41,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
+      - name: Install Capacitor and Sharp
+        working-directory: artifacts/gy-data
+        run: |
+          pnpm add @capacitor/core @capacitor/android
+          pnpm add -D @capacitor/cli sharp
+
       - name: Build web application
         working-directory: artifacts/gy-data
         run: pnpm build

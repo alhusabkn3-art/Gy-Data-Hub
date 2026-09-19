@@ -3,9 +3,18 @@ name: Build GY DATA Android
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: gy-data-android-build
+  cancel-in-progress: true
+
 jobs:
-  build:
+  build-android:
+    name: Build GY DATA APK
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -28,11 +37,12 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+          cache: gradle
 
-      - name: Install dependencies
+      - name: Install root dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: Install Capacitor and Sharp
+      - name: Install Android build dependencies
         working-directory: artifacts/gy-data
         run: |
           pnpm add @capacitor/core @capacitor/android
@@ -42,23 +52,19 @@ jobs:
         working-directory: artifacts/gy-data
         run: pnpm build
 
-      - name: Remove old Android platform
-        working-directory: artifacts/gy-data
-        run: rm -rf android
-
-      - name: Add Android platform
+      - name: Create Android project
         working-directory: artifacts/gy-data
         run: pnpm exec cap add android
 
-      - name: Sync Capacitor
+      - name: Sync web app with Android
         working-directory: artifacts/gy-data
         run: pnpm exec cap sync android
 
-      - name: Generate GY DATA branding
+      - name: Apply GY DATA Android branding
         working-directory: artifacts/gy-data
         run: node scripts/create-android-branding.mjs
 
-      - name: Verify GY DATA launcher
+      - name: Verify GY DATA branding
         working-directory: artifacts/gy-data
         run: |
           test -f android/app/src/main/res/drawable/ic_launcher_foreground.png
@@ -67,48 +73,31 @@ jobs:
           test -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
 
           if [ -f android/app/src/main/res/drawable-v24/ic_launcher_foreground.xml ]; then
-            echo "ERROR: Old Wi-Fi icon still exists."
+            echo "Old Capacitor Wi-Fi launcher resource detected."
             exit 1
           fi
 
-          echo "GY DATA launcher verified."
+          echo "GY DATA branding verified."
 
       - name: Make Gradle executable
         working-directory: artifacts/gy-data/android
         run: chmod +x gradlew
 
-      - name: Clean Android build
+      - name: Build installable debug APK
         working-directory: artifacts/gy-data/android
-        run: ./gradlew clean
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Build Release APK
-        working-directory: artifacts/gy-data/android
-        run: ./gradlew assembleRelease
-
-      - name: Build Release AAB
-        working-directory: artifacts/gy-data/android
-        run: ./gradlew bundleRelease
-
-      - name: Verify Release APK
+      - name: Verify APK
         working-directory: artifacts/gy-data/android
         run: |
-          test -f app/build/outputs/apk/release/app-release.apk
-          echo "Release APK created successfully."
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          ls -lh app/build/outputs/apk/debug/app-debug.apk
+          echo "GY DATA APK created successfully."
 
-      - name: Verify Release AAB
-        working-directory: artifacts/gy-data/android
-        run: |
-          test -f app/build/outputs/bundle/release/app-release.aab
-          echo "Release AAB created successfully."
-
-      - name: Upload Release APK
+      - name: Upload GY DATA APK
         uses: actions/upload-artifact@v4
         with:
-          name: gy-data-hub-release-apk
-          path: artifacts/gy-data/android/app/build/outputs/apk/release/app-release.apk
-
-      - name: Upload Release AAB
-        uses: actions/upload-artifact@v4
-        with:
-          name: gy-data-hub-release-aab
-          path: artifacts/gy-data/android/app/build/outputs/bundle/release/app-release.aab
+          name: gy-data-hub-apk
+          path: artifacts/gy-data/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30

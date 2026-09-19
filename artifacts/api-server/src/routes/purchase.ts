@@ -569,7 +569,7 @@ async function getPricingRule(
         FROM pricing_rules
         WHERE LOWER(service_type) =
           ${normalizedService}
-          AND UPPER(network) =
+          AND LOWER(network) =
           ${normalizedNetwork}
           AND plan_id = ${planId}
           AND enabled = true
@@ -600,7 +600,7 @@ async function getPricingRule(
       FROM pricing_rules
       WHERE LOWER(service_type) =
         ${normalizedService}
-        AND UPPER(network) =
+        AND LOWER(network) =
         ${normalizedNetwork}
         AND enabled = true
       ORDER BY updated_at DESC NULLS LAST

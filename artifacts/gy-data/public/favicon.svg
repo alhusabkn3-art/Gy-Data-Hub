@@ -1,3 +1,340 @@
-<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="180" height="180" rx="36" fill="#FF3C00"/>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="1024"
+  height="1024"
+  viewBox="0 0 1024 1024"
+  fill="none"
+>
+  <defs>
+    <linearGradient
+      id="bg"
+      x1="90"
+      y1="40"
+      x2="930"
+      y2="980"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.52" stop-color="#F7FCFF"/>
+      <stop offset="1" stop-color="#DDF4FF"/>
+    </linearGradient>
+
+    <linearGradient
+      id="blue"
+      x1="290"
+      y1="280"
+      x2="770"
+      y2="720"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0" stop-color="#062E73"/>
+      <stop offset="0.42" stop-color="#075CC4"/>
+      <stop offset="0.75" stop-color="#087FE0"/>
+      <stop offset="1" stop-color="#13A7F5"/>
+    </linearGradient>
+
+    <linearGradient
+      id="cyan"
+      x1="350"
+      y1="610"
+      x2="790"
+      y2="430"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0" stop-color="#075CC4"/>
+      <stop offset="0.48" stop-color="#079CEB"/>
+      <stop offset="1" stop-color="#31D8FF"/>
+    </linearGradient>
+
+    <linearGradient
+      id="cornerBlue"
+      x1="0"
+      y1="0"
+      x2="390"
+      y2="300"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0" stop-color="#0879E8"/>
+      <stop offset="0.5" stop-color="#18B8F2"/>
+      <stop offset="1" stop-color="#A9E9FC"/>
+    </linearGradient>
+
+    <filter
+      id="logoShadow"
+      x="-30%"
+      y="-30%"
+      width="160%"
+      height="180%"
+    >
+      <feDropShadow
+        dx="0"
+        dy="16"
+        stdDeviation="14"
+        flood-color="#062E73"
+        flood-opacity="0.25"
+      />
+    </filter>
+
+    <filter
+      id="textShadow"
+      x="-30%"
+      y="-30%"
+      width="160%"
+      height="180%"
+    >
+      <feDropShadow
+        dx="0"
+        dy="9"
+        stdDeviation="8"
+        flood-color="#062E73"
+        flood-opacity="0.18"
+      />
+    </filter>
+
+    <clipPath id="rounded">
+      <rect
+        x="18"
+        y="18"
+        width="988"
+        height="988"
+        rx="150"
+      />
+    </clipPath>
+  </defs>
+
+  <!-- APP BACKGROUND -->
+  <rect
+    x="18"
+    y="18"
+    width="988"
+    height="988"
+    rx="150"
+    fill="url(#bg)"
+  />
+
+  <g clip-path="url(#rounded)">
+
+    <!-- TOP LEFT BLUE WAVE -->
+    <path
+      d="
+        M0 0
+        H500
+        C375 35 255 105 0 285
+        Z
+      "
+      fill="#BCEBFC"
+    />
+
+    <path
+      d="
+        M0 0
+        H405
+        C295 58 170 132 0 245
+        Z
+      "
+      fill="#55C8F6"
+    />
+
+    <path
+      d="
+        M0 0
+        H285
+        C195 58 95 125 0 180
+        Z
+      "
+      fill="url(#cornerBlue)"
+    />
+
+    <!-- BOTTOM RIGHT BLUE WAVE -->
+    <path
+      d="
+        M1024 1024
+        H524
+        C685 946 840 855 1024 735
+        Z
+      "
+      fill="#C5EFFD"
+    />
+
+    <path
+      d="
+        M1024 1024
+        H650
+        C810 940 920 868 1024 790
+        Z
+      "
+      fill="#62CFF7"
+    />
+
+    <path
+      d="
+        M1024 1024
+        H785
+        C890 965 960 912 1024 865
+        Z
+      "
+      fill="url(#cornerBlue)"
+    />
+
+    <!-- TOP RIGHT CIRCUIT PATTERN -->
+    <g
+      fill="none"
+      stroke="#A8D9F3"
+      stroke-width="3"
+      opacity="0.62"
+    >
+      <path d="M720 250H770V210H820V165H875V120H940"/>
+      <path d="M755 285H805V245H855V200H910V155H980"/>
+      <path d="M790 320H840V280H890V235H940V190H1024"/>
+
+      <path d="M850 175V135H890V95H940"/>
+      <path d="M895 205V165H935V125H985"/>
+      <path d="M940 240V200H980V160H1024"/>
+
+      <circle cx="770" cy="210" r="7" fill="#F7FCFF"/>
+      <circle cx="820" cy="165" r="7" fill="#F7FCFF"/>
+      <circle cx="875" cy="120" r="7" fill="#F7FCFF"/>
+
+      <circle cx="805" cy="245" r="7" fill="#F7FCFF"/>
+      <circle cx="855" cy="200" r="7" fill="#F7FCFF"/>
+      <circle cx="910" cy="155" r="7" fill="#F7FCFF"/>
+    </g>
+
+    <!-- BOTTOM LEFT CIRCUIT PATTERN -->
+    <g
+      fill="none"
+      stroke="#A8D9F3"
+      stroke-width="3"
+      opacity="0.62"
+    >
+      <path d="M0 790H55V745H105V700H155V655H215"/>
+      <path d="M0 835H75V790H125V745H180V700H235"/>
+      <path d="M0 880H50V835H110V795H165V755H225"/>
+
+      <path d="M75 790V745H115V710H160"/>
+      <path d="M125 745V700H170V665H210"/>
+      <path d="M180 700V660H225V625H265"/>
+
+      <circle cx="55" cy="745" r="7" fill="#F7FCFF"/>
+      <circle cx="105" cy="700" r="7" fill="#F7FCFF"/>
+      <circle cx="155" cy="655" r="7" fill="#F7FCFF"/>
+      <circle cx="75" cy="790" r="7" fill="#F7FCFF"/>
+      <circle cx="125" cy="745" r="7" fill="#F7FCFF"/>
+    </g>
+
+    <!-- CENTER GY MARK -->
+    <g
+      transform="translate(512 365) scale(0.82)"
+      filter="url(#logoShadow)"
+    >
+
+      <!-- G -->
+      <path
+        d="
+          M-225 15
+          C-225 -112 -137 -198 -12 -198
+          C70 -198 139 -164 185 -105
+          L116 -50
+          C87 -88 47 -108 0 -108
+          C-66 -108 -116 -65 -116 17
+          C-116 96 -67 142 5 142
+          C42 142 72 134 99 117
+          V69
+          H8
+          V-9
+          H191
+          V164
+          C137 204 76 225 1 225
+          C-132 225 -225 137 -225 15
+          Z
+        "
+        fill="url(#blue)"
+      />
+
+      <!-- Y -->
+      <path
+        d="
+          M130 -183
+          H230
+          L292 -45
+          L355 -183
+          H454
+          L342 30
+          V220
+          H240
+          V30
+          Z
+        "
+        fill="url(#blue)"
+      />
+
+      <!-- ORBIT SWOOSH -->
+      <path
+        d="
+          M-183 102
+          C-75 166 49 183 163 129
+          C244 91 305 42 348 -6
+          C300 85 234 154 145 190
+          C29 236 -108 213 -204 151
+          Z
+        "
+        fill="url(#cyan)"
+      />
+
+      <!-- G HIGHLIGHT -->
+      <path
+        d="
+          M-205 4
+          C-192 -92 -123 -166 -21 -174
+        "
+        fill="none"
+        stroke="#39C2FF"
+        stroke-width="8"
+        stroke-linecap="round"
+        opacity="0.8"
+      />
+
+      <!-- Y HIGHLIGHT -->
+      <path
+        d="
+          M155 -164
+          L230 -36
+          L291 -164
+        "
+        fill="none"
+        stroke="#31C8FF"
+        stroke-width="8"
+        stroke-linecap="round"
+        opacity="0.72"
+      />
+    </g>
+
+    <!-- GY DATA TEXT -->
+    <text
+      x="512"
+      y="790"
+      text-anchor="middle"
+      font-family="Arial, Helvetica, sans-serif"
+      font-size="108"
+      font-weight="900"
+      letter-spacing="1"
+      fill="url(#blue)"
+      filter="url(#textShadow)"
+    >
+      GY DATA
+    </text>
+
+  </g>
+
+  <!-- CLEAN OUTER EDGE -->
+  <rect
+    x="18"
+    y="18"
+    width="988"
+    height="988"
+    rx="150"
+    fill="none"
+    stroke="#D7F0FC"
+    stroke-width="4"
+  />
 </svg>

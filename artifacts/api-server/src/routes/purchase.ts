@@ -638,8 +638,8 @@ async function createPurchaseTransaction(
   };
 
   const safeProvider =
-    String(provider || 'SMEAPI').trim() ||
-    'SMEAPI';
+    String(provider || 'GY DATA').trim() ||
+    'GY DATA';
 
   try {
     const result = await db.execute<{

@@ -19,13 +19,18 @@ jobs:
         with:
           node-version: 20
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Install dependencies
         run: |
-          npm install
+          pnpm install --frozen-lockfile
 
       - name: Build web app
         run: |
-          npm run build
+          pnpm build
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -33,7 +38,7 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Setup Android
+      - name: Prepare Android
         working-directory: artifacts/gy-data/android
         run: |
           chmod +x gradlew
@@ -43,7 +48,7 @@ jobs:
         run: |
           ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Rename APK
+      - name: Copy APK
         run: |
           cp artifacts/gy-data/android/app/build/outputs/apk/release/app-release.apk GY-DATA.apk
 

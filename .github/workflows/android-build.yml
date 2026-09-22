@@ -1,34 +1,35 @@
 name: Android APK Release Build
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   build-apk:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
+          cache: pnpm
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          version: 10
 
       - name: Install dependencies
-        run: |
-          pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build web app
-        run: |
-          pnpm build
+        run: pnpm build
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -36,22 +37,17 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Prepare Android
-        working-directory: artifacts/gy-data/android
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build APK
         run: |
+          cd android
           chmod +x gradlew
-
-      - name: Build Release APK
-        working-directory: artifacts/gy-data/android
-        run: |
-          ./gradlew assembleRelease --no-daemon --stacktrace
-
-      - name: Copy APK
-        run: |
-          cp artifacts/gy-data/android/app/build/outputs/apk/release/app-release.apk GY-DATA.apk
+          ./gradlew assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: GY-DATA-release-apk
-          path: GY-DATA.apk
+          name: gy-data-hub-apk
+          path: android/app/build/outputs/apk/release/*.apk

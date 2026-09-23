@@ -19,20 +19,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: false
 
       - name: Enable Corepack
         run: corepack enable
 
-      - name: Install pnpm
-        run: |
-          corepack prepare pnpm@10.17.1 --activate
-          echo "$(dirname "$(which pnpm)")" >> "$GITHUB_PATH"
+      - name: Activate pnpm
+        run: corepack prepare pnpm@10.17.1 --activate
 
       - name: Verify Node and pnpm
         run: |
           node --version
-          corepack --version
           pnpm --version
 
       - name: Install dependencies
@@ -52,7 +48,7 @@ jobs:
         working-directory: artifacts/gy-data
         run: pnpm exec cap sync android
 
-      - name: Generate Android branding
+      - name: Generate GY DATA Android branding
         working-directory: artifacts/gy-data
         run: pnpm run android:branding
 
@@ -72,7 +68,7 @@ jobs:
           chmod +x gradlew
           ./gradlew clean assembleRelease
 
-      - name: Upload APK
+      - name: Upload GY DATA APK
         uses: actions/upload-artifact@v4
         with:
           name: gy-data-hub-apk

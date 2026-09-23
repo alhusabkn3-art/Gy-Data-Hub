@@ -50,76 +50,124 @@ const adaptiveIconDir = path.join(
   "mipmap-anydpi-v26"
 );
 
-fs.mkdirSync(drawableDir, {
-  recursive: true,
-});
-
-fs.mkdirSync(drawableV24Dir, {
-  recursive: true,
-});
-
-fs.mkdirSync(adaptiveIconDir, {
-  recursive: true,
-});
-
-/*
- * Remove the old Capacitor launcher foreground.
- */
-const oldForegroundFiles = [
-  path.join(
-    drawableV24Dir,
-    "ic_launcher_foreground.xml"
-  ),
-  path.join(
-    drawableV24Dir,
-    "ic_launcher_foreground.png"
-  ),
-  path.join(
-    drawableDir,
-    "ic_launcher_foreground.xml"
-  ),
-  path.join(
-    drawableDir,
-    "ic_launcher_foreground.png"
-  ),
+const mipmapFolders = [
+  "mipmap-mdpi",
+  "mipmap-hdpi",
+  "mipmap-xhdpi",
+  "mipmap-xxhdpi",
+  "mipmap-xxxhdpi"
 ];
 
-for (const file of oldForegroundFiles) {
+fs.mkdirSync(
+  drawableDir,
+  {
+    recursive: true
+  }
+);
+
+fs.mkdirSync(
+  drawableV24Dir,
+  {
+    recursive: true
+  }
+);
+
+fs.mkdirSync(
+  adaptiveIconDir,
+  {
+    recursive: true
+  }
+);
+
+for (const folder of mipmapFolders) {
+  fs.mkdirSync(
+    path.join(resDir, folder),
+    {
+      recursive: true
+    }
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Remove Capacitor default launcher resources
+|--------------------------------------------------------------------------
+*/
+
+const filesToRemove = [
+  path.join(
+    drawableDir,
+    "ic_launcher_foreground.xml"
+  ),
+
+  path.join(
+    drawableDir,
+    "ic_launcher_foreground.png"
+  ),
+
+  path.join(
+    drawableV24Dir,
+    "ic_launcher_foreground.xml"
+  ),
+
+  path.join(
+    drawableV24Dir,
+    "ic_launcher_foreground.png"
+  ),
+
+  path.join(
+    drawableDir,
+    "splash.png"
+  ),
+
+  path.join(
+    drawableV24Dir,
+    "splash.png"
+  ),
+
+  path.join(
+    drawableDir,
+    "splash.xml"
+  ),
+
+  path.join(
+    drawableV24Dir,
+    "splash.xml"
+  )
+];
+
+for (const file of filesToRemove) {
   if (fs.existsSync(file)) {
     fs.unlinkSync(file);
   }
 }
 
 /*
- * Android launcher icon sizes.
- */
+|--------------------------------------------------------------------------
+| Launcher icons
+|--------------------------------------------------------------------------
+*/
+
 const iconSizes = [
   ["mipmap-mdpi", 48],
   ["mipmap-hdpi", 72],
   ["mipmap-xhdpi", 96],
   ["mipmap-xxhdpi", 144],
-  ["mipmap-xxxhdpi", 192],
+  ["mipmap-xxxhdpi", 192]
 ];
 
-/*
- * Generate normal launcher icons.
- */
 for (const [folder, size] of iconSizes) {
   const outputDir = path.join(
     resDir,
     folder
   );
 
-  fs.mkdirSync(outputDir, {
-    recursive: true,
-  });
-
-  const iconPath = path.join(
+  const launcherPath = path.join(
     outputDir,
     "ic_launcher.png"
   );
 
-  const roundIconPath = path.join(
+  const roundLauncherPath = path.join(
     outputDir,
     "ic_launcher_round.png"
   );
@@ -131,11 +179,11 @@ for (const [folder, size] of iconSizes) {
         r: 255,
         g: 255,
         b: 255,
-        alpha: 1,
-      },
+        alpha: 1
+      }
     })
     .png()
-    .toFile(iconPath);
+    .toFile(launcherPath);
 
   await sharp(logoPath)
     .resize(size, size, {
@@ -144,16 +192,19 @@ for (const [folder, size] of iconSizes) {
         r: 255,
         g: 255,
         b: 255,
-        alpha: 1,
-      },
+        alpha: 1
+      }
     })
     .png()
-    .toFile(roundIconPath);
+    .toFile(roundLauncherPath);
 }
 
 /*
- * Adaptive icon background.
- */
+|--------------------------------------------------------------------------
+| Adaptive icon background
+|--------------------------------------------------------------------------
+*/
+
 const backgroundXml = `<?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
@@ -173,11 +224,11 @@ fs.writeFileSync(
 );
 
 /*
- * Create GY DATA adaptive foreground.
- *
- * This is PNG instead of the old Capacitor
- * Wi-Fi vector resource.
- */
+|--------------------------------------------------------------------------
+| Adaptive icon foreground
+|--------------------------------------------------------------------------
+*/
+
 const foregroundPath = path.join(
   drawableDir,
   "ic_launcher_foreground.png"
@@ -190,15 +241,18 @@ await sharp(logoPath)
       r: 255,
       g: 255,
       b: 255,
-      alpha: 1,
-    },
+      alpha: 0
+    }
   })
   .png()
   .toFile(foregroundPath);
 
 /*
- * Android 8+ adaptive icon.
- */
+|--------------------------------------------------------------------------
+| Android adaptive launcher icon
+|--------------------------------------------------------------------------
+*/
+
 const adaptiveIconXml = `<?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
 
@@ -230,8 +284,11 @@ fs.writeFileSync(
 );
 
 /*
- * Generate splash artwork.
- */
+|--------------------------------------------------------------------------
+| Native splash artwork
+|--------------------------------------------------------------------------
+*/
+
 const splashPath = path.join(
   drawableDir,
   "gy_data_splash.png"
@@ -244,12 +301,36 @@ await sharp(logoPath)
       r: 255,
       g: 255,
       b: 255,
-      alpha: 1,
-    },
+      alpha: 1
+    }
   })
   .png()
   .toFile(splashPath);
 
+/*
+|--------------------------------------------------------------------------
+| Native splash background
+|--------------------------------------------------------------------------
+*/
+
+const splashBackgroundXml = `<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+
+    <solid android:color="#FFFFFF" />
+
+</shape>
+`;
+
+fs.writeFileSync(
+  path.join(
+    drawableDir,
+    "gy_data_splash_background.xml"
+  ),
+  splashBackgroundXml,
+  "utf8"
+);
+
 console.log(
-  "GY DATA Android branding generated successfully."
+  "GY DATA Android launcher, adaptive icon and splash branding generated successfully."
 );

@@ -1,5 +1,3 @@
-# .github/workflows/android-build.yml
-
 name: GY DATA Android APK Release
 
 on:
@@ -21,17 +19,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
+          cache: false
 
       - name: Enable Corepack
         run: corepack enable
 
-      - name: Activate pnpm
-        run: corepack prepare pnpm@10.17.1 --activate
+      - name: Install pnpm
+        run: |
+          corepack prepare pnpm@10.17.1 --activate
+          echo "$(dirname "$(which pnpm)")" >> "$GITHUB_PATH"
 
-      - name: Check versions
+      - name: Verify Node and pnpm
         run: |
           node --version
+          corepack --version
           pnpm --version
 
       - name: Install dependencies
@@ -49,13 +50,11 @@ jobs:
 
       - name: Sync Capacitor Android
         working-directory: artifacts/gy-data
-        run: |
-          pnpm exec cap sync android
+        run: pnpm exec cap sync android
 
-      - name: Generate GY DATA Android branding
+      - name: Generate Android branding
         working-directory: artifacts/gy-data
-        run: |
-          pnpm exec node scripts/create-android-branding.mjs
+        run: pnpm run android:branding
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -73,7 +72,7 @@ jobs:
           chmod +x gradlew
           ./gradlew clean assembleRelease
 
-      - name: Upload GY DATA APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: gy-data-hub-apk

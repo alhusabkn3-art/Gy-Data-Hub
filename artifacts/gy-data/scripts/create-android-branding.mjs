@@ -58,26 +58,17 @@ const mipmapFolders = [
   "mipmap-xxxhdpi"
 ];
 
-fs.mkdirSync(
-  drawableDir,
-  {
-    recursive: true
-  }
-);
+fs.mkdirSync(drawableDir, {
+  recursive: true
+});
 
-fs.mkdirSync(
-  drawableV24Dir,
-  {
-    recursive: true
-  }
-);
+fs.mkdirSync(drawableV24Dir, {
+  recursive: true
+});
 
-fs.mkdirSync(
-  adaptiveIconDir,
-  {
-    recursive: true
-  }
-);
+fs.mkdirSync(adaptiveIconDir, {
+  recursive: true
+});
 
 for (const folder of mipmapFolders) {
   fs.mkdirSync(
@@ -90,7 +81,7 @@ for (const folder of mipmapFolders) {
 
 /*
 |--------------------------------------------------------------------------
-| Remove Capacitor default launcher resources
+| Remove old Capacitor launcher resources
 |--------------------------------------------------------------------------
 */
 
@@ -144,8 +135,11 @@ for (const file of filesToRemove) {
 
 /*
 |--------------------------------------------------------------------------
-| Launcher icons
+| Legacy launcher icons
 |--------------------------------------------------------------------------
+|
+| These are kept as full-size icons.
+|
 */
 
 const iconSizes = [
@@ -227,6 +221,21 @@ fs.writeFileSync(
 |--------------------------------------------------------------------------
 | Adaptive icon foreground
 |--------------------------------------------------------------------------
+|
+| IMPORTANT:
+|
+| Android adaptive icons use a larger foreground canvas than the
+| visible launcher area. If the artwork fills the whole canvas,
+| launchers such as XOS can crop/shift the artwork.
+|
+| We therefore:
+|
+| 1. Create a transparent 432x432 canvas.
+| 2. Render the complete GY DATA logo smaller.
+| 3. Place it exactly in the center.
+|
+| 320px gives the logo safe margins inside the adaptive icon.
+|
 */
 
 const foregroundPath = path.join(
@@ -234,16 +243,50 @@ const foregroundPath = path.join(
   "ic_launcher_foreground.png"
 );
 
-await sharp(logoPath)
-  .resize(432, 432, {
-    fit: "contain",
+const adaptiveCanvasSize = 432;
+const artworkSize = 320;
+
+const artworkBuffer = await sharp(logoPath)
+  .resize(
+    artworkSize,
+    artworkSize,
+    {
+      fit: "contain",
+      background: {
+        r: 255,
+        g: 255,
+        b: 255,
+        alpha: 1
+      }
+    }
+  )
+  .png()
+  .toBuffer();
+
+await sharp({
+  create: {
+    width: adaptiveCanvasSize,
+    height: adaptiveCanvasSize,
+    channels: 4,
     background: {
       r: 255,
       g: 255,
       b: 255,
       alpha: 0
     }
-  })
+  }
+})
+  .composite([
+    {
+      input: artworkBuffer,
+      left: Math.round(
+        (adaptiveCanvasSize - artworkSize) / 2
+      ),
+      top: Math.round(
+        (adaptiveCanvasSize - artworkSize) / 2
+      )
+    }
+  ])
   .png()
   .toFile(foregroundPath);
 

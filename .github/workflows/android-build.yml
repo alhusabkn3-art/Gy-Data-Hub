@@ -1,10 +1,11 @@
+# .github/workflows/android-build.yml
+
 name: GY DATA Android APK Release
 
 on:
   push:
     branches:
       - main
-
   workflow_dispatch:
 
 jobs:
@@ -13,31 +14,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
-      # ============================================================
-      # CHECKOUT
-      # ============================================================
-
       - name: Checkout repository
         uses: actions/checkout@v4
-
-
-      # ============================================================
-      # NODE.JS
-      # ============================================================
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-
-
-      # ============================================================
-      # PNPM
-      #
-      # IMPORTANT:
-      # pnpm must be installed BEFORE setup-node cache: pnpm
-      # ============================================================
+          cache: pnpm
 
       - name: Enable Corepack
         run: corepack enable
@@ -45,99 +29,33 @@ jobs:
       - name: Activate pnpm
         run: corepack prepare pnpm@10.17.1 --activate
 
-      - name: Verify Node and pnpm
+      - name: Check versions
         run: |
           node --version
-          npm --version
           pnpm --version
 
-
-      # ============================================================
-      # PNPM CACHE
-      # ============================================================
-
-      - name: Setup pnpm cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.local/share/pnpm/store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
-
-
-      # ============================================================
-      # INSTALL DEPENDENCIES
-      # ============================================================
-
       - name: Install dependencies
-        run: |
-          pnpm install --no-frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
-
-      # ============================================================
-      # BUILD FRONTEND
-      # ============================================================
-
-      - name: Build GY DATA frontend
-        run: |
-          pnpm --filter @workspace/gy-data build
-
-
-      # ============================================================
-      # CHECK FRONTEND BUILD
-      # ============================================================
-
-      - name: Verify frontend build
-        working-directory: artifacts/gy-data
-        run: |
-          if [ ! -d "dist" ]; then
-            echo "ERROR: dist directory was not created."
-            exit 1
-          fi
-
-          echo "Frontend build found:"
-          ls -la dist
-
-
-      # ============================================================
-      # CREATE CAPACITOR ANDROID PROJECT
-      # ============================================================
+      - name: Build frontend
+        run: pnpm --filter @workspace/gy-data build
 
       - name: Create Android project
         working-directory: artifacts/gy-data
         run: |
           if [ ! -d "android" ]; then
-            echo "Android project does not exist."
-            echo "Creating Capacitor Android project..."
             pnpm exec cap add android
-          else
-            echo "Android project already exists."
           fi
-
-
-      # ============================================================
-      # CAPACITOR SYNC
-      # ============================================================
 
       - name: Sync Capacitor Android
         working-directory: artifacts/gy-data
         run: |
           pnpm exec cap sync android
 
-
-      # ============================================================
-      # GENERATE GY DATA BRANDING
-      # ============================================================
-
       - name: Generate GY DATA Android branding
         working-directory: artifacts/gy-data
         run: |
-          pnpm run android:branding
-
-
-      # ============================================================
-      # JAVA
-      # ============================================================
+          pnpm exec node scripts/create-android-branding.mjs
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -146,40 +64,14 @@ jobs:
           java-version: 17
           cache: gradle
 
-
-      # ============================================================
-      # ANDROID SDK
-      # ============================================================
-
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-
-
-      # ============================================================
-      # BUILD RELEASE APK
-      # ============================================================
 
       - name: Build release APK
         working-directory: artifacts/gy-data/android
         run: |
           chmod +x gradlew
           ./gradlew clean assembleRelease
-
-
-      # ============================================================
-      # SHOW GENERATED APK
-      # ============================================================
-
-      - name: Show generated APK
-        working-directory: artifacts/gy-data/android
-        run: |
-          echo "APK files:"
-          find app/build/outputs/apk/release -type f -name "*.apk" -print
-
-
-      # ============================================================
-      # UPLOAD APK
-      # ============================================================
 
       - name: Upload GY DATA APK
         uses: actions/upload-artifact@v4

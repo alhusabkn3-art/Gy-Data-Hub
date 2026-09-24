@@ -45,23 +45,24 @@ router.use(
   smeapiRouter,
 );
 
-router.use(
-  '/admin',
-  adminRouter,
-);
-
 /*
- * CC, Finance, and Inbox routers MUST
- * come before adminSuperRouter.
+ * IMPORTANT ROUTING ORDER
+ *
+ * The more specific admin routers must be
+ * registered before the general admin router.
+ *
+ * Otherwise a generic /admin route can capture
+ * requests intended for the Super Admin router.
  */
-router.use(
-  '/admin',
-  adminCCRouter,
-);
 
 router.use(
   '/admin/support-inbox',
   supportInboxRouter,
+);
+
+router.use(
+  '/admin',
+  adminCCRouter,
 );
 
 router.use(
@@ -75,13 +76,23 @@ router.use(
 );
 
 router.use(
-  '/cashback',
-  cashbackUserRouter,
+  '/admin',
+  adminSuperRouter,
+);
+
+/*
+ * Keep the general admin router last among
+ * the /admin routers so it cannot shadow the
+ * Super Admin-specific endpoints.
+ */
+router.use(
+  '/admin',
+  adminRouter,
 );
 
 router.use(
-  '/admin',
-  adminSuperRouter,
+  '/cashback',
+  cashbackUserRouter,
 );
 
 router.use(

@@ -8,14 +8,18 @@ import authRouter from './auth.js';
 import userRouter from './user.js';
 import purchaseRouter from './purchase.js';
 import smeapiRouter from './smeapi.js';
+
 import adminRouter from './admin.js';
 import adminSuperRouter from './admin-super.js';
 import adminCCRouter from './admin-cc.js';
 import adminFinanceRouter from './admin-finance.js';
+
 import supportInboxRouter from './support-inbox.js';
+
 import paymentRouter from './payment.js';
 import whatsappRouter from './whatsapp.js';
 import supportChatRouter from './support-chat.js';
+
 import cashbackRouter from './cashback.js';
 import cashbackUserRouter from './cashback-user.js';
 
@@ -46,13 +50,49 @@ router.use(
 );
 
 /*
- * IMPORTANT ROUTING ORDER
+ * IMPORTANT:
  *
- * The more specific admin routers must be
- * registered before the general admin router.
+ * /api/admin/login and /api/admin/logout and
+ * /api/admin/me are defined in admin.ts.
  *
- * Otherwise a generic /admin route can capture
- * requests intended for the Super Admin router.
+ * admin-super.ts contains:
+ *
+ *   router.use(requireSuperAdmin)
+ *
+ * at router level.
+ *
+ * Therefore admin.ts MUST be mounted BEFORE
+ * admin-super.ts.
+ *
+ * Otherwise:
+ *
+ * POST /api/admin/login
+ *
+ * gets intercepted by admin-super.ts before
+ * admin.ts can process the login, producing:
+ *
+ * 401 Admin authentication required.
+ *
+ * The general admin.ts router does not contain
+ * catch-all routes that would block the
+ * admin-super routes in this project.
+ */
+
+/*
+ * Authentication routes FIRST.
+ */
+router.use(
+  '/admin',
+  adminRouter,
+);
+
+/*
+ * Specific admin routers that have their own
+ * role middleware.
+ *
+ * These remain after the authentication router
+ * so /admin/login can be reached without an
+ * existing admin session.
  */
 
 router.use(
@@ -75,19 +115,17 @@ router.use(
   cashbackRouter,
 );
 
-router.use(
-  '/admin',
-  adminSuperRouter,
-);
-
 /*
- * Keep the general admin router last among
- * the /admin routers so it cannot shadow the
- * Super Admin-specific endpoints.
+ * Super Admin routes LAST among the /admin
+ * routers because admin-super.ts applies:
+ *
+ * router.use(requireSuperAdmin)
+ *
+ * to every request entering that router.
  */
 router.use(
   '/admin',
-  adminRouter,
+  adminSuperRouter,
 );
 
 router.use(

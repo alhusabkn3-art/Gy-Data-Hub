@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -40,18 +41,62 @@ import BottomNav from './components/BottomNav';
 const queryClient = new QueryClient();
 
 /* ────────────────────────────────────────────────────────────────────────────
+   THEME
+   ──────────────────────────────────────────────────────────────────────────── */
+
+function ThemeManager() {
+  const { settings } = useAppContext();
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const theme = settings.theme;
+
+    const mediaQuery = window.matchMedia(
+      '(prefers-color-scheme: dark)',
+    );
+
+    const applyTheme = () => {
+      const shouldUseDark =
+        theme === 'dark' ||
+        (theme === 'system' && mediaQuery.matches);
+
+      root.classList.toggle('dark', shouldUseDark);
+      root.style.colorScheme = shouldUseDark
+        ? 'dark'
+        : 'light';
+    };
+
+    applyTheme();
+
+    if (theme === 'system') {
+      mediaQuery.addEventListener('change', applyTheme);
+
+      return () => {
+        mediaQuery.removeEventListener(
+          'change',
+          applyTheme,
+        );
+      };
+    }
+
+    return undefined;
+  }, [settings.theme]);
+
+  return null;
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
    SPLASH / SESSION LOADING SCREEN
    ──────────────────────────────────────────────────────────────────────────── */
 
 function SessionLoadingScreen() {
   return (
-    <div className="fixed inset-0 flex h-[100dvh] w-full items-center justify-center overflow-hidden bg-white">
+    <div className="fixed inset-0 flex h-[100dvh] w-full items-center justify-center overflow-hidden bg-background text-foreground">
       <div className="relative flex h-full w-full max-w-[480px] flex-col items-center justify-center px-6">
-        
-        {/* Clean splash design */}
+
         <div className="flex w-full flex-col items-center justify-center">
-          
-          <div className="relative flex h-32 w-32 items-center justify-center rounded-[32px] bg-white shadow-[0_12px_45px_rgba(0,0,0,0.10)]">
+
+          <div className="relative flex h-32 w-32 items-center justify-center rounded-[32px] bg-card shadow-[0_12px_45px_rgba(0,0,0,0.10)]">
             <img
               src="/gy-data-logo.svg"
               alt="GY DATA"
@@ -64,12 +109,11 @@ function SessionLoadingScreen() {
               GY DATA
             </h1>
 
-            <p className="mt-1 text-sm font-medium text-gray-500">
+            <p className="mt-1 text-sm font-medium text-muted-foreground">
               Endless Joy
             </p>
           </div>
 
-          {/* Loading indicator */}
           <div className="mt-10 flex items-center gap-2">
             <span
               className="h-2.5 w-2.5 animate-bounce rounded-full bg-[#075CC4]"
@@ -227,6 +271,8 @@ function CustomerRouter() {
 function CustomerApp() {
   return (
     <AppProvider>
+      <ThemeManager />
+
       <TooltipProvider>
         <CustomerRouter />
       </TooltipProvider>

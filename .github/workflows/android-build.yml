@@ -1,10 +1,13 @@
-name: Android Build
+name: Android Build & Release
 
 on:
   push:
     branches:
       - main
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-android:
@@ -55,14 +58,25 @@ jobs:
         working-directory: artifacts/gy-data/android
         run: ./gradlew bundleRelease
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: gy-data-hub-apk
-          path: artifacts/gy-data/android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          cp artifacts/gy-data/android/app/build/outputs/apk/debug/app-debug.apk release/Gy-Data-Hub.apk
+          cp artifacts/gy-data/android/app/build/outputs/bundle/release/app-release.aab release/Gy-Data-Hub.aab
 
-      - name: Upload AAB
-        uses: actions/upload-artifact@v4
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
         with:
-          name: gy-data-hub-aab
-          path: artifacts/gy-data/android/app/build/outputs/bundle/release/app-release.aab
+          tag_name: v1.0.${{ github.run_number }}
+          name: Gy-Data-Hub v1.0.${{ github.run_number }}
+          body: |
+            ## Gy-Data-Hub Android Release
+
+            Download the APK below to install Gy-Data-Hub on Android.
+
+            - Gy-Data-Hub.apk — Android installation file
+            - Gy-Data-Hub.aab — Google Play upload file
+          files: |
+            release/Gy-Data-Hub.apk
+            release/Gy-Data-Hub.aab
+          generate_release_notes: true

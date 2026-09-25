@@ -27,13 +27,6 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: gradle
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -44,9 +37,15 @@ jobs:
         working-directory: artifacts/gy-data
         run: pnpm exec cap add android
 
-      - name: Sync Capacitor
+      - name: Sync Capacitor Android
         working-directory: artifacts/gy-data
         run: pnpm exec cap sync android
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
 
       - name: Build Debug APK
         working-directory: artifacts/gy-data/android

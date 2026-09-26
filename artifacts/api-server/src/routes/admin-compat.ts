@@ -26,7 +26,7 @@ function requireAdmin(
 ): void {
   if (
     !req.session.isAdmin ||
-    !req.session.adminId
+
   ) {
     res.status(401).json({
       error:

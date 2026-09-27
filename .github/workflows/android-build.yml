@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+
   workflow_dispatch:
 
 permissions:
@@ -34,7 +35,22 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Build web application
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
         run: pnpm --filter @workspace/gy-data build
+
+      - name: Verify VITE_API_URL
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+        run: |
+          if [ -z "$VITE_API_URL" ]; then
+            echo "ERROR: GitHub Actions secret VITE_API_URL is missing."
+            echo "Add VITE_API_URL in:"
+            echo "Repository Settings -> Secrets and variables -> Actions"
+            exit 1
+          fi
+
+          echo "VITE_API_URL is configured."
 
       - name: Add Android platform
         working-directory: artifacts/gy-data
@@ -50,9 +66,9 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Build Debug APK
+      - name: Build Release APK
         working-directory: artifacts/gy-data/android
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleRelease
 
       - name: Build Release AAB
         working-directory: artifacts/gy-data/android
@@ -61,22 +77,33 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p release
-          cp artifacts/gy-data/android/app/build/outputs/apk/debug/app-debug.apk release/Gy-Data-Hub.apk
-          cp artifacts/gy-data/android/app/build/outputs/bundle/release/app-release.aab release/Gy-Data-Hub.aab
+
+          cp \
+            artifacts/gy-data/android/app/build/outputs/apk/release/app-release.apk \
+            release/Gy-Data-Hub-release.apk
+
+          cp \
+            artifacts/gy-data/android/app/build/outputs/bundle/release/app-release.aab \
+            release/Gy-Data-Hub-release.aab
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: Gy-Data-Hub v1.0.${{ github.run_number }}
+
+          name: GY DATA v1.0.${{ github.run_number }}
+
           body: |
-            ## Gy-Data-Hub Android Release
+            ## GY DATA Android Release
 
-            Download the APK below to install Gy-Data-Hub on Android.
+            Release APK:
+            Gy-Data-Hub-release.apk
 
-            - Gy-Data-Hub.apk — Android installation file
-            - Gy-Data-Hub.aab — Google Play upload file
+            Google Play bundle:
+            Gy-Data-Hub-release.aab
+
           files: |
-            release/Gy-Data-Hub.apk
-            release/Gy-Data-Hub.aab
+            release/Gy-Data-Hub-release.apk
+            release/Gy-Data-Hub-release.aab
+
           generate_release_notes: true

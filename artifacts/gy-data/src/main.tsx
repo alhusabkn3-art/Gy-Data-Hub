@@ -1,3 +1,6 @@
+import "./lib/apiBase";
+
+import React from "react";
 import { createRoot } from "react-dom/client";
 import { Capacitor } from "@capacitor/core";
 import { SplashScreen } from "@capacitor/splash-screen";
@@ -13,23 +16,29 @@ async function hideNativeSplash() {
 
   try {
     await SplashScreen.hide({
-      fadeOutDuration: 250
+      fadeOutDuration: 250,
     });
   } catch {
     // Ignore splash errors on unsupported environments.
   }
 }
 
-const rootElement = document.getElementById("root");
+const rootElement =
+  document.getElementById("root");
 
 if (!rootElement) {
   throw new Error(
-    "GY DATA: #root element was not found."
+    "GY DATA: #root element was not found.",
   );
 }
 
-const root = createRoot(rootElement);
+const root =
+  createRoot(rootElement);
 
-root.render(<App />);
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);
 
 void hideNativeSplash();

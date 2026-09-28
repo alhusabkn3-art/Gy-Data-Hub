@@ -34,23 +34,23 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: Build web application
-        env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
-        run: pnpm --filter @workspace/gy-data build
-
-      - name: Verify VITE_API_URL
+      - name: Verify Android API configuration
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
         run: |
           if [ -z "$VITE_API_URL" ]; then
-            echo "ERROR: GitHub Actions secret VITE_API_URL is missing."
-            echo "Add VITE_API_URL in:"
-            echo "Repository Settings -> Secrets and variables -> Actions"
-            exit 1
+            echo "VITE_API_URL secret is not set."
+            echo "The application has a production Render API fallback."
+            echo "Continuing with:"
+            echo "https://gy-data-hub-1.onrender.com"
+          else
+            echo "VITE_API_URL is configured for Android build."
           fi
 
-          echo "VITE_API_URL is configured."
+      - name: Build web application
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+        run: pnpm --filter @workspace/gy-data build
 
       - name: Add Android platform
         working-directory: artifacts/gy-data

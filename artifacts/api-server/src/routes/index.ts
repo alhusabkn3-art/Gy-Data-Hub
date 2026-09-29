@@ -7,7 +7,10 @@ import healthRouter from './health.js';
 import authRouter from './auth.js';
 import forgotPinEmailRouter from './forgot-pin-email.js';
 import userRouter from './user.js';
+
 import purchaseRouter from './purchase.js';
+import purchaseDataV2Router from './purchase-data-v2.js';
+
 import smeapiRouter from './smeapi.js';
 
 import adminRouter from './admin.js';
@@ -52,9 +55,31 @@ router.use(
   userRouter,
 );
 
+/*
+ * Existing purchase routes.
+ */
 router.use(
   '/purchase',
   purchaseRouter,
+);
+
+/*
+ * SME-backed safe data purchase routes.
+ *
+ * purchase-data-v2.ts contains:
+ *
+ * POST /data-safe
+ *
+ * Therefore mounting it here at /purchase produces:
+ *
+ * POST /api/purchase/data-safe
+ *
+ * This was already implemented in the backend but was
+ * missing from the main router.
+ */
+router.use(
+  '/purchase',
+  purchaseDataV2Router,
 );
 
 router.use(
@@ -81,7 +106,7 @@ router.use(
 );
 
 /* -------------------------------------------------------------------------- */
-/* Compatibility / legacy admin routes                                       */
+/* Compatibility / legacy admin routes                                        */
 /* -------------------------------------------------------------------------- */
 
 router.use(

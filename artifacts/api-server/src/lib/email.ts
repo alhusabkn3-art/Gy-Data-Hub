@@ -1,5 +1,12 @@
 import nodemailer from 'nodemailer';
 
+const SMTP_HOST =
+  process.env.SMTP_HOST?.trim() || 'smtp.gmail.com';
+
+const SMTP_PORT = Number(
+  process.env.SMTP_PORT || '587',
+);
+
 const SMTP_USER =
   process.env.SMTP_USER?.trim() || '';
 
@@ -10,58 +17,34 @@ const SMTP_FROM =
   process.env.SMTP_FROM?.trim() ||
   SMTP_USER;
 
-/*
- * Gmail SMTP
- *
- * We intentionally use the explicit Gmail SMTP host instead of
- * nodemailer "service: gmail" so the connection uses port 587
- * with STARTTLS. This is more predictable on cloud hosts such
- * as Render.
- */
-const SMTP_HOST =
-  process.env.SMTP_HOST?.trim() ||
-  'smtp.gmail.com';
-
-const SMTP_PORT =
-  Number(
-    process.env.SMTP_PORT || '587',
-  );
-
-if (
-  !SMTP_USER ||
-  !SMTP_PASS
-) {
+if (!SMTP_USER || !SMTP_PASS) {
   console.warn(
     '[email] SMTP_USER or SMTP_PASS is not configured.',
   );
 }
 
-const transporter =
-  nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: SMTP_PORT,
-    secure: false,
-    requireTLS: true,
+const transporter = nodemailer.createTransport({
+  host: SMTP_HOST,
+  port: SMTP_PORT,
+  secure: false,
+  requireTLS: true,
 
-    auth: {
-      user: SMTP_USER,
-      pass: SMTP_PASS,
-    },
+  auth: {
+    user: SMTP_USER,
+    pass: SMTP_PASS,
+  },
 
-    connectionTimeout: 20_000,
-    greetingTimeout: 20_000,
-    socketTimeout: 30_000,
-  });
+  connectionTimeout: 20000,
+  greetingTimeout: 20000,
+  socketTimeout: 30000,
+});
 
 export async function sendPinResetOtpEmail(
   email: string,
   otp: string,
   purpose: 'login' | 'purchase',
 ): Promise<void> {
-  if (
-    !SMTP_USER ||
-    !SMTP_PASS
-  ) {
+  if (!SMTP_USER || !SMTP_PASS) {
     throw new Error(
       'Email service is not configured.',
     );
@@ -223,10 +206,7 @@ export async function sendPinResetOtpEmail(
 }
 
 export async function verifyEmailTransport(): Promise<void> {
-  if (
-    !SMTP_USER ||
-    !SMTP_PASS
-  ) {
+  if (!SMTP_USER || !SMTP_PASS) {
     throw new Error(
       'Email service is not configured.',
     );

@@ -1,17 +1,20 @@
 import nodemailer from 'nodemailer';
 
 const SMTP_HOST =
-  process.env.SMTP_HOST?.trim() || 'smtp.gmail.com';
+  process.env.SMTP_HOST?.trim() ||
+  'smtp.gmail.com';
 
 const SMTP_PORT = Number(
-  process.env.SMTP_PORT || '587',
+  process.env.SMTP_PORT || '465',
 );
 
 const SMTP_USER =
-  process.env.SMTP_USER?.trim() || '';
+  process.env.SMTP_USER?.trim() ||
+  '';
 
 const SMTP_PASS =
-  process.env.SMTP_PASS?.trim() || '';
+  process.env.SMTP_PASS?.trim() ||
+  '';
 
 const SMTP_FROM =
   process.env.SMTP_FROM?.trim() ||
@@ -23,26 +26,35 @@ if (!SMTP_USER || !SMTP_PASS) {
   );
 }
 
-const transporter = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port: SMTP_PORT,
-  secure: false,
-  requireTLS: true,
+/**
+ * Gmail SMTP over SSL.
+ *
+ * Port 465 is used instead of 587 because the
+ * previous Render connection was timing out during
+ * the SMTP connection phase.
+ */
+const transporter =
+  nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: true,
 
-  auth: {
-    user: SMTP_USER,
-    pass: SMTP_PASS,
-  },
+    auth: {
+      user: SMTP_USER,
+      pass: SMTP_PASS,
+    },
 
-  connectionTimeout: 20000,
-  greetingTimeout: 20000,
-  socketTimeout: 30000,
-});
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 60000,
+  });
 
 export async function sendPinResetOtpEmail(
   email: string,
   otp: string,
-  purpose: 'login' | 'purchase',
+  purpose:
+    | 'login'
+    | 'purchase',
 ): Promise<void> {
   if (!SMTP_USER || !SMTP_PASS) {
     throw new Error(
@@ -53,13 +65,15 @@ export async function sendPinResetOtpEmail(
   const isPurchase =
     purpose === 'purchase';
 
-  const subject = isPurchase
-    ? 'GY DATA Purchase PIN Reset Code'
-    : 'GY DATA Login PIN Reset Code';
+  const subject =
+    isPurchase
+      ? 'GY DATA Purchase PIN Reset Code'
+      : 'GY DATA Login PIN Reset Code';
 
-  const pinName = isPurchase
-    ? 'Purchase PIN'
-    : 'Login PIN';
+  const pinName =
+    isPurchase
+      ? 'Purchase PIN'
+      : 'Login PIN';
 
   await transporter.sendMail({
     from: SMTP_FROM,
@@ -167,7 +181,7 @@ export async function sendPinResetOtpEmail(
                   font-size:32px;
                   font-weight:800;
                   letter-spacing:8px;
-                  color:#1D4ED8;
+                  color:#075CC4;
                 "
               >
                 ${otp}
@@ -182,9 +196,8 @@ export async function sendPinResetOtpEmail(
                 line-height:1.6;
               "
             >
-              This code expires in
-              <strong>5 minutes</strong>.
-              Never share this code with anyone.
+              This verification code expires in 5 minutes.
+              Do not share this code with anyone.
             </p>
 
             <p

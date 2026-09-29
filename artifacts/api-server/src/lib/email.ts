@@ -1,51 +1,57 @@
 import nodemailer from 'nodemailer';
 
-const SMTP_HOST =
-  process.env.SMTP_HOST?.trim() || '';
-
-const SMTP_PORT =
-  Number(process.env.SMTP_PORT || '587');
-
 const SMTP_USER =
   process.env.SMTP_USER?.trim() || '';
 
 const SMTP_PASS =
-  process.env.SMTP_PASS || '';
+  process.env.SMTP_PASS?.trim() || '';
 
 const SMTP_FROM =
   process.env.SMTP_FROM?.trim() ||
   SMTP_USER;
 
-const SMTP_SERVICE =
-  process.env.SMTP_SERVICE?.trim() || '';
+/*
+ * Gmail SMTP
+ *
+ * We intentionally use the explicit Gmail SMTP host instead of
+ * nodemailer "service: gmail" so the connection uses port 587
+ * with STARTTLS. This is more predictable on cloud hosts such
+ * as Render.
+ */
+const SMTP_HOST =
+  process.env.SMTP_HOST?.trim() ||
+  'smtp.gmail.com';
+
+const SMTP_PORT =
+  Number(
+    process.env.SMTP_PORT || '587',
+  );
 
 if (
-  !SMTP_HOST &&
-  !SMTP_SERVICE
+  !SMTP_USER ||
+  !SMTP_PASS
 ) {
   console.warn(
-    '[email] SMTP_HOST or SMTP_SERVICE is not configured. Email OTP will not be sent.',
+    '[email] SMTP_USER or SMTP_PASS is not configured.',
   );
 }
 
 const transporter =
-  SMTP_SERVICE
-    ? nodemailer.createTransport({
-        service: SMTP_SERVICE,
-        auth: {
-          user: SMTP_USER,
-          pass: SMTP_PASS,
-        },
-      })
-    : nodemailer.createTransport({
-        host: SMTP_HOST,
-        port: SMTP_PORT,
-        secure: SMTP_PORT === 465,
-        auth: {
-          user: SMTP_USER,
-          pass: SMTP_PASS,
-        },
-      });
+  nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: false,
+    requireTLS: true,
+
+    auth: {
+      user: SMTP_USER,
+      pass: SMTP_PASS,
+    },
+
+    connectionTimeout: 20_000,
+    greetingTimeout: 20_000,
+    socketTimeout: 30_000,
+  });
 
 export async function sendPinResetOtpEmail(
   email: string,
@@ -54,8 +60,7 @@ export async function sendPinResetOtpEmail(
 ): Promise<void> {
   if (
     !SMTP_USER ||
-    !SMTP_PASS ||
-    (!SMTP_HOST && !SMTP_SERVICE)
+    !SMTP_PASS
   ) {
     throw new Error(
       'Email service is not configured.',
@@ -94,7 +99,10 @@ export async function sendPinResetOtpEmail(
       <html>
         <head>
           <meta charset="utf-8" />
-          <meta name="viewport" content="width=device-width,initial-scale=1" />
+          <meta
+            name="viewport"
+            content="width=device-width,initial-scale=1"
+          />
           <title>${subject}</title>
         </head>
 
@@ -191,7 +199,8 @@ export async function sendPinResetOtpEmail(
                 line-height:1.6;
               "
             >
-              This code expires in <strong>5 minutes</strong>.
+              This code expires in
+              <strong>5 minutes</strong>.
               Never share this code with anyone.
             </p>
 
@@ -203,8 +212,8 @@ export async function sendPinResetOtpEmail(
                 line-height:1.5;
               "
             >
-              If you did not request this reset, you can safely
-              ignore this email.
+              If you did not request this reset,
+              you can safely ignore this email.
             </p>
           </div>
         </body>
@@ -216,8 +225,7 @@ export async function sendPinResetOtpEmail(
 export async function verifyEmailTransport(): Promise<void> {
   if (
     !SMTP_USER ||
-    !SMTP_PASS ||
-    (!SMTP_HOST && !SMTP_SERVICE)
+    !SMTP_PASS
   ) {
     throw new Error(
       'Email service is not configured.',

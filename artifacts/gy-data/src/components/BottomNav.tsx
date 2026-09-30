@@ -1,3 +1,5 @@
+// artifacts/gy-data/src/components/BottomNav.tsx
+
 import React, { useState } from 'react';
 import { useLocation } from 'wouter';
 import { useAppContext } from '../context/AppContext';
@@ -30,7 +32,7 @@ export default function BottomNav() {
 
   return (
     <>
-      <div className="bg-white border-t border-border shadow-[0_-2px_16px_rgba(14,29,70,0.08)] pb-safe px-2 py-1 flex-shrink-0">
+      <div className="bg-background border-t border-border shadow-[0_-2px_16px_rgba(14,29,70,0.08)] pb-safe px-2 py-1 flex-shrink-0">
         <div className="flex justify-around items-center h-16 max-w-md mx-auto relative">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;

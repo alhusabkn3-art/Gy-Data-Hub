@@ -21,6 +21,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -28,11 +34,10 @@ jobs:
           cache: pnpm
           cache-dependency-path: artifacts/gy-data/pnpm-lock.yaml
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-          run_install: false
+      - name: Verify Node and pnpm
+        run: |
+          node --version
+          pnpm --version
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -84,17 +89,22 @@ jobs:
         run: |
           mkdir -p release
 
-          APK_PATH="$(find android/app/build/outputs/apk/release -type f -name "*.apk" | head -n 1)"
+          APK_PATH="$(find android/app/build/outputs -type f -name "*.apk" | head -n 1)"
 
           if [ -z "$APK_PATH" ]; then
             echo "ERROR: Release APK was not generated."
+            echo "Available build outputs:"
             find android/app/build/outputs -type f -print || true
             exit 1
           fi
 
-          echo "APK found at: $APK_PATH"
+          echo "APK found at:"
+          echo "$APK_PATH"
 
           cp "$APK_PATH" release/GY-DATA-release.apk
+
+          echo "Release APK prepared:"
+          ls -lh release/GY-DATA-release.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

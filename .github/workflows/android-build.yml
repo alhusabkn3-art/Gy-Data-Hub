@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-
   workflow_dispatch:
 
 permissions:
@@ -14,127 +13,102 @@ jobs:
   build-android:
     runs-on: ubuntu-latest
 
-    steps:
+    defaults:
+      run:
+        working-directory: artifacts/gy-data
 
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.17.1
-          run_install: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+          cache-dependency-path: artifacts/gy-data/pnpm-lock.yaml
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
-      - name: Verify Android API configuration
-        env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
-        run: |
-          if [ -z "$VITE_API_URL" ]; then
-            echo "VITE_API_URL secret is not set."
-            echo "Using production Render API fallback."
-            echo "https://gy-data-hub-1.onrender.com"
-          else
-            echo "VITE_API_URL is configured."
-          fi
-
-      - name: Build web application
-        env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
-        run: |
-          pnpm --filter @workspace/gy-data build
+      - name: Build web app
+        run: pnpm build
 
       - name: Add Android platform
-        working-directory: artifacts/gy-data
-        run: |
-          pnpm exec cap add android
+        run: pnpm exec cap add android
 
-      - name: Sync Capacitor Android
-        working-directory: artifacts/gy-data
-        run: |
-          pnpm exec cap sync android
+      - name: Sync Capacitor
+        run: pnpm exec cap sync android
 
       - name: Generate GY DATA Android branding
-        working-directory: artifacts/gy-data
-        run: |
-          pnpm android:branding
+        run: pnpm android:branding
 
-      - name: Verify generated branding
-        working-directory: artifacts/gy-data
-        run: |
-          test -f android/app/src/main/res/drawable/gy_data_splash.png
-          test -f android/app/src/main/res/drawable/ic_launcher_foreground.png
-          test -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
-          test -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
-
-          echo "GY DATA branding verified successfully."
-
-      - name: Re-sync Capacitor after branding
-        working-directory: artifacts/gy-data
-        run: |
-          pnpm exec cap copy android
+      - name: Copy Android web assets
+        run: pnpm exec cap copy android
 
       - name: Setup Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: 21
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Make Gradle executable
+        working-directory: artifacts/gy-data/android
+        run: chmod +x gradlew
 
       - name: Clean Android build
         working-directory: artifacts/gy-data/android
-        run: |
-          chmod +x gradlew
-          ./gradlew clean
+        run: ./gradlew clean
 
-      - name: Build Release APK
+      - name: Build Android release APK
         working-directory: artifacts/gy-data/android
-        run: |
-          ./gradlew assembleRelease
+        run: ./gradlew assembleRelease
 
-      - name: Build Release AAB
-        working-directory: artifacts/gy-data/android
+      - name: Find generated APK
+        working-directory: artifacts/gy-data
         run: |
-          ./gradlew bundleRelease
+          echo "Searching for generated APK..."
+          find android/app/build/outputs -type f -name "*.apk" -print
 
       - name: Prepare release files
+        working-directory: artifacts/gy-data
         run: |
           mkdir -p release
 
-          cp \
-            artifacts/gy-data/android/app/build/outputs/apk/release/app-release.apk \
-            release/Gy-Data-Hub-release.apk
+          APK_PATH="$(find android/app/build/outputs/apk/release -type f -name "*.apk" | head -n 1)"
 
-          cp \
-            artifacts/gy-data/android/app/build/outputs/bundle/release/app-release.aab \
-            release/Gy-Data-Hub-release.aab
+          if [ -z "$APK_PATH" ]; then
+            echo "ERROR: Release APK was not generated."
+            find android/app/build/outputs -type f -print || true
+            exit 1
+          fi
+
+          echo "APK found at: $APK_PATH"
+
+          cp "$APK_PATH" release/GY-DATA-release.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GY-DATA-Android
+          path: artifacts/gy-data/release/GY-DATA-release.apk
+          if-no-files-found: error
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.${{ github.run_number }}
-
-          name: GY DATA v1.0.${{ github.run_number }}
-
-          body: |
-            ## GY DATA Android Release
-
-            Release APK:
-            Gy-Data-Hub-release.apk
-
-            Google Play bundle:
-            Gy-Data-Hub-release.aab
-
-          files: |
-            release/Gy-Data-Hub-release.apk
-            release/Gy-Data-Hub-release.aab
-
+          tag_name: v${{ github.run_number }}
+          name: GY DATA Android v${{ github.run_number }}
           generate_release_notes: true
+          files: artifacts/gy-data/release/GY-DATA-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

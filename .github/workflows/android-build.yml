@@ -31,8 +31,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: artifacts/gy-data/pnpm-lock.yaml
 
       - name: Verify Node and pnpm
         run: |
@@ -70,21 +68,21 @@ jobs:
         working-directory: artifacts/gy-data/android
         run: chmod +x gradlew
 
-      - name: Clean Android build
+      - name: Clean Android project
         working-directory: artifacts/gy-data/android
         run: ./gradlew clean
 
-      - name: Build Android release APK
+      - name: Build release APK
         working-directory: artifacts/gy-data/android
-        run: ./gradlew assembleRelease
+        run: ./gradlew assembleRelease --no-daemon
 
-      - name: Find generated APK
+      - name: Locate APK
         working-directory: artifacts/gy-data
         run: |
-          echo "Searching for generated APK..."
+          echo "APK files found:"
           find android/app/build/outputs -type f -name "*.apk" -print
 
-      - name: Prepare release files
+      - name: Prepare APK
         working-directory: artifacts/gy-data
         run: |
           mkdir -p release
@@ -92,18 +90,15 @@ jobs:
           APK_PATH="$(find android/app/build/outputs -type f -name "*.apk" | head -n 1)"
 
           if [ -z "$APK_PATH" ]; then
-            echo "ERROR: Release APK was not generated."
-            echo "Available build outputs:"
+            echo "ERROR: No APK was generated."
             find android/app/build/outputs -type f -print || true
             exit 1
           fi
 
-          echo "APK found at:"
-          echo "$APK_PATH"
+          echo "Using APK: $APK_PATH"
 
           cp "$APK_PATH" release/GY-DATA-release.apk
 
-          echo "Release APK prepared:"
           ls -lh release/GY-DATA-release.apk
 
       - name: Upload APK artifact

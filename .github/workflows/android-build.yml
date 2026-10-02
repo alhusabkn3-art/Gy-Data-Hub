@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -40,25 +41,47 @@ jobs:
         run: |
           if [ -z "$VITE_API_URL" ]; then
             echo "VITE_API_URL secret is not set."
-            echo "The application has a production Render API fallback."
-            echo "Continuing with:"
+            echo "Using production Render API fallback."
             echo "https://gy-data-hub-1.onrender.com"
           else
-            echo "VITE_API_URL is configured for Android build."
+            echo "VITE_API_URL is configured."
           fi
 
       - name: Build web application
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
-        run: pnpm --filter @workspace/gy-data build
+        run: |
+          pnpm --filter @workspace/gy-data build
 
       - name: Add Android platform
         working-directory: artifacts/gy-data
-        run: pnpm exec cap add android
+        run: |
+          pnpm exec cap add android
 
       - name: Sync Capacitor Android
         working-directory: artifacts/gy-data
-        run: pnpm exec cap sync android
+        run: |
+          pnpm exec cap sync android
+
+      - name: Generate GY DATA Android branding
+        working-directory: artifacts/gy-data
+        run: |
+          pnpm android:branding
+
+      - name: Verify generated branding
+        working-directory: artifacts/gy-data
+        run: |
+          test -f android/app/src/main/res/drawable/gy_data_splash.png
+          test -f android/app/src/main/res/drawable/ic_launcher_foreground.png
+          test -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          test -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+
+          echo "GY DATA branding verified successfully."
+
+      - name: Re-sync Capacitor after branding
+        working-directory: artifacts/gy-data
+        run: |
+          pnpm exec cap copy android
 
       - name: Setup Java
         uses: actions/setup-java@v5
@@ -66,13 +89,21 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      - name: Clean Android build
+        working-directory: artifacts/gy-data/android
+        run: |
+          chmod +x gradlew
+          ./gradlew clean
+
       - name: Build Release APK
         working-directory: artifacts/gy-data/android
-        run: ./gradlew assembleRelease
+        run: |
+          ./gradlew assembleRelease
 
       - name: Build Release AAB
         working-directory: artifacts/gy-data/android
-        run: ./gradlew bundleRelease
+        run: |
+          ./gradlew bundleRelease
 
       - name: Prepare release files
         run: |

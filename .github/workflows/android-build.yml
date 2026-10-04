@@ -1,21 +1,25 @@
-name: Android Build & Release
+name: GY DATA Android Build & GitHub Release
 
 on:
   push:
     branches:
       - main
+
   workflow_dispatch:
 
 permissions:
   contents: write
 
-jobs:
-  build-android:
-    runs-on: ubuntu-latest
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "10.17.1"
+  JAVA_VERSION: "21"
+  APP_DIR: "artifacts/gy-data"
 
-    defaults:
-      run:
-        working-directory: artifacts/gy-data
+jobs:
+  android:
+    name: Build APK + AAB + GitHub Release
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
@@ -24,96 +28,293 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10.17.1
+          version: ${{ env.PNPM_VERSION }}
           run_install: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-
-      - name: Verify Node and pnpm
-        run: |
-          node --version
-          pnpm --version
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build web app
-        run: pnpm build
-
-      - name: Add Android platform
-        run: pnpm exec cap add android
-
-      - name: Sync Capacitor
-        run: pnpm exec cap sync android
-
-      - name: Generate GY DATA Android branding
-        run: pnpm android:branding
-
-      - name: Copy Android web assets
-        run: pnpm exec cap copy android
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 21
+          java-version: ${{ env.JAVA_VERSION }}
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Make Gradle executable
-        working-directory: artifacts/gy-data/android
-        run: chmod +x gradlew
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify project
+        run: |
+          node --version
+          pnpm --version
+          java -version
+          pnpm --filter @workspace/gy-data typecheck
+
+      - name: Build web application
+        working-directory: ${{ env.APP_DIR }}
+        env:
+          VITE_API_URL: https://gy-data-hub-1.onrender.com
+        run: |
+          pnpm build
+
+      - name: Add Android platform
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          if [ ! -d android ]; then
+            pnpm exec cap add android
+          fi
+
+      - name: Sync Capacitor
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          pnpm exec cap sync android
+
+      - name: Generate Android branding
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          pnpm android:branding
+
+      - name: Copy web assets
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          pnpm exec cap copy android
+
+      - name: Prepare Android Gradle
+        working-directory: ${{ env.APP_DIR }}/android
+        run: |
+          chmod +x gradlew
+          ./gradlew --version
+
+      - name: Create release signing key
+        working-directory: ${{ env.APP_DIR }}/android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > release.keystore
+
+            test -s release.keystore
+
+            echo "Release keystore loaded."
+          else
+            echo "No release keystore configured."
+            echo "The workflow will use the Android debug signing key for APK testing."
+          fi
+
+      - name: Configure release signing
+        working-directory: ${{ env.APP_DIR }}/android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("app/build.gradle")
+
+          text = path.read_text()
+
+          signing_block = r'''
+              signingConfigs {
+                  release {
+                      if (project.hasProperty("GY_RELEASE_STORE_FILE")) {
+                          storeFile file(GY_RELEASE_STORE_FILE)
+                          storePassword GY_RELEASE_STORE_PASSWORD
+                          keyAlias GY_RELEASE_KEY_ALIAS
+                          keyPassword GY_RELEASE_KEY_PASSWORD
+                      }
+                  }
+              }
+          '''
+
+          if "signingConfigs {" not in text:
+              marker = "android {"
+              if marker not in text:
+                  raise SystemExit(
+                      "android block not found in app/build.gradle"
+                  )
+
+              text = text.replace(
+                  marker,
+                  marker + signing_block,
+                  1,
+              )
+
+          if "signingConfig signingConfigs.release" not in text:
+              marker = "buildTypes {"
+
+              if marker not in text:
+                  raise SystemExit(
+                      "buildTypes block not found in app/build.gradle"
+                  )
+
+              replacement = '''buildTypes {
+                  release {
+                      if (project.hasProperty("GY_RELEASE_STORE_FILE")) {
+                          signingConfig signingConfigs.release
+                      }
+                  }
+              '''
+
+              start = text.find(marker)
+
+              if start == -1:
+                  raise SystemExit(
+                      "Unable to locate buildTypes"
+                  )
+
+              # Only inject signingConfig if a release block
+              # does not already contain one.
+              release_marker = "release {"
+
+              release_pos = text.find(
+                  release_marker,
+                  start,
+              )
+
+              if release_pos == -1:
+                  raise SystemExit(
+                      "Unable to locate release build type"
+                  )
+
+              insertion_pos = (
+                  release_pos +
+                  len(release_marker)
+              )
+
+              text = (
+                  text[:insertion_pos]
+                  + '''
+                      if (project.hasProperty("GY_RELEASE_STORE_FILE")) {
+                          signingConfig signingConfigs.release
+                      }
+                  '''
+                  + text[insertion_pos:]
+              )
+
+          path.write_text(text)
+          PY
+
+          if [ -f release.keystore ]; then
+            cat > signing.properties <<EOF
+          GY_RELEASE_STORE_FILE=release.keystore
+          GY_RELEASE_STORE_PASSWORD=${ANDROID_KEYSTORE_PASSWORD}
+          GY_RELEASE_KEY_ALIAS=${ANDROID_KEY_ALIAS}
+          GY_RELEASE_KEY_PASSWORD=${ANDROID_KEY_PASSWORD}
+          EOF
+
+            cat signing.properties
+          fi
+
+      - name: Configure Gradle signing properties
+        working-directory: ${{ env.APP_DIR }}/android
+        run: |
+          if [ -f signing.properties ]; then
+            cat >> gradle.properties <<EOF
+
+          GY_RELEASE_STORE_FILE=release.keystore
+          GY_RELEASE_STORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          GY_RELEASE_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}
+          GY_RELEASE_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}
+          EOF
+          fi
 
       - name: Clean Android project
-        working-directory: artifacts/gy-data/android
-        run: ./gradlew clean
+        working-directory: ${{ env.APP_DIR }}/android
+        run: |
+          ./gradlew clean --no-daemon
 
       - name: Build release APK
-        working-directory: artifacts/gy-data/android
-        run: ./gradlew assembleRelease --no-daemon
-
-      - name: Locate APK
-        working-directory: artifacts/gy-data
+        working-directory: ${{ env.APP_DIR }}/android
         run: |
-          echo "APK files found:"
-          find android/app/build/outputs -type f -name "*.apk" -print
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Prepare APK
-        working-directory: artifacts/gy-data
+      - name: Build release AAB
+        working-directory: ${{ env.APP_DIR }}/android
         run: |
-          mkdir -p release
+          ./gradlew bundleRelease --no-daemon --stacktrace
 
-          APK_PATH="$(find android/app/build/outputs -type f -name "*.apk" | head -n 1)"
+      - name: Verify APK and AAB
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          echo "APK:"
+          find android/app/build/outputs/apk -type f -name "*.apk" -print
 
-          if [ -z "$APK_PATH" ]; then
-            echo "ERROR: No APK was generated."
-            find android/app/build/outputs -type f -print || true
+          echo "AAB:"
+          find android/app/build/outputs/bundle -type f -name "*.aab" -print
+
+          APK="$(find android/app/build/outputs/apk -type f -name "*.apk" | head -n 1)"
+          AAB="$(find android/app/build/outputs/bundle -type f -name "*.aab" | head -n 1)"
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK was not generated."
             exit 1
           fi
 
-          echo "Using APK: $APK_PATH"
+          if [ -z "$AAB" ]; then
+            echo "ERROR: AAB was not generated."
+            exit 1
+          fi
 
-          cp "$APK_PATH" release/GY-DATA-release.apk
+          echo "APK=$APK"
+          echo "AAB=$AAB"
 
-          ls -lh release/GY-DATA-release.apk
+      - name: Prepare release files
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          rm -rf release
+          mkdir -p release
 
-      - name: Upload APK artifact
+          APK="$(find android/app/build/outputs/apk -type f -name "*.apk" | head -n 1)"
+          AAB="$(find android/app/build/outputs/bundle -type f -name "*.aab" | head -n 1)"
+
+          cp "$APK" release/GY-DATA-release.apk
+          cp "$AAB" release/GY-DATA-release.aab
+
+          sha256sum release/GY-DATA-release.apk \
+            > release/SHA256SUMS.txt
+
+          sha256sum release/GY-DATA-release.aab \
+            >> release/SHA256SUMS.txt
+
+          ls -lh release
+
+      - name: Upload APK and AAB artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: GY-DATA-Android
-          path: artifacts/gy-data/release/GY-DATA-release.apk
+          name: GY-DATA-Android-${{ github.run_number }}
+          path: |
+            artifacts/gy-data/release/GY-DATA-release.apk
+            artifacts/gy-data/release/GY-DATA-release.aab
+            artifacts/gy-data/release/SHA256SUMS.txt
           if-no-files-found: error
+
+      - name: Generate release tag
+        id: release
+        run: |
+          echo "tag=v${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ github.run_number }}
-          name: GY DATA Android v${{ github.run_number }}
+          tag_name: ${{ steps.release.outputs.tag }}
+          name: GY DATA Android ${{ steps.release.outputs.tag }}
           generate_release_notes: true
-          files: artifacts/gy-data/release/GY-DATA-release.apk
+          make_latest: true
+          files: |
+            artifacts/gy-data/release/GY-DATA-release.apk
+            artifacts/gy-data/release/GY-DATA-release.aab
+            artifacts/gy-data/release/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

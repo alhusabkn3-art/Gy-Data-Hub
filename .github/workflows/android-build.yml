@@ -11,15 +11,15 @@ permissions:
 
 jobs:
   build-android:
-    name: Build APK + AAB
+    name: Build Android APK + AAB
     runs-on: ubuntu-latest
+
+    env:
+      VITE_API_URL: https://gy-data-hub-1.onrender.com
 
     defaults:
       run:
         shell: bash
-
-    env:
-      VITE_API_URL: https://gy-data-hub-1.onrender.com
 
     steps:
       - name: Checkout repository
@@ -32,29 +32,20 @@ jobs:
           run_install: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
+      - name: Setup Java 21
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
-          cache: gradle
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
-        run: |
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
 
       - name: Verify tools
         run: |
@@ -62,7 +53,17 @@ jobs:
           pnpm --version
           java -version
           echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
           adb version
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       - name: Install dependencies
         run: |
@@ -78,7 +79,7 @@ jobs:
         run: |
           pnpm exec cap add android
 
-      - name: Sync Capacitor
+      - name: Sync Capacitor Android
         working-directory: artifacts/gy-data
         run: |
           pnpm exec cap sync android
@@ -88,7 +89,7 @@ jobs:
         run: |
           pnpm android:branding
 
-      - name: Copy web assets
+      - name: Copy Android web assets
         working-directory: artifacts/gy-data
         run: |
           pnpm exec cap copy android
@@ -101,28 +102,28 @@ jobs:
       - name: Configure release signing
         working-directory: artifacts/gy-data/android
         env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -e
 
-          if [ -n "$ANDROID_KEYSTORE_BASE64" ] && \
-             [ -n "$ANDROID_KEYSTORE_PASSWORD" ] && \
-             [ -n "$ANDROID_KEY_ALIAS" ] && \
-             [ -n "$ANDROID_KEY_PASSWORD" ]; then
+          if [ -n "$KEYSTORE_BASE64" ] &&
+             [ -n "$KEYSTORE_PASSWORD" ] &&
+             [ -n "$KEY_ALIAS" ] &&
+             [ -n "$KEY_PASSWORD" ]; then
 
-            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > gy-data-release.keystore
+            echo "$KEYSTORE_BASE64" | base64 --decode > gy-data-release.keystore
 
             test -s gy-data-release.keystore
 
             cat >> gradle.properties <<EOF
 
           GY_DATA_RELEASE_STORE_FILE=gy-data-release.keystore
-          GY_DATA_RELEASE_STORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD
-          GY_DATA_RELEASE_KEY_ALIAS=$ANDROID_KEY_ALIAS
-          GY_DATA_RELEASE_KEY_PASSWORD=$ANDROID_KEY_PASSWORD
+          GY_DATA_RELEASE_STORE_PASSWORD=$KEYSTORE_PASSWORD
+          GY_DATA_RELEASE_KEY_ALIAS=$KEY_ALIAS
+          GY_DATA_RELEASE_KEY_PASSWORD=$KEY_PASSWORD
           EOF
 
             python3 <<'PY'
@@ -133,6 +134,13 @@ jobs:
           text = path.read_text()
 
           if "GY_DATA_RELEASE_STORE_FILE" not in text:
+              android_match = re.search(r'\bandroid\s*\{', text)
+
+              if not android_match:
+                  raise SystemExit(
+                      "ERROR: android { block not found in app/build.gradle"
+                  )
+
               signing = """
               signingConfigs {
                   release {
@@ -142,106 +150,97 @@ jobs:
                       keyPassword GY_DATA_RELEASE_KEY_PASSWORD
                   }
               }
-          """
+              """
 
-              match = re.search(r'android\s*\{', text)
-
-              if not match:
-                  raise SystemExit(
-                      "ERROR: android block was not found in app/build.gradle"
-                  )
-
-              insert_at = match.end()
-              text = text[:insert_at] + signing + text[insert_at:]
-
-              build_types = re.search(
-                  r'buildTypes\s*\{',
-                  text
+              text = (
+                  text[:android_match.end()]
+                  + signing
+                  + text[android_match.end():]
               )
 
-              if not build_types:
-                  raise SystemExit(
-                      "ERROR: buildTypes block was not found in app/build.gradle"
-                  )
+          build_types_match = re.search(
+              r'\bbuildTypes\s*\{',
+              text
+          )
+
+          if not build_types_match:
+              raise SystemExit(
+                  "ERROR: buildTypes { block not found in app/build.gradle"
+              )
+
+          if "signingConfig signingConfigs.release" not in text:
+              start = build_types_match.end()
 
               release_match = re.search(
-                  r'release\s*\{',
-                  text[build_types.end():]
+                  r'\brelease\s*\{',
+                  text[start:]
               )
 
               if release_match:
-                  release_start = (
-                      build_types.end() +
-                      release_match.start()
-                  )
-
-                  brace_start = text.find(
-                      "{",
-                      release_start
-                  )
+                  release_start = start + release_match.start()
+                  opening = text.find("{", release_start)
 
                   depth = 0
-                  release_end = None
+                  closing = None
 
-                  for i in range(brace_start, len(text)):
-                      if text[i] == "{":
+                  for index in range(opening, len(text)):
+                      if text[index] == "{":
                           depth += 1
-                      elif text[i] == "}":
+                      elif text[index] == "}":
                           depth -= 1
                           if depth == 0:
-                              release_end = i + 1
+                              closing = index
                               break
 
-                  if release_end is None:
+                  if closing is None:
                       raise SystemExit(
                           "ERROR: release buildType block is malformed"
                       )
 
-                  old_block = text[release_start:release_end]
+                  release_body = text[release_start:closing]
 
-                  if "signingConfig" not in old_block:
-                      new_block = old_block[:-1] + """
+                  release_body += """
                       signingConfig signingConfigs.release
-                  }"""
+                  """
 
-                      text = (
-                          text[:release_start]
-                          + new_block
-                          + text[release_end:]
-                      )
-
+                  text = (
+                      text[:release_start]
+                      + release_body
+                      + text[closing:]
+                  )
               else:
-                  build_types_end = build_types.end()
+                  insert_at = build_types_match.end()
 
-                  release_block = """
+                  text = (
+                      text[:insert_at]
+                      + """
                   release {
                       signingConfig signingConfigs.release
                   }
-              """
-
-                  text = (
-                      text[:build_types_end]
-                      + release_block
-                      + text[build_types_end:]
+                  """
+                      + text[insert_at:]
                   )
 
-              path.write_text(text)
-
-          print("Release signing configuration complete.")
+          path.write_text(text)
           PY
 
+            echo "Release signing configured."
+
           else
-            echo "No release signing secrets supplied."
-            echo "The workflow will build unsigned release artifacts."
+            echo "No Android signing secrets configured."
+            echo "Release APK/AAB will be unsigned."
           fi
 
-      - name: Show Android configuration
+      - name: Verify Gradle project
         working-directory: artifacts/gy-data/android
         run: |
-          ./gradlew --version
-          sed -n '1,260p' app/build.gradle
+          test -f gradlew
+          test -f settings.gradle
+          test -f app/build.gradle
 
-      - name: Clean Android build
+          ./gradlew --version
+
+      - name: Clean Gradle project
         working-directory: artifacts/gy-data/android
         run: |
           ./gradlew clean --no-daemon
@@ -260,10 +259,22 @@ jobs:
             --no-daemon \
             --stacktrace
 
-      - name: Verify APK
+      - name: Locate APK and AAB
         working-directory: artifacts/gy-data
         run: |
           set -e
+
+          echo "APK files:"
+          find android/app/build/outputs/apk \
+            -type f \
+            -name "*.apk" \
+            -print
+
+          echo "AAB files:"
+          find android/app/build/outputs/bundle \
+            -type f \
+            -name "*.aab" \
+            -print
 
           APK_PATH="$(
             find android/app/build/outputs/apk \
@@ -273,19 +284,6 @@ jobs:
               | head -n 1
           )"
 
-          if [ -z "$APK_PATH" ]; then
-            echo "ERROR: APK was not generated."
-            find android/app/build/outputs -type f -print || true
-            exit 1
-          fi
-
-          echo "APK: $APK_PATH"
-
-      - name: Verify AAB
-        working-directory: artifacts/gy-data
-        run: |
-          set -e
-
           AAB_PATH="$(
             find android/app/build/outputs/bundle \
               -type f \
@@ -294,13 +292,11 @@ jobs:
               | head -n 1
           )"
 
-          if [ -z "$AAB_PATH" ]; then
-            echo "ERROR: AAB was not generated."
-            find android/app/build/outputs -type f -print || true
-            exit 1
-          fi
+          test -n "$APK_PATH"
+          test -n "$AAB_PATH"
 
-          echo "AAB: $AAB_PATH"
+          echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
+          echo "AAB_PATH=$AAB_PATH" >> "$GITHUB_ENV"
 
       - name: Prepare release files
         working-directory: artifacts/gy-data
@@ -309,22 +305,6 @@ jobs:
 
           rm -rf release
           mkdir -p release
-
-          APK_PATH="$(
-            find android/app/build/outputs/apk \
-              -type f \
-              -name "*.apk" \
-              -print \
-              | head -n 1
-          )"
-
-          AAB_PATH="$(
-            find android/app/build/outputs/bundle \
-              -type f \
-              -name "*.aab" \
-              -print \
-              | head -n 1
-          )"
 
           cp "$APK_PATH" release/GY-DATA.apk
           cp "$AAB_PATH" release/GY-DATA.aab

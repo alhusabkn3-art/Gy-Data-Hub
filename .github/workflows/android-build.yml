@@ -1,205 +1,240 @@
 name: Android Build & Release
-on: push: branches: - main workflow_dispatch:
-permissions: contents: write
-jobs: build-android: runs-on: ubuntu-latest
-defaults:
-  run:
-    working-directory: artifacts/gy-data
 
-steps:
-  - name: Checkout repository
-    uses: actions/checkout@v4
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
-  - name: Setup pnpm
-    uses: pnpm/action-setup@v4
-    with:
-      version: 10.17.1
-      run_install: false
+permissions:
+  contents: write
 
-  - name: Setup Node.js
-    uses: actions/setup-node@v4
-    with:
-      node-version: '22'
-      cache: pnpm
-      cache-dependency-path: pnpm-lock.yaml
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
 
-  - name: Install dependencies
-    run: pnpm install --no-frozen-lockfile
+    defaults:
+      run:
+        working-directory: artifacts/gy-data
 
-  - name: Build web application
-    run: pnpm build
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  - name: Add Android platform
-    run: pnpm exec cap add android
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.1
+          run_install: false
 
-  - name: Sync Capacitor
-    run: pnpm exec cap sync android
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
-  - name: Generate Android branding
-    run: pnpm android:branding
+      - name: Verify Node and pnpm
+        run: |
+          node --version
+          pnpm --version
 
-  - name: Copy web assets to Android
-    run: pnpm exec cap copy android
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
 
-  - name: Setup Java
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: '21'
-      cache: gradle
+      - name: Verify Capacitor
+        run: |
+          pnpm exec cap --version
+          pnpm exec vite --version
 
-  - name: Setup Android SDK
-    uses: android-actions/setup-android@v4
-    with:
-      packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
-      accept-android-sdk-licenses: true
+      - name: Build web application
+        run: pnpm build
 
-  - name: Prepare Android signing
-    working-directory: artifacts/gy-data/android
-    env:
-      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-    run: |
-      set -e
+      - name: Add Android platform
+        run: pnpm exec cap add android
 
-      if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
-        echo "ERROR: ANDROID_KEYSTORE_BASE64 GitHub Secret is missing."
-        exit 1
-      fi
+      - name: Sync Capacitor
+        run: pnpm exec cap sync android
 
-      if [ -z "$ANDROID_KEYSTORE_PASSWORD" ]; then
-        echo "ERROR: ANDROID_KEYSTORE_PASSWORD GitHub Secret is missing."
-        exit 1
-      fi
+      - name: Generate Android branding
+        run: pnpm android:branding
 
-      if [ -z "$ANDROID_KEY_ALIAS" ]; then
-        echo "ERROR: ANDROID_KEY_ALIAS GitHub Secret is missing."
-        exit 1
-      fi
+      - name: Copy web assets to Android
+        run: pnpm exec cap copy android
 
-      if [ -z "$ANDROID_KEY_PASSWORD" ]; then
-        echo "ERROR: ANDROID_KEY_PASSWORD GitHub Secret is missing."
-        exit 1
-      fi
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
 
-      echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > gy-data-release.keystore
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: false
 
-      test -s gy-data-release.keystore
+      - name: Verify Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          sdkmanager --version
+          test -d "$ANDROID_SDK_ROOT/platform-tools"
+          test -d "$ANDROID_SDK_ROOT/platforms/android-35"
+          test -d "$ANDROID_SDK_ROOT/build-tools/35.0.0"
 
-      cat > signing.gradle <<'EOF'
-      android {
-          signingConfigs {
-              release {
-                  storeFile file("gy-data-release.keystore")
-                  storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
-                  keyAlias System.getenv("ANDROID_KEY_ALIAS")
-                  keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+      - name: Prepare Android signing
+        working-directory: artifacts/gy-data/android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -e
+
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "ERROR: ANDROID_KEYSTORE_BASE64 GitHub Secret is missing."
+            exit 1
+          fi
+
+          if [ -z "$ANDROID_KEYSTORE_PASSWORD" ]; then
+            echo "ERROR: ANDROID_KEYSTORE_PASSWORD GitHub Secret is missing."
+            exit 1
+          fi
+
+          if [ -z "$ANDROID_KEY_ALIAS" ]; then
+            echo "ERROR: ANDROID_KEY_ALIAS GitHub Secret is missing."
+            exit 1
+          fi
+
+          if [ -z "$ANDROID_KEY_PASSWORD" ]; then
+            echo "ERROR: ANDROID_KEY_PASSWORD GitHub Secret is missing."
+            exit 1
+          fi
+
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > gy-data-release.keystore
+
+          test -s gy-data-release.keystore
+
+          cat > signing.gradle <<'EOF'
+          android {
+              signingConfigs {
+                  release {
+                      storeFile file("gy-data-release.keystore")
+                      storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                      keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                      keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+                  }
+              }
+
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                      minifyEnabled false
+                      shrinkResources false
+                  }
               }
           }
+          EOF
 
-          buildTypes {
-              release {
-                  signingConfig signingConfigs.release
-                  minifyEnabled false
-                  shrinkResources false
-              }
-          }
-      }
-      EOF
+          printf '\napply from: "signing.gradle"\n' >> app/build.gradle
 
-      printf '\napply from: "signing.gradle"\n' >> app/build.gradle
+      - name: Verify Android project
+        working-directory: artifacts/gy-data/android
+        run: |
+          test -f gradlew
+          test -d app
+          chmod +x gradlew
+          ./gradlew --version
 
-  - name: Verify Android project
-    working-directory: artifacts/gy-data/android
-    run: |
-      chmod +x gradlew
-      ./gradlew --version
+      - name: Clean Android project
+        working-directory: artifacts/gy-data/android
+        run: |
+          ./gradlew clean \
+            --no-daemon \
+            --stacktrace
 
-  - name: Clean Android project
-    working-directory: artifacts/gy-data/android
-    run: |
-      ./gradlew clean \
-        --no-daemon \
-        --stacktrace
+      - name: Build signed release APK
+        working-directory: artifacts/gy-data/android
+        run: |
+          ./gradlew assembleRelease \
+            --no-daemon \
+            --stacktrace \
+            --warning-mode all
 
-  - name: Build signed release APK
-    working-directory: artifacts/gy-data/android
-    run: |
-      ./gradlew assembleRelease \
-        --no-daemon \
-        --stacktrace \
-        --warning-mode all
+      - name: Build signed release AAB
+        working-directory: artifacts/gy-data/android
+        run: |
+          ./gradlew bundleRelease \
+            --no-daemon \
+            --stacktrace \
+            --warning-mode all
 
-  - name: Build signed release AAB
-    working-directory: artifacts/gy-data/android
-    run: |
-      ./gradlew bundleRelease \
-        --no-daemon \
-        --stacktrace \
-        --warning-mode all
+      - name: Verify APK signature
+        working-directory: artifacts/gy-data/android
+        run: |
+          APK_PATH="app/build/outputs/apk/release/app-release.apk"
 
-  - name: Verify APK signature
-    working-directory: artifacts/gy-data/android
-    run: |
-      APK_PATH="app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$APK_PATH" ]; then
+            echo "ERROR: Release APK was not generated."
+            find app/build/outputs -type f -print
+            exit 1
+          fi
 
-      if [ ! -f "$APK_PATH" ]; then
-        echo "ERROR: Release APK was not generated."
-        find app/build/outputs -type f -print
-        exit 1
-      fi
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
+            --verbose \
+            "$APK_PATH"
 
-      "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK_PATH"
+      - name: Verify AAB
+        working-directory: artifacts/gy-data/android
+        run: |
+          AAB_PATH="app/build/outputs/bundle/release/app-release.aab"
 
-  - name: Verify AAB
-    working-directory: artifacts/gy-data/android
-    run: |
-      AAB_PATH="app/build/outputs/bundle/release/app-release.aab"
+          if [ ! -f "$AAB_PATH" ]; then
+            echo "ERROR: Release AAB was not generated."
+            find app/build/outputs -type f -print
+            exit 1
+          fi
 
-      if [ ! -f "$AAB_PATH" ]; then
-        echo "ERROR: Release AAB was not generated."
-        find app/build/outputs -type f -print
-        exit 1
-      fi
+      - name: Prepare release directory
+        run: |
+          set -e
 
-  - name: Prepare release directory
-    run: |
-      set -e
+          rm -rf release
+          mkdir -p release
 
-      rm -rf release
-      mkdir -p release
+          APK_PATH="android/app/build/outputs/apk/release/app-release.apk"
+          AAB_PATH="android/app/build/outputs/bundle/release/app-release.aab"
 
-      APK_PATH="android/app/build/outputs/apk/release/app-release.apk"
-      AAB_PATH="android/app/build/outputs/bundle/release/app-release.aab"
+          cp "$APK_PATH" release/GY-DATA-release.apk
+          cp "$AAB_PATH" release/GY-DATA-release.aab
 
-      cp "$APK_PATH" release/GY-DATA-release.apk
-      cp "$AAB_PATH" release/GY-DATA-release.aab
+          echo "======================================"
+          echo "SIGNED ANDROID RELEASE"
+          echo "======================================"
 
-      echo "======================================"
-      echo "SIGNED ANDROID RELEASE"
-      echo "======================================"
+          ls -lh release/
 
-      ls -lh release/
+      - name: Upload Android release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: GY-DATA-Android
+          path: |
+            artifacts/gy-data/release/GY-DATA-release.apk
+            artifacts/gy-data/release/GY-DATA-release.aab
+          if-no-files-found: error
 
-  - name: Upload Android release artifacts
-    uses: actions/upload-artifact@v4
-    with:
-      name: GY-DATA-Android
-      path: |
-        artifacts/gy-data/release/GY-DATA-release.apk
-        artifacts/gy-data/release/GY-DATA-release.aab
-      if-no-files-found: error
-
-  - name: Create GitHub Release
-    uses: softprops/action-gh-release@v2
-    with:
-      tag_name: v${{ github.run_number }}
-      name: GY DATA Android v${{ github.run_number }}
-      generate_release_notes: true
-      files: |
-        artifacts/gy-data/release/GY-DATA-release.apk
-        artifacts/gy-data/release/GY-DATA-release.aab
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: GY DATA Android v${{ github.run_number }}
+          generate_release_notes: true
+          files: |
+            artifacts/gy-data/release/GY-DATA-release.apk
+            artifacts/gy-data/release/GY-DATA-release.aab
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

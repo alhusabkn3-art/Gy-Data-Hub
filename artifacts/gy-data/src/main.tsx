@@ -3,25 +3,10 @@ import "./lib/apiBase";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { Capacitor } from "@capacitor/core";
-import { SplashScreen } from "@capacitor/splash-screen";
-
 import App from "./App";
 
 import "./index.css";
 
-async function hideNativeSplash() {
-  if (!Capacitor.isNativePlatform()) {
-    return;
-  }
-
-  try {
-    await SplashScreen.hide({
-      fadeOutDuration: 250,
-    });
-  } catch {
-    // Ignore splash errors on unsupported environments.
-  }
-}
 
 const rootElement =
   document.getElementById("root");
@@ -41,4 +26,3 @@ root.render(
   </React.StrictMode>,
 );
 
-void hideNativeSplash();

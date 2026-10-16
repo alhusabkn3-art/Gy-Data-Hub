@@ -1,80 +1,95 @@
-// artifacts/gy-data/scripts/create-android-branding.mjs
+
+ // Complete replacement for:
+ // artifacts/gy-data/scripts/create-android-branding.mjs
+ //
+ // Uses the configured PNG when it is valid. If that file is missing or
+ // corrupt, it falls back to the existing GY DATA JPEG in public/.
 
 import fs from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
 
 const projectRoot = process.cwd();
-
-const androidMain = path.join(
-  projectRoot,
-  "android",
-  "app",
-  "src",
-  "main",
-);
-
+const androidMain = path.join(projectRoot, "android", "app", "src", "main");
 const androidRes = path.join(androidMain, "res");
-
-// PUT THE EXACT UPLOADED GY DATA IMAGE HERE:
-// artifacts/gy-data/public/gy-data-icon.png
-const sourceLogo = path.join(
-  projectRoot,
-  "public",
-  "gy-data-icon.png",
-);
+const publicDir = path.join(projectRoot, "public");
 
 if (!fs.existsSync(androidMain)) {
   throw new Error(
-    `Android project not found:\n${androidMain}`,
+    `Android project not found:\n${androidMain}\n` +
+      "Run this script after Capacitor has added/synced the Android platform.",
   );
 }
 
-if (!fs.existsSync(sourceLogo)) {
+const sourceCandidates = [
+  path.join(publicDir, "gy-data-icon.png"),
+  path.join(publicDir, "Gemini_Generated_Image_c6c0wxc6c0wxc6c0.jpeg"),
+];
+
+let sourceLogo;
+let sourceMetadata;
+let lastSourceError;
+
+for (const candidate of sourceCandidates) {
+  if (!fs.existsSync(candidate)) continue;
+
+  try {
+    const metadata = await sharp(candidate, { failOn: "error" }).metadata();
+
+    if (!metadata.width || !metadata.height) {
+      throw new Error("Image metadata has no valid dimensions.");
+    }
+
+    sourceLogo = candidate;
+    sourceMetadata = metadata;
+    break;
+  } catch (error) {
+    lastSourceError = error;
+    console.warn(
+      `Ignoring invalid branding image: ${candidate}\n${error.message}`,
+    );
+  }
+}
+
+if (!sourceLogo) {
   throw new Error(
-    `GY DATA icon not found:\n${sourceLogo}\n\n` +
-      `Place the exact GY DATA image as:\n` +
-      `artifacts/gy-data/public/gy-data-icon.png`,
+    "No valid GY DATA icon image was found.\n" +
+      "Checked:\n" +
+      sourceCandidates.map((file) => ` - ${file}`).join("\n") +
+      (lastSourceError ? `\nLast image error: ${lastSourceError.message}` : ""),
   );
 }
 
-/*
- * The supplied 2048x2048 GY DATA artwork is used directly.
- *
- * IMPORTANT:
- * - No redesign
- * - No SVG recreation
- * - No crop
- * - No stretch
- * - No adaptive foreground/background
- * - No extra text
- * - No extra logo
- *
- * The exact artwork is simply resized to Android launcher sizes.
- */
+console.log(`Using GY DATA artwork: ${path.relative(projectRoot, sourceLogo)}`);
+console.log(
+  `Original image dimensions: ${sourceMetadata.width}x${sourceMetadata.height}`,
+);
 
-const source = await sharp(sourceLogo)
+const sourceBuffer = await sharp(sourceLogo, { failOn: "error" })
+  .rotate()
   .ensureAlpha()
   .resize(1024, 1024, {
-    fit: "fill",
+    fit: "contain",
+    background: { r: 255, g: 255, b: 255, alpha: 1 },
   })
-  .png({
-    compressionLevel: 9,
-    adaptiveFiltering: false,
-  })
+  .png({ compressionLevel: 9, adaptiveFiltering: false })
   .toBuffer();
 
-const metadata = await sharp(source).metadata();
+const normalizedMetadata = await sharp(sourceBuffer).metadata();
 
 if (
-  metadata.width !== 1024 ||
-  metadata.height !== 1024
+  normalizedMetadata.format !== "png" ||
+  normalizedMetadata.width !== 1024 ||
+  normalizedMetadata.height !== 1024
 ) {
   throw new Error(
-    `GY DATA icon must render as 1024x1024. ` +
-      `Received ${metadata.width}x${metadata.height}.`,
+    `Normalized icon is invalid: format=${normalizedMetadata.format}, ` +
+      `size=${normalizedMetadata.width}x${normalizedMetadata.height}`,
   );
 }
+
+fs.mkdirSync(publicDir, { recursive: true });
+fs.writeFileSync(path.join(publicDir, "gy-data-icon.png"), sourceBuffer);
 
 const densitySizes = {
   "mipmap-mdpi": 48,
@@ -92,21 +107,8 @@ const directories = [
 ];
 
 for (const directory of directories) {
-  fs.mkdirSync(
-    path.join(androidRes, directory),
-    {
-      recursive: true,
-    },
-  );
+  fs.mkdirSync(path.join(androidRes, directory), { recursive: true });
 }
-
-/*
- * Remove Android adaptive launcher icons.
- *
- * This is intentional because you asked for the installed
- * app icon to display the supplied artwork itself rather than
- * Android rebuilding it from foreground/background layers.
- */
 
 const oldLauncherFiles = [
   "ic_launcher.xml",
@@ -121,98 +123,49 @@ const oldLauncherFiles = [
 
 for (const directory of directories) {
   for (const file of oldLauncherFiles) {
-    const target = path.join(
-      androidRes,
-      directory,
-      file,
-    );
+    const target = path.join(androidRes, directory, file);
 
     if (fs.existsSync(target)) {
-      fs.rmSync(target, {
-        force: true,
-      });
+      fs.rmSync(target, { force: true });
     }
   }
 }
 
-/*
- * Direct launcher PNGs.
- *
- * Both normal and round launcher resources point to
- * the SAME artwork.
- */
-
-for (
-  const [directory, size] of Object.entries(
-    densitySizes,
-  )
-) {
-  const icon = await sharp(source)
-    .resize(size, size, {
-      fit: "fill",
-    })
-    .png({
-      compressionLevel: 9,
-      adaptiveFiltering: false,
-    })
+for (const [directory, size] of Object.entries(densitySizes)) {
+  const icon = await sharp(sourceBuffer)
+    .resize(size, size, { fit: "fill" })
+    .png({ compressionLevel: 9, adaptiveFiltering: false })
     .toBuffer();
 
   fs.writeFileSync(
-    path.join(
-      androidRes,
-      directory,
-      "ic_launcher.png",
-    ),
+    path.join(androidRes, directory, "ic_launcher.png"),
     icon,
   );
 
   fs.writeFileSync(
-    path.join(
-      androidRes,
-      directory,
-      "ic_launcher_round.png",
-    ),
+    path.join(androidRes, directory, "ic_launcher_round.png"),
     icon,
   );
 }
 
-/*
- * Keep the exact artwork at full resolution too.
- */
-
 fs.writeFileSync(
-  path.join(
-    androidRes,
-    "drawable-nodpi",
-    "gy_data_icon.png",
-  ),
-  source,
+  path.join(androidRes, "drawable-nodpi", "gy_data_icon.png"),
+  sourceBuffer,
 );
 
-/*
- * AndroidManifest.xml
- *
- * Force the installed application launcher icon to use
- * the direct GY DATA PNG resource.
- */
-
-const manifestPath = path.join(
-  androidMain,
-  "AndroidManifest.xml",
-);
+const manifestPath = path.join(androidMain, "AndroidManifest.xml");
 
 if (!fs.existsSync(manifestPath)) {
-  throw new Error(
-    `AndroidManifest.xml not found:\n${manifestPath}`,
-  );
+  throw new Error(`AndroidManifest.xml not found:\n${manifestPath}`);
 }
 
-let manifest = fs.readFileSync(
-  manifestPath,
-  "utf8",
-);
+let manifest = fs.readFileSync(manifestPath, "utf8");
 
-if (/android:icon\s*=/i.test(manifest)) {
+if (!/<application\b/i.test(manifest)) {
+  throw new Error(`Could not find <application> in:\n${manifestPath}`);
+}
+
+if (/android:icon\s*=\s*"[^"]*"/i.test(manifest)) {
   manifest = manifest.replace(
     /android:icon\s*=\s*"[^"]*"/i,
     'android:icon="@mipmap/ic_launcher"',
@@ -224,7 +177,7 @@ if (/android:icon\s*=/i.test(manifest)) {
   );
 }
 
-if (/android:roundIcon\s*=/i.test(manifest)) {
+if (/android:roundIcon\s*=\s*"[^"]*"/i.test(manifest)) {
   manifest = manifest.replace(
     /android:roundIcon\s*=\s*"[^"]*"/i,
     'android:roundIcon="@mipmap/ic_launcher_round"',
@@ -236,15 +189,7 @@ if (/android:roundIcon\s*=/i.test(manifest)) {
   );
 }
 
-fs.writeFileSync(
-  manifestPath,
-  manifest,
-  "utf8",
-);
-
-/*
- * Verification
- */
+fs.writeFileSync(manifestPath, manifest, "utf8");
 
 const requiredFiles = [
   "mipmap-mdpi/ic_launcher.png",
@@ -261,44 +206,29 @@ const requiredFiles = [
 ];
 
 for (const relativeFile of requiredFiles) {
-  const file = path.join(
-    androidRes,
-    relativeFile,
-  );
+  const file = path.join(androidRes, relativeFile);
 
-  if (!fs.existsSync(file)) {
-    throw new Error(
-      `Android branding verification failed:\n${file}`,
-    );
+  if (!fs.existsSync(file) || fs.statSync(file).size === 0) {
+    throw new Error(`Android branding verification failed:\n${file}`);
   }
+
+  await sharp(file, { failOn: "error" }).metadata();
 }
 
 const finalIcon = await sharp(
-  path.join(
-    androidRes,
-    "drawable-nodpi",
-    "gy_data_icon.png",
-  ),
+  path.join(androidRes, "drawable-nodpi", "gy_data_icon.png"),
 ).metadata();
 
 if (
+  finalIcon.format !== "png" ||
   finalIcon.width !== 1024 ||
   finalIcon.height !== 1024
 ) {
   throw new Error(
-    `Final GY DATA icon is not 1024x1024.`,
+    `Final GY DATA icon is invalid: ${finalIcon.format} ${finalIcon.width}x${finalIcon.height}`,
   );
 }
 
-console.log(
-  "GY DATA exact launcher icon generated successfully.",
-);
-console.log(
-  "Source: public/gy-data-icon.png",
-);
-console.log(
-  "Adaptive launcher icon intentionally disabled.",
-);
-console.log(
-  "No crop, redesign, extra text, or extra logo applied.",
-);
+console.log("GY DATA Android launcher branding generated successfully.");
+console.log("Canonical source: public/gy-data-icon.png");
+console.log("Validated launcher PNGs generated for all Android densities.");
